@@ -500,14 +500,14 @@ void BodyMorphMap::ForEachMorph(std::function<void(const SKEEFixedString&, const
 std::vector<NIOVTaskUpdateSkinPartition*> MorphFileCache::ApplyMorph(TESObjectREFR * refr, NiAVObject * rootNode, bool isAttaching, const std::pair<SKEEFixedString, BodyMorphMap> & bodyMorph)
 {
 	std::vector<NIOVTaskUpdateSkinPartition*> partitionUpdates;
-	auto execMorphUpdate = [&](BSGeometry* bodyGeometry)
+	auto execMorphUpdate = [&](NiPointer<BSGeometry> bodyGeometry)
 	{
-		NiSkinInstance* skinInstance = niptr_cast<NiSkinInstance>(bodyGeometry->m_spSkinInstance);
+		NiPointer<NiSkinInstance> skinInstance = niptr_cast<NiSkinInstance>(bodyGeometry->m_spSkinInstance);
 		if (skinInstance) {
-			NiSkinPartition* skinPartition = niptr_cast<NiSkinPartition>(skinInstance->m_spSkinPartition);
+			NiPointer<NiSkinPartition> skinPartition = niptr_cast<NiSkinPartition>(skinInstance->m_spSkinPartition);
 			if (skinPartition) {
 				// Undo morphs on the old shape
-				NiBinaryExtraData* bodyData = (NiBinaryExtraData*)NifUtils::GetExtraData(bodyGeometry, "SHAPEDATA");
+				NiPointer<NiBinaryExtraData> bodyData = (NiBinaryExtraData*)NifUtils::GetExtraData(bodyGeometry, "SHAPEDATA");
 
 				bool existingMorphs = !isAttaching && bodyData;
 
@@ -579,6 +579,11 @@ std::vector<NIOVTaskUpdateSkinPartition*> MorphFileCache::ApplyMorph(TESObjectRE
 									NormalApplicator applicator(bodyGeometry, newSkinPartition);
 									applicator.Apply();
 								}
+
+								g_bodyMorphInterface.ForEachMorphShapeCallback([&](IBodyMorphInterface::MorphShapeCallback cb)
+								{
+									cb(refr, rootNode, bodyGeometry, skinPartition, bodyData);
+								});
 
 								// Propagate the data to the other partitions
 								for (UInt32 p = 1; p < newSkinPartition->m_uiPartitions; ++p)
@@ -684,6 +689,8 @@ void MorphFileCache::ApplyMorphs(TESObjectREFR * refr, NiAVObject * rootNode, bo
 
 void MorphCache::ApplyMorphs(TESObjectREFR * refr, NiAVObject * rootNode, bool isAttaching, bool deferUpdate)
 {
+	SimpleLocker locker(&m_lock);
+
 	MorphFileCache * fileCache = nullptr;
 
 	// Find the BODYTRI and cache it
@@ -735,6 +742,7 @@ void MorphCache::UpdateMorphs(TESObjectREFR * refr, bool deferUpdate)
 
 void MorphCache::ForEachMorphFile(std::function<void(const SKEEFixedString&, const MorphFileCache&)> functor) const
 {
+	SimpleLocker locker(&m_lock);
 	for (auto& it : m_data)
 	{
 		functor(it.first, it.second);
@@ -754,6 +762,7 @@ SKEEFixedString MorphCache::CreateTRIPath(const char * relativePath)
 
 void MorphCache::Shrink()
 {
+	SimpleLocker locker(&m_lock);
 	while (totalMemory > memoryLimit && m_data.size() > 0)
 	{
 		auto it = std::min_element(m_data.begin(), m_data.end(), [](std::pair<SKEEFixedString, MorphFileCache> a, std::pair<SKEEFixedString, MorphFileCache> b)
@@ -772,11 +781,10 @@ void MorphCache::Shrink()
 
 size_t MorphCache::Clear()
 {
+	SimpleLocker locker(&m_lock);
 	size_t usage = totalMemory;
-	Lock();
 	totalMemory = 0;
 	m_data.clear();
-	Release();
 	return usage;
 }
 
@@ -1063,6 +1071,11 @@ bool MorphCache::CacheFile(const char * relativePath)
 
 
 	return false;
+}
+
+void BodyMorphInterface::AddMorphShapeCallback(IBodyMorphInterface::MorphShapeCallback cb, skee_u64 order)
+{
+
 }
 
 void BodyMorphInterface::Impl_SetCacheLimit(size_t limit)
@@ -1857,6 +1870,11 @@ void BodyMorphInterface::Impl_VisitActors(std::function<void(TESObjectREFR*)> fu
 	}
 }
 
+void BodyMorphInterface::ForEachMorphShapeCallback(std::function<void(IBodyMorphInterface::MorphShapeCallback)> func)
+{
+	shapeCallbacks.ForEach(func);
+}
+
 void BodyMorphInterface::OnAttach(TESObjectREFR * refr, TESObjectARMO * armor, TESObjectARMA * addon, NiAVObject * object, bool isFirstPerson, NiNode * skeleton, NiNode * root)
 {
 	if (HasMorphs(refr))
@@ -2246,4 +2264,19 @@ void BodyMorphInterface::Save(SKSESerializationInterface * intfc, UInt32 kVersio
 bool BodyMorphInterface::Load(SKSESerializationInterface * intfc, UInt32 kVersion, const std::unordered_map<UInt32, StringTableItem> & stringTable)
 {
 	return actorMorphs.Load(intfc, kVersion, stringTable);
+}
+
+void MorphShapeCallbacks::AddCallback(IBodyMorphInterface::MorphShapeCallback cb, skee_u64 order)
+{
+	SimpleLocker locker(&m_lock);
+	m_data.insert(MorphShapeCallbackItem{ cb, order });
+}
+
+void MorphShapeCallbacks::ForEach(std::function<void(IBodyMorphInterface::MorphShapeCallback)> func)
+{
+	SimpleLocker locker(&m_lock);
+	for (auto& item : m_data)
+	{
+		func(item.cb);
+	}
 }

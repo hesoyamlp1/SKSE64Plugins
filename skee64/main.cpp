@@ -726,7 +726,7 @@ __declspec(dllexport) SKSEPluginVersionData SKSEPlugin_Version =
 	0,	// not version independent
 	0,
 #if STORE_VERSION == RUNTIME_TYPE_BETHESDA
-	{ RUNTIME_VERSION_1_6_1170, 0 },
+	{ RUNTIME_VERSION_1_7_99, 0 },
 #elif STORE_VERSION == RUNTIME_TYPE_GOG
 	{ RUNTIME_VERSION_1_6_1179_GOG, 0 },
 #endif

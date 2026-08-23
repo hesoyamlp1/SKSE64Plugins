@@ -322,6 +322,30 @@ typedef std::shared_ptr<BodyGenDataTemplates> BodyGenDataTemplatesPtr;
 
 typedef std::unordered_map<TESNPC*, BodyGenDataTemplatesPtr> BodyGenData;
 
+struct MorphShapeCallbackItem
+{
+	IBodyMorphInterface::MorphShapeCallback cb;
+	uint64_t sort;
+
+	struct Comp {
+		bool operator()(const MorphShapeCallbackItem& a, const MorphShapeCallbackItem& b) const
+		{
+			if (a.sort == b.sort)
+			{
+				return a.cb < b.cb;
+			}
+			return a.sort > b.sort; // Descending by age
+		}
+	};
+};
+
+class MorphShapeCallbacks : public SafeDataHolder<std::set<MorphShapeCallbackItem, MorphShapeCallbackItem::Comp>>
+{
+public:
+	void AddCallback(IBodyMorphInterface::MorphShapeCallback cb, skee_u64 order = 0);
+	void ForEach(std::function<void(IBodyMorphInterface::MorphShapeCallback)> func);
+};
+
 class BodyMorphInterface 
 	: public IBodyMorphInterface
 	, public IAddonAttachmentInterface
@@ -376,8 +400,12 @@ public:
 
 	virtual size_t ClearMorphCache() override;
 
+	virtual void AddMorphShapeCallback(IBodyMorphInterface::MorphShapeCallback cb, skee_u64 order = 0) override;
+
 	void LoadMods();
 	void PrintDiagnostics();
+
+	void ForEachMorphShapeCallback(std::function<void(IBodyMorphInterface::MorphShapeCallback)> func);
 
 private:
 	void GetFilteredNPCList(std::vector<TESNPC*> activeNPCs[], const ModInfo * modInfo, UInt32 gender, TESRace * raceFilter, std::unordered_set<TESFaction*> factionList);
@@ -419,6 +447,8 @@ private:
 	MorphCache	morphCache;
 	BodyGenTemplates bodyGenTemplates;
 	BodyGenData	bodyGenData[2];
+
+	MorphShapeCallbacks shapeCallbacks;
 
 	friend class NIOVTaskUpdateMorph;
 	friend class NIOVTaskUpdateModelWeight;

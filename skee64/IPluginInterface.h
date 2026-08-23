@@ -11,6 +11,9 @@ class TESForm;
 class BaseExtraList;
 class BGSTextureSet;
 class Actor;
+class BSGeometry;
+class NiSkinPartition;
+class NiBinaryExtraData;
 
 using skee_u64 = uint64_t;
 using skee_u32 = uint32_t;
@@ -61,7 +64,8 @@ public:
 		kPluginVersion2,
 		kPluginVersion3,
 		kPluginVersion4,
-		kCurrentPluginVersion = kPluginVersion4,
+		kPluginVersion5, // Added AddMorphShapeCallback
+		kCurrentPluginVersion = kPluginVersion5,
 		kSerializationVersion1 = 1,
 		kSerializationVersion2,
 		kSerializationVersion3,
@@ -126,6 +130,11 @@ public:
 	virtual void VisitStrings(StringVisitor & visitor) = 0;
 	virtual void VisitActors(ActorVisitor & visitor) = 0;
 	virtual skee_u64 ClearMorphCache() = 0;
+
+	// This callback occurs after RM alters the vertex buffer of the shape, but before it copies it to other partitions, and before re-upload to GPU
+	// Order controls the execution order of registered callbacks, descending order
+	using MorphShapeCallback = void (*)(TESObjectREFR* refr, NiAVObject* rootNode, BSGeometry* geometry, NiSkinPartition* skinPartition, NiBinaryExtraData* unmodifiedVertexBuffer);
+	virtual void AddMorphShapeCallback(MorphShapeCallback cb, skee_u64 order = 0) = 0;
 };
 
 class INiTransformInterface : public IPluginInterface

@@ -103,62 +103,62 @@ extern bool					g_hookFaceOverlays;
 namespace Addresses {
 #if STORE_VERSION == RUNTIME_TYPE_STEAM
 	// Hooks
-	static const uintptr_t InvokeCategoriesList_Target = 0x00955C50;		// 52407
-	static const uintptr_t DoubleMorphCallback2_Target = 0x00952880;		// 52356
-	static const uintptr_t PreprocessedHeads = 0x003BCAB0;					// 24731
-	static const uintptr_t ApplyRaceMorph_Target = 0x0042B910;				// 26836
-	static const uintptr_t UpdateMorphs_Target = 0x0042B800;				// 26835
-	static const uintptr_t UpdateMorph_Target = 0x00436060;					// 27061
-	static const uintptr_t NiAllocate_Geom = 0x00D385B0;					// 70939
-	static const uintptr_t NiAllocate_Geom2_Target = 0x00D38AF0;			// 70947
-	static const uintptr_t NiFree_Geom2_Target = 0x00D395B0;				// 70958
-	static const uintptr_t UpdateHeadState_Target1 = 0x003BCBF0;			// 24732
-	static const uintptr_t UpdateHeadState_Target2 = 0x003BBA20;			// 24725
-	static const uintptr_t RaceSexMenu_Vtable = 0x01900078;					// 215885 ??_7RaceSexMenu@@6B@
-	static const uintptr_t CachePartsTarget_Target = 0x00953780;			// 52369
-	static const uintptr_t SetNewInventoryItemModel_Target = 0x009287B0;	// 51776
+	static const uintptr_t InvokeCategoriesList_Target = 0x0096CD80;		// 52407
+	static const uintptr_t DoubleMorphCallback2_Target = 0x009699B0;		// 52356
+	static const uintptr_t PreprocessedHeads = 0x003C3B70;					// 24731
+	static const uintptr_t ApplyRaceMorph_Target = 0x00432CA0;				// 26836
+	static const uintptr_t UpdateMorphs_Target = 0x00432B90;				// 26835
+	static const uintptr_t UpdateMorph_Target = 0x0043D490;					// 27061
+	static const uintptr_t NiAllocate_Geom = 0x00EFCDA0;					// 70939
+	static const uintptr_t NiAllocate_Geom2_Target = 0x00EFD2E0;			// 70947
+	static const uintptr_t NiFree_Geom2_Target = 0x00EFDDA0;				// 70958
+	static const uintptr_t UpdateHeadState_Target1 = 0x003C3CB0;			// 24732
+	static const uintptr_t UpdateHeadState_Target2 = 0x003C2AE0;			// 24725
+	static const uintptr_t RaceSexMenu_Vtable = 0x0197ED90;					// 215885 ??_7RaceSexMenu@@6B@
+	static const uintptr_t CachePartsTarget_Target = 0x0096A8B0;			// 52369
+	static const uintptr_t SetNewInventoryItemModel_Target = 0x0093EAD0;	// 51776
 	// Functions
-	static const uintptr_t AttachBipedObject = 0x00217550;					// 15711
-	static const uintptr_t useFaceGenPreProcessedHeads = 0x0200D2D8;		// 378620
-	static const uintptr_t TESModelTri_vtbl = 0x017DB598;					// 195221 ??_7TESModelTri@@6B@
-	static const uintptr_t AddGFXArgument = 0x008EF9F0;						// 51029
-	static const uintptr_t FaceGenApplyMorph = 0x0042B610;					// 26831
-	static const uintptr_t AddRaceMenuSlider = 0x0095BFA0;					// 52453
-	static const uintptr_t DoubleMorphCallback = 0x00955250;				// 52401
-	static const uintptr_t UpdateNPCMorphs = 0x003B9130;					// 24713
-	static const uintptr_t UpdateNPCMorph = 0x003B9320;						// 24714
-	static const uintptr_t UpdateHeadState = 0x003BB880;					// 24724
-	static const uintptr_t SetInventoryItemModel = 0x00928700;				// 51775
-	static const uintptr_t SetNewInventoryItemModel = 0x009281A0;			// 51772
+	static const uintptr_t AttachBipedObject = 0x0021CE30;					// 15711
+	static const uintptr_t useFaceGenPreProcessedHeads = 0x020B06B8;		// 378620
+	static const uintptr_t TESModelTri_vtbl = 0x01855468;					// 195221 ??_7TESModelTri@@6B@
+	static const uintptr_t AddGFXArgument = 0x00905530;						// 51029
+	static const uintptr_t FaceGenApplyMorph = 0x004329A0;					// 26831
+	static const uintptr_t AddRaceMenuSlider = 0x00972FB0;					// 52453
+	static const uintptr_t DoubleMorphCallback = 0x0096C380;				// 52401
+	static const uintptr_t UpdateNPCMorphs = 0x003C01F0;					// 24713
+	static const uintptr_t UpdateNPCMorph = 0x003C03E0;						// 24714
+	static const uintptr_t UpdateHeadState = 0x003C2940;					// 24724
+	static const uintptr_t SetInventoryItemModel = 0x0093EA20;				// 51775
+	static const uintptr_t SetNewInventoryItemModel = 0x0093E4C0;			// 51772
 #elif STORE_VERSION == RUNTIME_TYPE_GOG
 	// Hooks
-	static const uintptr_t InvokeCategoriesList_Target = 0x00954D00;		// 52407
-	static const uintptr_t DoubleMorphCallback2_Target = 0x00951940;		// 52356
-	static const uintptr_t PreprocessedHeads = 0x003BC840;					// 24731
-	static const uintptr_t ApplyRaceMorph_Target = 0x0042B6A0;				// 26836
-	static const uintptr_t UpdateMorphs_Target = 0x0042B590;				// 26835
-	static const uintptr_t UpdateMorph_Target = 0x00435DF0;					// 27061
-	static const uintptr_t NiAllocate_Geom = 0x00D37470;					// 70939
-	static const uintptr_t NiAllocate_Geom2_Target = 0x00D379B0;			// 70947
-	static const uintptr_t NiFree_Geom2_Target = 0x00D38470;				// 70958
-	static const uintptr_t UpdateHeadState_Target1 = 0x003BC980;			// 24732
-	static const uintptr_t UpdateHeadState_Target2 = 0x003BB7B0;			// 24725
-	static const uintptr_t RaceSexMenu_Vtable = 0x018FCD78;					// 215885 ??_7RaceSexMenu@@6B@
-	static const uintptr_t CachePartsTarget_Target = 0x00952840;			// 52369
-	static const uintptr_t SetNewInventoryItemModel_Target = 0x00927C90;	// 51776
+	static const uintptr_t InvokeCategoriesList_Target = 0x00957860;		// 52407
+	static const uintptr_t DoubleMorphCallback2_Target = 0x009544A0;		// 52356
+	static const uintptr_t PreprocessedHeads = 0x003BCBF0;					// 24731
+	static const uintptr_t ApplyRaceMorph_Target = 0x0042BA50;				// 26836
+	static const uintptr_t UpdateMorphs_Target = 0x0042B940;				// 26835
+	static const uintptr_t UpdateMorph_Target = 0x004361A0;					// 27061
+	static const uintptr_t NiAllocate_Geom = 0x00D39FD0;					// 70939
+	static const uintptr_t NiAllocate_Geom2_Target = 0x00D3A510;			// 70947
+	static const uintptr_t NiFree_Geom2_Target = 0x00D3AFD0;				// 70958
+	static const uintptr_t UpdateHeadState_Target1 = 0x003BCD30;			// 24732
+	static const uintptr_t UpdateHeadState_Target2 = 0x003BBB60;			// 24725
+	static const uintptr_t RaceSexMenu_Vtable = 0x01901338;					// 215885 ??_7RaceSexMenu@@6B@
+	static const uintptr_t CachePartsTarget_Target = 0x009553A0;			// 52369
+	static const uintptr_t SetNewInventoryItemModel_Target = 0x0092A7F0;	// 51776
 	// Functions
-	static const uintptr_t AttachBipedObject = 0x002172E0;					// 15711
-	static const uintptr_t useFaceGenPreProcessedHeads = 0x020092D8;		// 378620
-	static const uintptr_t TESModelTri_vtbl = 0x017D8538;					// 195221 ??_7TESModelTri@@6B@
-	static const uintptr_t AddGFXArgument = 0x008EF0C0;						// 51029
-	static const uintptr_t FaceGenApplyMorph = 0x0042B3A0;					// 26831
-	static const uintptr_t AddRaceMenuSlider = 0x0095AF10;					// 52453
-	static const uintptr_t DoubleMorphCallback = 0x00954300;				// 52401
-	static const uintptr_t UpdateNPCMorphs = 0x003B8EC0;					// 24713
-	static const uintptr_t UpdateNPCMorph = 0x003B90B0;						// 24714
-	static const uintptr_t UpdateHeadState = 0x003BB610;					// 24724
-	static const uintptr_t SetInventoryItemModel = 0x00927BE0;				// 51775
-	static const uintptr_t SetNewInventoryItemModel = 0x00927680;			// 51772
+	static const uintptr_t AttachBipedObject = 0x00217380;					// 15711
+	static const uintptr_t useFaceGenPreProcessedHeads = 0x0200E378;		// 378620
+	static const uintptr_t TESModelTri_vtbl = 0x017DC868;					// 195221 ??_7TESModelTri@@6B@
+	static const uintptr_t AddGFXArgument = 0x008F1C20;						// 51029
+	static const uintptr_t FaceGenApplyMorph = 0x0042B750;					// 26831
+	static const uintptr_t AddRaceMenuSlider = 0x0095DA70;					// 52453
+	static const uintptr_t DoubleMorphCallback = 0x00956E60;				// 52401
+	static const uintptr_t UpdateNPCMorphs = 0x003B9270;					// 24713
+	static const uintptr_t UpdateNPCMorph = 0x003B9460;						// 24714
+	static const uintptr_t UpdateHeadState = 0x003BB9C0;					// 24724
+	static const uintptr_t SetInventoryItemModel = 0x0092A740;				// 51775
+	static const uintptr_t SetNewInventoryItemModel = 0x0092A1E0;			// 51772
 #endif
 };
 
@@ -1191,8 +1191,7 @@ bool InstallSKEEHooks()
 
 	static const uintptr_t LoadRaceMenuSliders = RaceSexMenu::LoadSliders_Address;
 
-
-	RelocAddr <uintptr_t> GetSex_Target(LoadRaceMenuSliders + 0x16F);
+	RelocAddr <uintptr_t> GetSex_Target(LoadRaceMenuSliders + 0x167);
 	g_branchTrampoline.Write5Call(GetSex_Target.GetUIntPtr(), (uintptr_t)GetSex_Hooked);
 
 	RelocAddr <uintptr_t> IsPlayable_Target(LoadRaceMenuSliders + 0x3CE);
@@ -1203,23 +1202,22 @@ bool InstallSKEEHooks()
 		RelocAddr <uintptr_t> InvokeCategoriesList_Target(Addresses::InvokeCategoriesList_Target + 0x4D6);
 		g_branchTrampoline.Write5Call(InvokeCategoriesList_Target.GetUIntPtr(), (uintptr_t)InvokeCategoryList_Hook);
 
-		RelocAddr <uintptr_t> AddSlider_Target(LoadRaceMenuSliders + 0x3583);
+		RelocAddr <uintptr_t> AddSlider_Target(LoadRaceMenuSliders + 0x345F);
 		g_branchTrampoline.Write5Call(AddSlider_Target.GetUIntPtr(), (uintptr_t)AddSlider_Hook);
 	}
 
 	if (g_hookSliderCallbacks)
 	{
-		RelocAddr <uintptr_t> DoubleMorphCallback1_Target(LoadRaceMenuSliders + 0x3A03);
+		RelocAddr <uintptr_t> DoubleMorphCallback1_Target(LoadRaceMenuSliders + 0x38DB);
 		g_branchTrampoline.Write5Call(DoubleMorphCallback1_Target.GetUIntPtr(), (uintptr_t)DoubleMorphCallback_Hook);
 
 		RelocAddr <uintptr_t> DoubleMorphCallback2_Target(Addresses::DoubleMorphCallback2_Target + 0x50); // ChangeDoubleMorph callback
 		g_branchTrampoline.Write5Call(DoubleMorphCallback2_Target.GetUIntPtr(), (uintptr_t)DoubleMorphCallback_Hook);
 	}
 
-
 	if(g_hookNativeSliders)
 	{
-		RelocAddr<uintptr_t> SliderLookup_Target(LoadRaceMenuSliders + 0x3644);
+		RelocAddr<uintptr_t> SliderLookup_Target(LoadRaceMenuSliders + 0x351C);
 		struct SliderLookup_Entry_Code : Xbyak::CodeGenerator {
 			SliderLookup_Entry_Code(void * buf, UInt64 funcAddr, UInt64 targetAddr) : Xbyak::CodeGenerator(4096, buf)
 			{
@@ -1383,6 +1381,7 @@ bool InstallSKEEHooks()
 		RelocAddr<uintptr_t> UpdateHeadState_Target2(Addresses::UpdateHeadState_Target2 + 0x2EB);
 		g_branchTrampoline.Write5Call(UpdateHeadState_Target2.GetUIntPtr(), (uintptr_t)UpdateHeadState_Disabled_Hooked);
 	}
+
 
 	RelocAddr <uintptr_t> RaceSexMenu_Render_Target(Addresses::RaceSexMenu_Vtable + 0x30); // ??_7RaceSexMenu@@6B@
 	SafeWrite64(RaceSexMenu_Render_Target.GetUIntPtr(), (uintptr_t)RaceSexMenu_Render_Hooked);

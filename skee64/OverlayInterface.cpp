@@ -26,6 +26,7 @@
 #include "Utilities.h"
 
 #include <unordered_set>
+#include <format>
 
 extern ActorUpdateManager				g_actorUpdateManager;
 extern OverlayInterface					g_overlayInterface;
@@ -145,6 +146,7 @@ void OverlayInterface::InstallOverlay(const char * nodeName, const char * path, 
 
 		if (newShape) {
 			newShape->m_name = overlayName.data;
+			newShape->m_flags |= NiAVObject::Flag::kAlwaysDraw;
 		}
 	}
 	
