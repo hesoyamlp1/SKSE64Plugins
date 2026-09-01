@@ -169,6 +169,7 @@ bool	g_immediateArmor = true;
 bool	g_enableFaceOverlays = true;
 bool	g_immediateFace = false;
 bool	g_enableEquippableTransforms = true;
+bool	g_suspendEquippableTransformsInFurniture = true;
 bool	g_parallelMorphing = true;
 bool	g_deferredBodyMorph = false;
 std::uint16_t	g_scaleMode = 0;
@@ -673,6 +674,10 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message * message)
 		}
 		case SKSE::MessagingInterface::kDataLoaded:
 		{
+			if (g_enableEquippableTransforms && g_suspendEquippableTransformsInFurniture) {
+				SKEERegisterEventSink<RE::TESFurnitureEvent>(&g_actorUpdateManager);
+			}
+
 			if (g_enableBodyGen) {
 				SKEERegisterEventSink<RE::TESInitScriptEvent>(&g_actorUpdateManager);
 
@@ -711,6 +716,7 @@ SKSE_PLUGIN_LOAD(const SKSE::LoadInterface* a_intfc)
 	SKEE64GetConfigValue("Features", "bEnableBodyMorph", &g_enableBodyMorph);
 	SKEE64GetConfigValue("Features", "bEnableAutoTransforms", &g_enableAutoTransforms);
 	SKEE64GetConfigValue("Features", "bEnableEquippableTransforms", &g_enableEquippableTransforms);
+	SKEE64GetConfigValue("Features", "bSuspendEquippableTransformsInFurniture", &g_suspendEquippableTransformsInFurniture);
 	SKEE64GetConfigValue("Features", "bEnableTintSync", &g_enableTintSync);
 	SKEE64GetConfigValue("Features", "bEnableTintInventory", &g_enableTintInventory);
 	SKEE64GetConfigValue("Features", "bEnableTintHairSlot", &g_enableTintHairSlot);

@@ -13,6 +13,7 @@
 #include "RE/N/NiExtraData.h"
 
 #include <algorithm>
+#include <cstring>
 #include <cstdint>
 #include <numbers>
 
@@ -20,9 +21,23 @@
 extern const SKSE::TaskInterface* g_task;
 extern StringTable					g_stringTable;
 extern bool							g_enableEquippableTransforms;
+extern bool							g_suspendEquippableTransformsInFurniture;
 extern std::uint16_t						g_scaleMode;
 extern SkeletonExtenderInterface	g_skeletonExtenderInterface;
 extern ActorUpdateManager			g_actorUpdateManager;
+
+namespace
+{
+	bool ShouldSuspendInternalTransform(RE::TESObjectREFR* ref, const SKEEFixedString& node)
+	{
+		if (!g_suspendEquippableTransformsInFurniture || node != SKEEFixedString("NPC")) {
+			return false;
+		}
+
+		auto* actor = ref ? ref->As<RE::Actor>() : nullptr;
+		return actor && static_cast<bool>(actor->GetOccupiedFurniture());
+	}
+}
 
 skee_u32 NiTransformInterface::GetVersion()
 {
@@ -456,10 +471,15 @@ void NiTransformInterface::Impl_UpdateNodeTransforms(RE::TESObjectREFR * ref, bo
 {
 	RE::BSFixedString target("");
 	RE::NiTransform transformResult;
+	const bool suspendInternal = ShouldSuspendInternalTransform(ref, node);
 	Impl_VisitNodeTransforms(ref, firstPerson, isFemale, node, 
 	[&](OverrideRegistration<StringTableItem>* keys)
 	{
 		for (auto dit = keys->begin(); dit != keys->end(); ++dit) {// Loop Keys
+			if (suspendInternal && dit->first && std::strcmp(dit->first->c_str(), "internal") == 0) {
+				continue;
+			}
+
 			RE::NiTransform localTransform;
 			Impl_GetOverrideTransform(&dit->second, OverrideVariant::kParam_NodeTransformPosition, &localTransform);
 			Impl_GetOverrideTransform(&dit->second, OverrideVariant::kParam_NodeTransformScale, &localTransform);
@@ -660,6 +680,7 @@ void NiTransformInterface::SetTransforms(std::uint32_t formId, bool immediate, b
 
 					if (baseTransform)
 					{
+						const bool suspendInternal = ShouldSuspendInternalTransform(refr, *ait->first);
 						RE::BSFixedString target("");
 						float fScaleValue = 1.0;
 						RE::NiTransform combinedTransform;
@@ -667,6 +688,9 @@ void NiTransformInterface::SetTransforms(std::uint32_t formId, bool immediate, b
 							std::uint16_t scaleMode = g_scaleMode;
 							std::map<StringTableItem, OverrideSet*> scaleModes;
 							for (auto dit = ait->second.begin(); dit != ait->second.end(); ++dit) {
+								if (suspendInternal && dit->first && std::strcmp(dit->first->c_str(), "internal") == 0) {
+									continue;
+								}
 								scaleModes.emplace(dit->first, &dit->second);
 							}
 							if (!scaleModes.empty())
@@ -681,6 +705,10 @@ void NiTransformInterface::SetTransforms(std::uint32_t formId, bool immediate, b
 							}
 
 							for (auto dit = ait->second.begin(); dit != ait->second.end(); ++dit) {// Loop Keys
+								if (suspendInternal && dit->first && std::strcmp(dit->first->c_str(), "internal") == 0) {
+									continue;
+								}
+
 								RE::NiTransform localTransform;
 								Impl_GetOverrideTransform(&dit->second, OverrideVariant::kParam_NodeTransformPosition, &localTransform);
 								Impl_GetOverrideTransform(&dit->second, OverrideVariant::kParam_NodeTransformScale, &localTransform);

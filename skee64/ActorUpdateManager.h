@@ -9,6 +9,7 @@
 #include <RE/N/NiAVObject.h>
 #include <RE/N/NiNode.h>
 #include <RE/T/TESCellFullyLoadedEvent.h>
+#include <RE/T/TESFurnitureEvent.h>
 #include <RE/T/TESInitScriptEvent.h>
 #include <RE/T/TESLoadGameEvent.h>
 #include <RE/T/TESObjectARMA.h>
@@ -24,6 +25,7 @@ class ActorUpdateManager
 	: public IActorUpdateManager
 	, public RE::BSTEventSink<RE::TESObjectLoadedEvent>
 	, public RE::BSTEventSink<RE::TESInitScriptEvent>
+	, public RE::BSTEventSink<RE::TESFurnitureEvent>
 	, public RE::BSTEventSink<RE::TESLoadGameEvent>
 	, public RE::BSTEventSink<RE::TESCellFullyLoadedEvent>
 {
@@ -58,6 +60,7 @@ protected:
 	virtual RE::BSEventNotifyControl ProcessEvent(const RE::TESObjectLoadedEvent* a_event, RE::BSTEventSource<RE::TESObjectLoadedEvent>* a_source) override;
 	virtual RE::BSEventNotifyControl ProcessEvent(const RE::TESCellFullyLoadedEvent* a_event, RE::BSTEventSource<RE::TESCellFullyLoadedEvent>* a_source) override;
 	virtual RE::BSEventNotifyControl ProcessEvent(const RE::TESInitScriptEvent* a_event, RE::BSTEventSource<RE::TESInitScriptEvent>* a_source) override;
+	virtual RE::BSEventNotifyControl ProcessEvent(const RE::TESFurnitureEvent* a_event, RE::BSTEventSource<RE::TESFurnitureEvent>* a_source) override;
 	virtual RE::BSEventNotifyControl ProcessEvent(const RE::TESLoadGameEvent* a_event, RE::BSTEventSource<RE::TESLoadGameEvent>* a_source) override;
 
 	virtual skee_u32 GetVersion() override { return kCurrentPluginVersion; };

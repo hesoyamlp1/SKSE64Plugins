@@ -26,6 +26,8 @@ extern bool	g_playerOnly;
 extern bool	g_enableBodyGen;
 extern bool	g_enableAutoTransforms;
 extern bool	g_enableBodyInit;
+extern bool	g_enableEquippableTransforms;
+extern bool	g_suspendEquippableTransformsInFurniture;
 
 RE::BSEventNotifyControl ActorUpdateManager::ProcessEvent(const RE::TESObjectLoadedEvent* a_event, RE::BSTEventSource<RE::TESObjectLoadedEvent>* a_source)
 {
@@ -84,6 +86,41 @@ RE::BSEventNotifyControl ActorUpdateManager::ProcessEvent(const RE::TESInitScrip
 			}
 		}
 	}
+	return RE::BSEventNotifyControl::kContinue;
+}
+
+RE::BSEventNotifyControl ActorUpdateManager::ProcessEvent(const RE::TESFurnitureEvent* a_event, RE::BSTEventSource<RE::TESFurnitureEvent>* a_source)
+{
+	if (!a_event || !g_enableEquippableTransforms || !g_suspendEquippableTransformsInFurniture) {
+		return RE::BSEventNotifyControl::kContinue;
+	}
+
+	auto* actor = a_event->actor ? a_event->actor->As<RE::Actor>() : nullptr;
+	if (!actor) {
+		return RE::BSEventNotifyControl::kContinue;
+	}
+
+	const auto formID = actor->GetFormID();
+	auto refreshTransforms = [formID]() {
+		auto* currentActor = RE::TESForm::LookupByID<RE::Actor>(formID);
+		if (!currentActor) {
+			return;
+		}
+
+		const bool inFurniture = static_cast<bool>(currentActor->GetOccupiedFurniture());
+		SKSE::log::debug("{} - Furniture state changed for {:08X}; occupied={}", __FUNCTION__, formID, inFurniture);
+		g_transformInterface.SetTransforms(formID, true);
+	};
+
+	// Furniture events can arrive before GetOccupiedFurniture reflects the
+	// final enter/exit state. Re-evaluate on the next game-thread task pass and
+	// look the Actor up by FormID instead of retaining the event pointer.
+	if (g_task) {
+		g_task->AddTask(refreshTransforms);
+	} else {
+		refreshTransforms();
+	}
+
 	return RE::BSEventNotifyControl::kContinue;
 }
 
