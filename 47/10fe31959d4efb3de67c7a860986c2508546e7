@@ -1,0 +1,16 @@
+CMakeLists.txt
+  h_4b190f792175d0 160-173
+issue55fix/main.cpp
+  h_4b190f792175d0 1-183
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "4710fe31959d4efb3de67c7a860986c2508546e7",
+  "prompts": {},
+  "humans": {
+    "h_4b190f792175d0": {
+      "author": "LinSuki <admin@toddout.work>"
+    }
+  }
+}
