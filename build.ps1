@@ -432,7 +432,7 @@ if ($vcpkgHead -ne $VcpkgCommit) {
     }
     Info "Cloning vcpkg @ $($VcpkgCommit.Substring(0, 12)) (full history, a few hundred MB - required by manifest mode)"
     Remove-Item -LiteralPath $VcpkgDir -Recurse -Force -ErrorAction SilentlyContinue
-    & git clone --progress https://github.com/microsoft/vcpkg.git $VcpkgDir
+    & git -c http.proxy= -c https.proxy= clone --progress https://github.com/microsoft/vcpkg.git $VcpkgDir
     if ($LASTEXITCODE -ne 0) { Die "Failed to clone vcpkg from GitHub (network required)" }
     & git -C $VcpkgDir checkout -q $VcpkgCommit
     if ($LASTEXITCODE -ne 0) { Die "Failed to check out vcpkg commit $VcpkgCommit" }
