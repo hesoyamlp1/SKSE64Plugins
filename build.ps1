@@ -145,7 +145,7 @@ function Download {
     $tmp = "$Dest.part"
     try {
         if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
-            & curl.exe -fL --retry 3 --retry-delay 2 --connect-timeout 15 -o $tmp $Url
+            & curl.exe -fL --ssl-no-revoke --retry 3 --retry-delay 2 --connect-timeout 15 -o $tmp $Url
             if ($LASTEXITCODE -ne 0) { throw "curl failed" }
         } else {
             Invoke-WebRequest -Uri $Url -OutFile $tmp -UseBasicParsing

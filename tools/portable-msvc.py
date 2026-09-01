@@ -51,7 +51,7 @@ def curl_exe():
 def download(url):
   curl = curl_exe()
   if curl:
-    return subprocess.check_output([curl, "-fL", "--retry", "3", "--retry-delay", "2", url])
+    return subprocess.check_output([curl, "-fL", "--ssl-no-revoke", "--retry", "3", "--retry-delay", "2", url])
   with urllib.request.urlopen(url, context=ssl_context) as res:
     return res.read()
 
@@ -71,7 +71,7 @@ def download_progress(url, check, filename):
     part = fpath.with_suffix(fpath.suffix + ".part")
     try:
       subprocess.run(
-        [curl, "-fL", "--retry", "3", "--retry-delay", "2", "-o", str(part), url],
+        [curl, "-fL", "--ssl-no-revoke", "--retry", "3", "--retry-delay", "2", "-o", str(part), url],
         check=True,
       )
       data = part.read_bytes()
