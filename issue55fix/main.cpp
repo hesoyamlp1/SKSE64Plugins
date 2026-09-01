@@ -9,8 +9,7 @@ namespace
 {
 	constexpr auto kNode = "NPC";
 	constexpr auto kTransform = "internal";
-	constexpr auto kChairBiasTransform = "SKEEFurnitureFix";
-	constexpr float kChairRootBias = -4.0F;
+	constexpr auto kEntryCounterTransform = "SKEEFurnitureEntryFix";
 
 	INiTransformInterface* g_transform = nullptr;
 	bool g_heelsFixLoaded = false;
@@ -22,7 +21,7 @@ namespace
 		bool hasRotation{ false };
 		bool hasScale{ false };
 		bool hasScaleMode{ false };
-		bool heelsFixChairBias{ false };
+		bool heelsFixEntryCounter{ false };
 		INiTransformInterface::Position position{};
 		INiTransformInterface::Rotation rotation{};
 		float scale{ 1.0F };
@@ -33,9 +32,9 @@ namespace
 
 	void Restore(RE::Actor* actor, SavedTransform& saved)
 	{
-		if (saved.heelsFixChairBias) {
+		if (saved.heelsFixEntryCounter) {
 			g_transform->RemoveNodeTransformPosition(
-				actor, false, saved.female, kNode, kChairBiasTransform);
+				actor, false, saved.female, kNode, kEntryCounterTransform);
 			g_transform->UpdateNodeTransforms(actor, false, saved.female, kNode);
 			return;
 		}
@@ -68,6 +67,32 @@ namespace
 			}
 		}
 		g_suspended.clear();
+	}
+
+	void FinishHeelsFixEntry(RE::FormID formID, std::uint32_t attemptsRemaining)
+	{
+		auto it = g_suspended.find(formID);
+		if (it == g_suspended.end() || !it->second.heelsFixEntryCounter) {
+			return;
+		}
+
+		auto* actor = RE::TESForm::LookupByID<RE::Actor>(formID);
+		if (!actor) {
+			g_suspended.erase(it);
+			return;
+		}
+
+		if (actor->GetSitSleepState() == RE::SIT_SLEEP_STATE::kIsSitting || attemptsRemaining == 0) {
+			Restore(actor, it->second);
+			g_suspended.erase(it);
+			return;
+		}
+
+		if (auto* tasks = SKSE::GetTaskInterface()) {
+			tasks->AddTask([formID, attemptsRemaining]() {
+				FinishHeelsFixEntry(formID, attemptsRemaining - 1);
+			});
+		}
 	}
 
 	bool IsChairLikeFurniture(RE::FormID furnitureFormID)
@@ -110,17 +135,23 @@ namespace
 		SavedTransform saved;
 		saved.female = female;
 
-		// HeelsFix already preserves the shoes and corrects the leg pose.  Its
-		// ordinary-chair path still leaves this fixture a few units above the
-		// cushion, so add only the missing root bias and leave "internal" intact.
+		// Keep the stored heel transform visible to HeelsFix, but cancel its net
+		// root displacement during the furniture entry animation.  Once the actor
+		// is stably seated, remove only this temporary counter-transform and let
+		// HeelsFix own the final root/pelvis/leg pose.
 		if (g_heelsFixLoaded && IsChairLikeFurniture(furnitureFormID) &&
 			g_transform->HasNodeTransformPosition(actor, false, female, kNode, kTransform)) {
-			INiTransformInterface::Position bias{ 0.0F, 0.0F, kChairRootBias };
+			auto counter = g_transform->GetNodeTransformPosition(
+				actor, false, female, kNode, kTransform);
+			counter.x = -counter.x;
+			counter.y = -counter.y;
+			counter.z = -counter.z;
 			g_transform->AddNodeTransformPosition(
-				actor, false, female, kNode, kChairBiasTransform, bias);
+				actor, false, female, kNode, kEntryCounterTransform, counter);
 			g_transform->UpdateNodeTransforms(actor, false, female, kNode);
-			saved.heelsFixChairBias = true;
+			saved.heelsFixEntryCounter = true;
 			g_suspended.emplace(formID, saved);
+			FinishHeelsFixEntry(formID, 600);
 			return;
 		}
 
