@@ -1,0 +1,14 @@
+issue55fix/main.cpp
+  h_4b190f792175d0 12,24,35,37,72-97,138-141,144-148,150,152,154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "26255615059535ffc365c460d13638d60d4d6adb",
+  "prompts": {},
+  "humans": {
+    "h_4b190f792175d0": {
+      "author": "LinSuki <admin@toddout.work>"
+    }
+  }
+}
