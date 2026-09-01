@@ -1,0 +1,16 @@
+build.ps1
+  h_4b190f792175d0 148
+tools/portable-msvc.py
+  h_4b190f792175d0 54,74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "07ff2d4576ea38458f1207696d53e09dc5be0ba6",
+  "prompts": {},
+  "humans": {
+    "h_4b190f792175d0": {
+      "author": "LinSuki <admin@toddout.work>"
+    }
+  }
+}
