@@ -1,0 +1,14 @@
+tools/portable-msvc.py
+  h_4b190f792175d0 48-50,52-54,69-87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "6417e64ae16c41dfb1395c77afa4235509b37d7d",
+  "prompts": {},
+  "humans": {
+    "h_4b190f792175d0": {
+      "author": "LinSuki <admin@toddout.work>"
+    }
+  }
+}
