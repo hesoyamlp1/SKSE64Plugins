@@ -1,0 +1,19 @@
+CommonLibSSE-NG
+  s_e93bf8f6ec455b::t_91b151c43a891e 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "99d6e699d93569dd0b44299f70e96c0568970c84",
+  "prompts": {},
+  "sessions": {
+    "s_e93bf8f6ec455b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a050ae-698a-7563-b0ea-22264fb45e6d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "LinSuki <admin@toddout.work>"
+    }
+  }
+}
