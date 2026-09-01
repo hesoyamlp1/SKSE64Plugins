@@ -9,8 +9,11 @@ namespace
 {
 	constexpr auto kNode = "NPC";
 	constexpr auto kTransform = "internal";
+	constexpr auto kChairBiasTransform = "SKEEFurnitureFix";
+	constexpr float kChairRootBias = -4.0F;
 
 	INiTransformInterface* g_transform = nullptr;
+	bool g_heelsFixLoaded = false;
 
 	struct SavedTransform
 	{
@@ -19,6 +22,7 @@ namespace
 		bool hasRotation{ false };
 		bool hasScale{ false };
 		bool hasScaleMode{ false };
+		bool heelsFixChairBias{ false };
 		INiTransformInterface::Position position{};
 		INiTransformInterface::Rotation rotation{};
 		float scale{ 1.0F };
@@ -29,6 +33,13 @@ namespace
 
 	void Restore(RE::Actor* actor, SavedTransform& saved)
 	{
+		if (saved.heelsFixChairBias) {
+			g_transform->RemoveNodeTransformPosition(
+				actor, false, saved.female, kNode, kChairBiasTransform);
+			g_transform->UpdateNodeTransforms(actor, false, saved.female, kNode);
+			return;
+		}
+
 		if (saved.hasPosition) {
 			g_transform->AddNodeTransformPosition(actor, false, saved.female, kNode, kTransform, saved.position);
 		}
@@ -59,7 +70,18 @@ namespace
 		g_suspended.clear();
 	}
 
-	void SetFurnitureState(RE::FormID formID, bool entering)
+	bool IsChairLikeFurniture(RE::FormID furnitureFormID)
+	{
+		auto* reference = RE::TESForm::LookupByID<RE::TESObjectREFR>(furnitureFormID);
+		auto* furniture = reference && reference->GetBaseObject() ?
+			reference->GetBaseObject()->As<RE::TESFurniture>() : nullptr;
+		return furniture &&
+			furniture->workBenchData.benchType == RE::TESFurniture::WorkBenchData::BenchType::kNone &&
+			furniture->furnFlags.any(RE::TESFurniture::ActiveMarker::kCanSit) &&
+			furniture->furnFlags.none(RE::TESFurniture::ActiveMarker::kCanSleep);
+	}
+
+	void SetFurnitureState(RE::FormID formID, RE::FormID furnitureFormID, bool entering)
 	{
 		if (!g_transform) {
 			return;
@@ -87,6 +109,21 @@ namespace
 		const bool female = base && base->GetSex() == RE::SEXES::kFemale;
 		SavedTransform saved;
 		saved.female = female;
+
+		// HeelsFix already preserves the shoes and corrects the leg pose.  Its
+		// ordinary-chair path still leaves this fixture a few units above the
+		// cushion, so add only the missing root bias and leave "internal" intact.
+		if (g_heelsFixLoaded && IsChairLikeFurniture(furnitureFormID) &&
+			g_transform->HasNodeTransformPosition(actor, false, female, kNode, kTransform)) {
+			INiTransformInterface::Position bias{ 0.0F, 0.0F, kChairRootBias };
+			g_transform->AddNodeTransformPosition(
+				actor, false, female, kNode, kChairBiasTransform, bias);
+			g_transform->UpdateNodeTransforms(actor, false, female, kNode);
+			saved.heelsFixChairBias = true;
+			g_suspended.emplace(formID, saved);
+			return;
+		}
+
 		saved.hasPosition = g_transform->HasNodeTransformPosition(actor, false, female, kNode, kTransform);
 		saved.hasRotation = g_transform->HasNodeTransformRotation(actor, false, female, kNode, kTransform);
 		saved.hasScale = g_transform->HasNodeTransformScale(actor, false, female, kNode, kTransform);
@@ -127,9 +164,12 @@ namespace
 			}
 
 			const auto formID = event->actor->GetFormID();
+			const auto furnitureFormID = event->targetFurniture ? event->targetFurniture->GetFormID() : 0;
 			const bool entering = event->type == RE::TESFurnitureEvent::FurnitureEventType::kEnter;
 			if (auto* tasks = SKSE::GetTaskInterface()) {
-				tasks->AddTask([formID, entering]() { SetFurnitureState(formID, entering); });
+				tasks->AddTask([formID, furnitureFormID, entering]() {
+					SetFurnitureState(formID, furnitureFormID, entering);
+				});
 			}
 			return RE::BSEventNotifyControl::kContinue;
 		}
@@ -158,6 +198,9 @@ namespace
 	{
 		switch (message->type) {
 		case SKSE::MessagingInterface::kDataLoaded:
+			if (auto* data = RE::TESDataHandler::GetSingleton()) {
+				g_heelsFixLoaded = data->LookupForm(0x000807, "HeelsFix.esp") != nullptr;
+			}
 			if (AcquireTransformInterface()) {
 				if (auto* holder = RE::ScriptEventSourceHolder::GetSingleton()) {
 					holder->AddEventSink(&g_furnitureSink);
