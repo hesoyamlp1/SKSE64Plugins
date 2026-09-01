@@ -1,12 +1,8 @@
 #pragma once
 
-class VMClassRegistry;
-struct StaticFunctionTag;
-
-#include "skse64/GameTypes.h"
+#include "RE/I/IVirtualMachine.h"
 
 namespace papyrusCharGen
 {
-	void RegisterFuncs(VMClassRegistry* registry);
-
+	void RegisterFuncs(RE::BSScript::IVirtualMachine* a_vm);
 }

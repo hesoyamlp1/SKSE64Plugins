@@ -1,13 +1,22 @@
 #pragma once
 
-#include "skse64/GameThreads.h"
-#include "skse64/GameExtraData.h"
-#include "skse64/NiTypes.h"
+#include "RE/B/BSFixedString.h"
+#include "SafeDataHolder.h"
+#include "RE/B/BSTEvent.h"
+#include "RE/E/ExtraDataList.h"
+#include "RE/B/BSContainer.h"
+#include "RE/I/InventoryChanges.h"
+#include "RE/N/NiSmartPointer.h"
+#include "RE/T/TESForm.h"
+#include "RE/T/TESObjectARMA.h"
+#include "RE/T/TESObjectARMO.h"
+#include "RE/T/TESObjectREFR.h"
+#include "SKSE/API.h"
+#include "SKSE/Interfaces.h"
 
 #include "CDXTextureRenderer.h"
 #include "IPluginInterface.h"
 #include "StringTable.h"
-
 
 #include <vector>
 #include <map>
@@ -15,47 +24,47 @@
 #include <memory>
 #include <functional>
 #include <mutex>
+#include <cstdint>
+#include <RE/A/Actor.h>
+#include <RE/N/NiTexture.h>
 
-struct SKSESerializationInterface;
-class Actor;
 class ItemAttributeData;
 class NIOVTaskUpdateItemDye;
 struct LayerTarget;
-class TESObjectARMO;
-class TESObjectARMA;
-class NiTexture;
-typedef NiPointer<NiTexture> NiTexturePtr;
 
-typedef std::function<void(TESObjectARMO *, TESObjectARMA *, const char*, NiTexturePtr, LayerTarget&)> LayerFunctor;
+using NiTexturePtr = RE::NiPointer<RE::NiTexture>;
 
+using LayerFunctor = std::function<void(RE::TESObjectARMO*, RE::TESObjectARMA*, const char*, RE::NiTexturePtr, LayerTarget&)>;
 
 struct ModifiedItem
 {
 	ModifiedItem()
 	{
-		pForm = NULL;
-		pExtraData = NULL;
+		pForm = nullptr;
+		pExtraData = nullptr;
 		isWorn = false;
 	}
-	TESForm			* pForm;
-	BaseExtraList	* pExtraData;
-	bool			isWorn;
+	RE::TESForm*			pForm;
+	RE::ExtraDataList*		pExtraData;
+	bool					isWorn;
 
 	operator bool() const
 	{
 		return (pForm && pExtraData);
 	}
 
-	std::shared_ptr<ItemAttributeData> GetAttributeData(TESObjectREFR * reference, bool makeUnique = true, bool allowNewEntry = true, bool allowSelf = false, UInt32 * idOut = NULL);
+	std::shared_ptr<ItemAttributeData> GetAttributeData(RE::TESObjectREFR* reference, bool makeUnique = true, bool allowNewEntry = true, bool allowSelf = false, std::uint32_t* idOut = nullptr);
 };
 
-
-
-class ModifiedItemFinder
+class ModifiedItemFinder : public RE::InventoryChanges::IItemChangeVisitor
 {
 public:
-	ModifiedItemFinder(IItemDataInterface::Identifier & identifier) : m_identifier(identifier) { }
-	bool Accept(InventoryEntryData* pEntryData);
+	ModifiedItemFinder(IItemDataInterface::Identifier& identifier) : m_identifier(identifier) { }
+	virtual ~ModifiedItemFinder() = default;
+
+	virtual RE::BSContainer::ForEachResult Visit(RE::InventoryEntryData* a_entryData);
+	
+
 	ModifiedItem& Found() {
 		return m_found;
 	};
@@ -67,13 +76,13 @@ private:
 class ItemAttributeData
 {
 public:
-	void Save(SKSESerializationInterface * intfc, UInt32 kVersion);
-	bool Load(SKSESerializationInterface * intfc, UInt32 kVersion, const StringIdMap & stringTable);
+	void Save(SKSE::SerializationInterface* intfc, std::uint32_t kVersion);
+	bool Load(SKSE::SerializationInterface* intfc, std::uint32_t kVersion, const StringIdMap& stringTable);
 
-	using TextureMap = std::map<skee_i32, StringTableItem>;
-	using ColorMap = std::map<skee_i32, UInt32>;
-	using BlendMap = std::map<skee_i32, StringTableItem>;
-	using TypeMap = std::map<skee_i32, UInt8>;
+	using TextureMap = std::map<std::int32_t, StringTableItem>;
+	using ColorMap = std::map<std::int32_t, std::uint32_t>;
+	using BlendMap = std::map<std::int32_t, StringTableItem>;
+	using TypeMap = std::map<std::int32_t, std::uint8_t>;
 
 	class TintData
 	{
@@ -94,101 +103,100 @@ public:
 		BlendMap m_blendMap;
 		TypeMap m_typeMap;
 
-		void Save(SKSESerializationInterface * intfc, UInt32 kVersion);
-		bool Load(SKSESerializationInterface * intfc, UInt32 kVersion, const StringIdMap & stringTable);
+		void Save(SKSE::SerializationInterface* intfc, std::uint32_t kVersion);
+		bool Load(SKSE::SerializationInterface* intfc, std::uint32_t kVersion, const StringIdMap& stringTable);
 	};
 
-	void SetLayerColor(SInt32 textureIndex, SInt32 layerIndex, UInt32 color);
-	void SetLayerType(SInt32 textureIndex, SInt32 layerIndex, UInt32 type);
-	void SetLayerBlendMode(SInt32 textureIndex, SInt32 layerIndex, SKEEFixedString blendMode);
-	void SetLayerTexture(SInt32 textureIndex, SInt32 layerIndex, SKEEFixedString texture);
+	void SetLayerColor(std::int32_t textureIndex, std::int32_t layerIndex, std::uint32_t color);
+	void SetLayerType(std::int32_t textureIndex, std::int32_t layerIndex, std::uint32_t type);
+	void SetLayerBlendMode(std::int32_t textureIndex, std::int32_t layerIndex, SKEEFixedString blendMode);
+	void SetLayerTexture(std::int32_t textureIndex, std::int32_t layerIndex, SKEEFixedString texture);
 
-	UInt32 GetLayerColor(SInt32 textureIndex, SInt32 layerIndex);
-	UInt32 GetLayerType(SInt32 textureIndex, SInt32 layerIndex);
-	SKEEFixedString GetLayerBlendMode(SInt32 textureIndex, SInt32 layerIndex);
-	SKEEFixedString GetLayerTexture(SInt32 textureIndex, SInt32 layerIndex); 
+	std::uint32_t GetLayerColor(std::int32_t textureIndex, std::int32_t layerIndex);
+	std::uint32_t GetLayerType(std::int32_t textureIndex, std::int32_t layerIndex);
+	SKEEFixedString GetLayerBlendMode(std::int32_t textureIndex, std::int32_t layerIndex);
+	SKEEFixedString GetLayerTexture(std::int32_t textureIndex, std::int32_t layerIndex); 
 
-	void ClearLayerColor(SInt32 textureIndex, SInt32 layerIndex);
-	void ClearLayerType(SInt32 textureIndex, SInt32 layerIndex);
-	void ClearLayerBlendMode(SInt32 textureIndex, SInt32 layerIndex);
-	void ClearLayerTexture(SInt32 textureIndex, SInt32 layerIndex);
-	void ClearLayer(SInt32 textureIndex);
+	void ClearLayerColor(std::int32_t textureIndex, std::int32_t layerIndex);
+	void ClearLayerType(std::int32_t textureIndex, std::int32_t layerIndex);
+	void ClearLayerBlendMode(std::int32_t textureIndex, std::int32_t layerIndex);
+	void ClearLayerTexture(std::int32_t textureIndex, std::int32_t layerIndex);
+	void ClearLayer(std::int32_t textureIndex);
 
 	void SetData(SKEEFixedString key, SKEEFixedString value);
 	SKEEFixedString GetData(SKEEFixedString key);
 	bool HasData(SKEEFixedString key);
 	void ClearData(SKEEFixedString key);
 
-	void ForEachLayer(std::function<bool(SInt32, TintData&)> functor);
-	bool GetLayer(SInt32 layerIndex, std::function<void(TintData&)> functor);
+	void ForEachLayer(std::function<bool(std::int32_t, TintData&)> functor);
+	bool GetLayer(std::int32_t layerIndex, std::function<void(TintData&)> functor);
 
 private:
 	std::mutex m_lock;
-	std::unordered_map<SInt32, TintData> m_tintData;
+	std::unordered_map<std::int32_t, TintData> m_tintData;
 	std::unordered_map<StringTableItem, StringTableItem> m_data;
 };
 
-
 struct ItemAttribute
 {
-	UInt32 rank;
-	UInt16 uid;
-	UInt32 ownerForm;
-	UInt32 formId;
+	std::uint32_t rank;
+	std::uint16_t uid;
+	std::uint32_t ownerForm;
+	std::uint32_t formId;
 	std::shared_ptr<ItemAttributeData> data;
 };
 
 class ItemDataInterface
 	: public IItemDataInterface
 	, public SafeDataHolder<std::vector<ItemAttribute>>
-	, public BSTEventSink <TESUniqueIDChangeEvent>
+	, public RE::BSTEventSink<RE::TESUniqueIDChangeEvent>
 	, public IAddonAttachmentInterface
 {
 public:
-	typedef std::vector<ItemAttribute> Data;
+	using Data = std::vector<ItemAttribute>;
 
-	virtual skee_u32 GetVersion();
+	virtual std::uint32_t GetVersion();
 
-	virtual	EventResult ReceiveEvent(TESUniqueIDChangeEvent * evn, EventDispatcher<TESUniqueIDChangeEvent> * dispatcher) override;
+	virtual RE::BSEventNotifyControl ProcessEvent(const RE::TESUniqueIDChangeEvent* evn, RE::BSTEventSource<RE::TESUniqueIDChangeEvent>* dispatcher) override;
 
-	void Save(SKSESerializationInterface * intfc, UInt32 kVersion);
-	bool Load(SKSESerializationInterface * intfc, UInt32 kVersion, const StringIdMap & stringTable);
+	void Save(SKSE::SerializationInterface* intfc, std::uint32_t kVersion);
+	bool Load(SKSE::SerializationInterface* intfc, std::uint32_t kVersion, const StringIdMap& stringTable);
 	virtual void Revert();
 
-	virtual skee_u32 GetItemUniqueID(TESObjectREFR * reference, IItemDataInterface::Identifier & identifier, bool makeUnique) override;
-	virtual void SetItemTextureLayerColor(skee_u32 uniqueID, skee_i32 textureIndex, skee_i32 layerIndex, skee_u32 color) override;
-	virtual void SetItemTextureLayerType(skee_u32 uniqueID, skee_i32 textureIndex, skee_i32 layerIndex, skee_u32 type) override;
-	virtual void SetItemTextureLayerBlendMode(skee_u32 uniqueID, skee_i32 textureIndex, skee_i32 layerIndex, const char* blendMode) override { Impl_SetItemTextureLayerBlendMode(uniqueID, textureIndex, layerIndex, blendMode); };
-	virtual void SetItemTextureLayerTexture(skee_u32 uniqueID, skee_i32 textureIndex, skee_i32 layerIndex, const char* texture) override { Impl_SetItemTextureLayerTexture(uniqueID, textureIndex, layerIndex, texture); };
+	virtual std::uint32_t GetItemUniqueID(RE::TESObjectREFR* reference, IItemDataInterface::Identifier& identifier, bool makeUnique) override;
+	virtual void SetItemTextureLayerColor(std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex, std::uint32_t color) override;
+	virtual void SetItemTextureLayerType(std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex, std::uint32_t type) override;
+	virtual void SetItemTextureLayerBlendMode(std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex, const char* blendMode) override { Impl_SetItemTextureLayerBlendMode(uniqueID, textureIndex, layerIndex, blendMode); };
+	virtual void SetItemTextureLayerTexture(std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex, const char* texture) override { Impl_SetItemTextureLayerTexture(uniqueID, textureIndex, layerIndex, texture); };
 
-	virtual skee_u32 GetItemTextureLayerColor(skee_u32 uniqueID, skee_i32 textureIndex, skee_i32 layerIndex) override;
-	virtual skee_u32 GetItemTextureLayerType(skee_u32 uniqueID, skee_i32 textureIndex, skee_i32 layerIndex) override;
-	virtual bool GetItemTextureLayerBlendMode(skee_u32 uniqueID, skee_i32 textureIndex, skee_i32 layerIndex, IItemDataInterface::StringVisitor& visitor) override;
-	virtual bool GetItemTextureLayerTexture(skee_u32 uniqueID, skee_i32 textureIndex, skee_i32 layerIndex, IItemDataInterface::StringVisitor& visitor) override;
+	virtual std::uint32_t GetItemTextureLayerColor(std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex) override;
+	virtual std::uint32_t GetItemTextureLayerType(std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex) override;
+	virtual bool GetItemTextureLayerBlendMode(std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex, IItemDataInterface::StringVisitor& visitor) override;
+	virtual bool GetItemTextureLayerTexture(std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex, IItemDataInterface::StringVisitor& visitor) override;
 
-	virtual void ClearItemTextureLayerColor(skee_u32 uniqueID, skee_i32 textureIndex, skee_i32 layerIndex) override;
-	virtual void ClearItemTextureLayerType(skee_u32 uniqueID, skee_i32 textureIndex, skee_i32 layerIndex) override;
-	virtual void ClearItemTextureLayerBlendMode(skee_u32 uniqueID, skee_i32 textureIndex, skee_i32 layerIndex) override;
-	virtual void ClearItemTextureLayerTexture(skee_u32 uniqueID, skee_i32 textureIndex, skee_i32 layerIndex) override;
-	virtual void ClearItemTextureLayer(skee_u32 uniqueID, skee_i32 textureIndex) override;
+	virtual void ClearItemTextureLayerColor(std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex) override;
+	virtual void ClearItemTextureLayerType(std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex) override;
+	virtual void ClearItemTextureLayerBlendMode(std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex) override;
+	virtual void ClearItemTextureLayerTexture(std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex) override;
+	virtual void ClearItemTextureLayer(std::uint32_t uniqueID, std::int32_t textureIndex) override;
 
-	virtual TESForm * GetFormFromUniqueID(skee_u32 uniqueID) override;
-	virtual TESForm * GetOwnerOfUniqueID(skee_u32 uniqueID) override;
+	virtual RE::TESForm* GetFormFromUniqueID(std::uint32_t uniqueID) override;
+	virtual RE::TESForm* GetOwnerOfUniqueID(std::uint32_t uniqueID) override;
 
-	virtual bool HasItemData(skee_u32 uniqueID, const char* key) override;
-	virtual bool GetItemData(skee_u32 uniqueID, const char* key, IItemDataInterface::StringVisitor& visitor) override;
-	virtual void SetItemData(skee_u32 uniqueID, const char* key, const char* value) override { Impl_SetItemData(uniqueID, key, value); }
-	virtual void ClearItemData(skee_u32 uniqueID, const char* key) override { Impl_ClearItemData(uniqueID, key); }
+	virtual bool HasItemData(std::uint32_t uniqueID, const char* key) override;
+	virtual bool GetItemData(std::uint32_t uniqueID, const char* key, IItemDataInterface::StringVisitor& visitor) override;
+	virtual void SetItemData(std::uint32_t uniqueID, const char* key, const char* value) override { Impl_SetItemData(uniqueID, key, value); }
+	virtual void ClearItemData(std::uint32_t uniqueID, const char* key) override { Impl_ClearItemData(uniqueID, key); }
 
-	std::shared_ptr<ItemAttributeData> GetExistingData(TESObjectREFR * reference, IItemDataInterface::Identifier & identifier);
-	std::shared_ptr<ItemAttributeData> CreateData(UInt32 rankId, UInt16 uid, UInt32 ownerId, UInt32 formId);
-	std::shared_ptr<ItemAttributeData> GetData(UInt32 rankId);
-	bool UpdateUIDByRank(UInt32 rankId, UInt16 uid, UInt32 formId);
-	bool UpdateUID(UInt16 oldId, UInt32 oldFormId, UInt16 newId, UInt32 newFormId);
-	bool EraseByRank(UInt32 rankId);
-	bool EraseByUID(UInt32 uid, UInt32 formId);
+	std::shared_ptr<ItemAttributeData> GetExistingData(RE::TESObjectREFR* reference, IItemDataInterface::Identifier& identifier);
+	std::shared_ptr<ItemAttributeData> CreateData(std::uint32_t rankId, std::uint16_t uid, std::uint32_t ownerId, std::uint32_t formId);
+	std::shared_ptr<ItemAttributeData> GetData(std::uint32_t rankId);
+	bool UpdateUIDByRank(std::uint32_t rankId, std::uint16_t uid, std::uint32_t formId);
+	bool UpdateUID(std::uint16_t oldId, std::uint32_t oldFormId, std::uint16_t newId, std::uint32_t newFormId);
+	bool EraseByRank(std::uint32_t rankId);
+	bool EraseByUID(std::uint32_t uid, std::uint32_t formId);
 
-	void UpdateInventoryItemDye(UInt32 rankId, TESObjectARMO * armor, NiAVObject * rootNode);
+	void UpdateInventoryItemDye(std::uint32_t rankId, RE::TESObjectARMO* armor, RE::NiAVObject* rootNode);
 
 	void ForEachItemAttribute(std::function<void(const ItemAttribute&)> functor);
 
@@ -198,53 +206,53 @@ public:
 	};
 
 	void UseRankID() { m_nextRank++; }
-	UInt32 GetNextRankID() const { return m_nextRank; }
+	std::uint32_t GetNextRankID() const { return m_nextRank; }
 
-	void Impl_SetItemTextureLayerBlendMode(UInt32 uniqueID, SInt32 textureIndex, SInt32 layerIndex, SKEEFixedString blendMode);
-	void Impl_SetItemTextureLayerTexture(UInt32 uniqueID, SInt32 textureIndex, SInt32 layerIndex, SKEEFixedString texture);
-	SKEEFixedString Impl_GetItemTextureLayerBlendMode(UInt32 uniqueID, SInt32 textureIndex, SInt32 layerIndex);
-	SKEEFixedString Impl_GetItemTextureLayerTexture(UInt32 uniqueID, SInt32 textureIndex, SInt32 layerIndex);
-	SKEEFixedString Impl_GetItemData(UInt32 uniqueID, SKEEFixedString key);
-	void Impl_SetItemData(UInt32 uniqueID, SKEEFixedString key, SKEEFixedString value);
-	void Impl_ClearItemData(UInt32 uniqueID, SKEEFixedString key);
+	void Impl_SetItemTextureLayerBlendMode(std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex, SKEEFixedString blendMode);
+	void Impl_SetItemTextureLayerTexture(std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex, SKEEFixedString texture);
+	SKEEFixedString Impl_GetItemTextureLayerBlendMode(std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex);
+	SKEEFixedString Impl_GetItemTextureLayerTexture(std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex);
+	SKEEFixedString Impl_GetItemData(std::uint32_t uniqueID, SKEEFixedString key);
+	void Impl_SetItemData(std::uint32_t uniqueID, SKEEFixedString key, SKEEFixedString value);
+	void Impl_ClearItemData(std::uint32_t uniqueID, SKEEFixedString key);
 
 private:
-	UInt32	m_nextRank = 1;
+	std::uint32_t	m_nextRank = 1;
 	std::vector<NIOVTaskUpdateItemDye*> m_loadQueue;
 
 	// Inherited via IAddonAttachmentInterface
-	virtual void OnAttach(TESObjectREFR * refr, TESObjectARMO * armor, TESObjectARMA * addon, NiAVObject * object, bool isFirstPerson, NiNode * skeleton, NiNode * root) override;
+	virtual void OnAttach(RE::TESObjectREFR* refr, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, RE::NiAVObject* object, bool isFirstPerson, RE::NiNode* skeleton, RE::NiNode* root) override;
 };
 
-class DyeMap : public SafeDataHolder<std::unordered_map<UInt32, UInt32>>
+class DyeMap : public SafeDataHolder<std::unordered_map<std::uint32_t, std::uint32_t>>
 {
 public:
-	typedef std::unordered_map<UInt32, UInt32> Data;
+	using Data = std::unordered_map<std::uint32_t, std::uint32_t>;
 
-	UInt32 GetDyeColor(TESForm * form);
-	bool IsValidDye(TESForm * form);
-	void RegisterDyeForm(TESForm * form, UInt32 color);
-	void UnregisterDyeForm(TESForm * form);
+	std::uint32_t GetDyeColor(RE::TESForm* form);
+	bool IsValidDye(RE::TESForm* form);
+	void RegisterDyeForm(RE::TESForm* form, std::uint32_t color);
+	void UnregisterDyeForm(RE::TESForm* form);
 	void Revert();
 };
 
-class NIOVTaskUpdateItemDye : public TaskDelegate
+class NIOVTaskUpdateItemDye : public SKSE::detail::TaskDelegate
 {
 public:
-	NIOVTaskUpdateItemDye(Actor * actor, IItemDataInterface::Identifier & identifier, UInt32 flags, bool forced, LayerFunctor layerFunctor = LayerFunctor());
-	virtual void Run();
-	virtual void Dispose() {
+	NIOVTaskUpdateItemDye(RE::Actor* actor, IItemDataInterface::Identifier& identifier, std::uint32_t flags, bool forced, LayerFunctor layerFunctor = LayerFunctor());
+	virtual void Run() override;
+	virtual void Dispose() override {
 		delete this;
 	};
 
-	UInt32 GetActor() const { return m_formId; }
-	UInt32 GetSlotMask() const { return m_identifier.slotMask; }
-	UInt32 GetRankID() const { return m_identifier.rankId; }
+	std::uint32_t GetActor() const { return m_formId; }
+	std::uint32_t GetSlotMask() const { return m_identifier.slotMask; }
+	std::uint32_t GetRankID() const { return m_identifier.rankId; }
 
 private:
-	UInt32 m_formId;
+	std::uint32_t m_formId;
 	IItemDataInterface::Identifier m_identifier;
-	UInt32 m_flags;
+	std::uint32_t m_flags;
 	bool m_forced;
 	LayerFunctor m_layerFunctor;
 

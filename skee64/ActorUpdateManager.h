@@ -3,30 +3,35 @@
 #include <vector>
 #include <unordered_set>
 #include <mutex>
+#include <cstdint>
 
-#include "skse64/GameEvents.h"
+#include <RE/B/BSTEvent.h>
+#include <RE/N/NiAVObject.h>
+#include <RE/N/NiNode.h>
+#include <RE/T/TESCellFullyLoadedEvent.h>
+#include <RE/T/TESInitScriptEvent.h>
+#include <RE/T/TESLoadGameEvent.h>
+#include <RE/T/TESObjectARMA.h>
+#include <RE/T/TESObjectARMO.h>
+#include <RE/T/TESObjectLoadedEvent.h>
+#include <RE/T/TESObjectREFR.h>
+
 #include "IPluginInterface.h"
 #include "Utilities.h"
 
-class TESObjectREFR;
-class TESObjectARMO;
-class TESObjectARMA;
-class NiAVObject;
-class NiNode;
 class NIOVTaskUpdateItemDye;
-
 class ActorUpdateManager
 	: public IActorUpdateManager
-	, public BSTEventSink<TESObjectLoadedEvent>
-	, public BSTEventSink<TESInitScriptEvent>
-	, public BSTEventSink<TESLoadGameEvent>
-	, public BSTEventSink<TESCellFullyLoadedEvent>
+	, public RE::BSTEventSink<RE::TESObjectLoadedEvent>
+	, public RE::BSTEventSink<RE::TESInitScriptEvent>
+	, public RE::BSTEventSink<RE::TESLoadGameEvent>
+	, public RE::BSTEventSink<RE::TESCellFullyLoadedEvent>
 {
 public:
 	virtual void AddInterface(IAddonAttachmentInterface* observer) override;
 	virtual void RemoveInterface(IAddonAttachmentInterface* observer) override;
 
-	virtual void OnAttach(TESObjectREFR * refr, TESObjectARMO * armor, TESObjectARMA * addon, NiAVObject * object, bool isFirstPerson, NiNode * skeleton, NiNode * root);
+	virtual void OnAttach(RE::TESObjectREFR * refr, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::NiAVObject * object, bool isFirstPerson, RE::NiNode * skeleton, RE::NiNode * root);
 
 	virtual void AddBodyUpdate(skee_u32 formId) override;
 	virtual void AddTransformUpdate(skee_u32 formId) override;
@@ -50,10 +55,10 @@ public:
 	void PrintDiagnostics();
 
 protected:
-	virtual	EventResult ReceiveEvent(TESObjectLoadedEvent * evn, EventDispatcher<TESObjectLoadedEvent> * dispatcher) override;
-	virtual	EventResult ReceiveEvent(TESCellFullyLoadedEvent* evn, EventDispatcher<TESCellFullyLoadedEvent>* dispatcher) override;
-	virtual	EventResult ReceiveEvent(TESInitScriptEvent * evn, EventDispatcher<TESInitScriptEvent> * dispatcher) override;
-	virtual	EventResult ReceiveEvent(TESLoadGameEvent* evn, EventDispatcher<TESLoadGameEvent>* dispatcher) override;
+	virtual RE::BSEventNotifyControl ProcessEvent(const RE::TESObjectLoadedEvent* a_event, RE::BSTEventSource<RE::TESObjectLoadedEvent>* a_source) override;
+	virtual RE::BSEventNotifyControl ProcessEvent(const RE::TESCellFullyLoadedEvent* a_event, RE::BSTEventSource<RE::TESCellFullyLoadedEvent>* a_source) override;
+	virtual RE::BSEventNotifyControl ProcessEvent(const RE::TESInitScriptEvent* a_event, RE::BSTEventSource<RE::TESInitScriptEvent>* a_source) override;
+	virtual RE::BSEventNotifyControl ProcessEvent(const RE::TESLoadGameEvent* a_event, RE::BSTEventSource<RE::TESLoadGameEvent>* a_source) override;
 
 	virtual skee_u32 GetVersion() override { return kCurrentPluginVersion; };
 
@@ -61,14 +66,14 @@ protected:
 	bool m_isNewGame = false;
 	
 	std::recursive_mutex m_lock;
-	std::unordered_set<UInt32> m_bodyUpdates;
-	std::unordered_set<UInt32> m_transformUpdates;
-	std::unordered_set<UInt32> m_overlayUpdates;
+	std::unordered_set<std::uint32_t> m_bodyUpdates;
+	std::unordered_set<std::uint32_t> m_transformUpdates;
+	std::unordered_set<std::uint32_t> m_overlayUpdates;
 
-	std::unordered_set<UInt32> m_overrideNodeUpdates;
-	std::unordered_set<UInt32> m_overrideWeapUpdates;
-	std::unordered_set<UInt32> m_overrideAddonUpdates;
-	std::unordered_set<UInt32> m_overrideSkinUpdates;
+	std::unordered_set<std::uint32_t> m_overrideNodeUpdates;
+	std::unordered_set<std::uint32_t> m_overrideWeapUpdates;
+	std::unordered_set<std::uint32_t> m_overrideAddonUpdates;
+	std::unordered_set<std::uint32_t> m_overrideSkinUpdates;
 	
 	std::unordered_set<NIOVTaskUpdateItemDye*> m_dyeUpdates;
 
@@ -76,4 +81,3 @@ private:
 	std::map<std::string, FlushCallback> m_flushObservers;
 	std::vector<IAddonAttachmentInterface*> m_observers;
 };
-

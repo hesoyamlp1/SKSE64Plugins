@@ -7,13 +7,13 @@
 #include "CDXResetMask.h"
 #include "CDXUndo.h"
 
-#include "skse64/GameThreads.h"
-#include "skse64/Hooks_UI.h"
-#include "skse64/NiTypes.h"
+#include <RE/B/BSTriShape.h>
+#include <RE/N/NiAVObject.h>
+#include <RE/N/NiSmartPointer.h>
+#include <cstdint>
 
 class CDXNifMesh;
 
-class BSTriShape;
 class UIDelegate;
 
 class CDXNifMaskAddStroke : public CDXMaskAddStroke
@@ -21,7 +21,7 @@ class CDXNifMaskAddStroke : public CDXMaskAddStroke
 public:
 	CDXNifMaskAddStroke(CDXBrush * brush, CDXEditableMesh * mesh) : CDXMaskAddStroke(brush, mesh) { }
 
-	virtual void Apply(SInt32 i);
+	virtual void Apply(std::int32_t i);
 };
 
 class CDXNifMaskSubtractStroke : public CDXMaskSubtractStroke
@@ -29,7 +29,7 @@ class CDXNifMaskSubtractStroke : public CDXMaskSubtractStroke
 public:
 	CDXNifMaskSubtractStroke(CDXBrush * brush, CDXEditableMesh * mesh) : CDXMaskSubtractStroke(brush, mesh) { }
 
-	virtual void Apply(SInt32 i);
+	virtual void Apply(std::int32_t i);
 };
 
 class CDXNifInflateStroke : public CDXInflateStroke
@@ -37,7 +37,7 @@ class CDXNifInflateStroke : public CDXInflateStroke
 public:
 	CDXNifInflateStroke(CDXBrush * brush, CDXEditableMesh * mesh) : CDXInflateStroke(brush, mesh) { }
 
-	virtual void Apply(SInt32 i);
+	virtual void Apply(std::int32_t i);
 	virtual void Undo();
 	virtual void Redo();
 };
@@ -47,7 +47,7 @@ class CDXNifDeflateStroke : public CDXDeflateStroke
 public:
 	CDXNifDeflateStroke(CDXBrush * brush, CDXEditableMesh * mesh) : CDXDeflateStroke(brush, mesh) { }
 
-	virtual void Apply(SInt32 i);
+	virtual void Apply(std::int32_t i);
 	virtual void Undo();
 	virtual void Redo();
 };
@@ -57,18 +57,17 @@ class CDXNifSmoothStroke : public CDXSmoothStroke
 public:
 	CDXNifSmoothStroke(CDXBrush * brush, CDXEditableMesh * mesh) : CDXSmoothStroke(brush, mesh) { }
 
-	virtual void Apply(SInt32 i);
+	virtual void Apply(std::int32_t i);
 	virtual void Undo();
 	virtual void Redo();
 };
-
 
 class CDXNifMoveStroke : public CDXMoveStroke
 {
 public:
 	CDXNifMoveStroke(CDXBrush * brush, CDXEditableMesh * mesh) : CDXMoveStroke(brush, mesh) { }
 
-	virtual void Apply(SInt32 i);
+	virtual void Apply(std::int32_t i);
 	virtual void Undo();
 	virtual void Redo();
 };
@@ -78,7 +77,7 @@ class CDXNifResetMask : public CDXResetMask
 public:
 	CDXNifResetMask(CDXMesh * mesh) : CDXResetMask(mesh) { }
 
-	virtual void Apply(SInt32 i);
+	virtual void Apply(std::int32_t i);
 };
 
 class CDXNifResetSculpt : public CDXUndoCommand
@@ -90,9 +89,9 @@ public:
 	virtual UndoType GetUndoType();
 	virtual void Undo();
 	virtual void Redo();
-	virtual void Apply(SInt32 i);
+	virtual void Apply(std::int32_t i);
 
-	UInt32 Length() const { return m_current.size(); }
+	std::uint32_t Length() const { return m_current.size(); }
 
 private:
 	CDXNifMesh * m_mesh;
@@ -102,59 +101,59 @@ private:
 class CDXNifImportGeometry : public CDXUndoCommand
 {
 public:
-	CDXNifImportGeometry(CDXNifMesh * mesh, NiAVObject * source);
+	CDXNifImportGeometry(CDXNifMesh * mesh, RE::NiAVObject * source);
 	~CDXNifImportGeometry();
 
 	virtual UndoType GetUndoType();
 	virtual void Undo();
 	virtual void Redo();
-	virtual void Apply(SInt32 i);
+	virtual void Apply(std::int32_t i);
 
-	UInt32 Length() const { return m_current.size(); }
+	std::uint32_t Length() const { return m_current.size(); }
 
 private:
 	CDXNifMesh		* m_mesh;
 	CDXVectorMap	m_current;
 };
 
-class CRGNTaskUpdateModel : public TaskDelegate
+class CRGNTaskUpdateModel : public SKSE::detail::TaskDelegate
 {
 public:
-	CRGNTaskUpdateModel(BSTriShape * geometry);
+	CRGNTaskUpdateModel(RE::BSTriShape * geometry);
 
 	virtual void Run();
 	virtual void Dispose();
 
 private:
-	NiPointer<BSTriShape> m_geometry;
+	RE::NiPointer<RE::BSTriShape> m_geometry;
 };
 
-class CRGNUITaskAddStroke : public UIDelegate_v1
+class CRGNUITaskAddStroke : public SKSE::detail::UIDelegate_v1
 {
 public:
-	CRGNUITaskAddStroke(CDXStroke * stroke, BSTriShape * geometry, SInt32 i);
+	CRGNUITaskAddStroke(CDXStroke * stroke, RE::BSTriShape * geometry, std::int32_t i);
 
 	virtual void Run();
 	virtual void Dispose();
 
 private:
 	CDXStroke * m_stroke;
-	SInt32	m_id;
-	NiPointer<BSTriShape> m_geometry;
+	std::int32_t	m_id;
+	RE::NiPointer<RE::BSTriShape> m_geometry;
 };
 
-class CRGNUITaskStandardCommand : public UIDelegate_v1
+class CRGNUITaskStandardCommand : public SKSE::detail::UIDelegate_v1
 {
 public:
-	CRGNUITaskStandardCommand(CDXUndoCommand * cmd, BSTriShape * geometry, SInt32 i);
+	CRGNUITaskStandardCommand(CDXUndoCommand * cmd, RE::BSTriShape * geometry, std::int32_t i);
 
 	virtual void Run();
 	virtual void Dispose();
 
 private:
 	CDXUndoCommand * m_cmd;
-	SInt32	m_id;
-	NiPointer<BSTriShape> m_geometry;
+	std::int32_t	m_id;
+	RE::NiPointer<RE::BSTriShape> m_geometry;
 };
 
 #endif

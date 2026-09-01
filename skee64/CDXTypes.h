@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DirectXMath.h>
-#include <d3d11.h>
+#include "REX/W32/D3D11.h"
 #include <set>
 #include <unordered_map>
 #include <functional>

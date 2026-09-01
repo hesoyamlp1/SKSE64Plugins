@@ -1,5 +1,6 @@
 #include "CDXStroke.h"
 #include "CDXBrush.h"
+#include <cstdint>
 
 using namespace DirectX;
 
@@ -190,7 +191,7 @@ void CDXSmoothStroke::Update(CDXStroke::Info * info)
 
 	CDXVec newPos = XMVectorZero();
 
-	UInt32 totalCount = 0;
+	std::uint32_t totalCount = 0;
 	m_mesh->VisitAdjacencies(info->index, [&](CDXMeshFace & face)
 	{
 		CDXMeshIndex m1 = face.v1;

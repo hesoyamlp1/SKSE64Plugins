@@ -5,6 +5,8 @@
 
 #include <sstream>
 
+
+
 using namespace DirectX;
 
 #define USE_GEOMETRY_WIREFRAME
@@ -17,46 +19,46 @@ CDXShader::CDXShader()
 bool CDXShader::Initialize(const CDXInitParams & initParams)
 {
 	HRESULT result;
-	D3D11_INPUT_ELEMENT_DESC polygonLayout[4];
+	REX::W32::D3D11_INPUT_ELEMENT_DESC polygonLayout[4];
 	unsigned int numElements;
-	D3D11_SAMPLER_DESC samplerDesc;
-	D3D11_BUFFER_DESC bufferDesc;
+	REX::W32::D3D11_SAMPLER_DESC samplerDesc;
+	REX::W32::D3D11_BUFFER_DESC bufferDesc;
 
 	auto pDevice = initParams.device->GetDevice();
 
 	// Create the vertex input layout description.
 	// This setup needs to match the VertexType stucture in the ModelClass and in the shader.
-	polygonLayout[0].SemanticName = "POSITION";
-	polygonLayout[0].SemanticIndex = 0;
-	polygonLayout[0].Format = DXGI_FORMAT_R32G32B32_FLOAT;
-	polygonLayout[0].InputSlot = 0;
-	polygonLayout[0].AlignedByteOffset = 0;
-	polygonLayout[0].InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA;
-	polygonLayout[0].InstanceDataStepRate = 0;
+	polygonLayout[0].semanticName = "POSITION";
+	polygonLayout[0].semanticIndex = 0;
+	polygonLayout[0].format = REX::W32::DXGI_FORMAT_R32G32B32_FLOAT;
+	polygonLayout[0].inputSlot = 0;
+	polygonLayout[0].alignedByteOffset = 0;
+	polygonLayout[0].inputSlotClass = REX::W32::D3D11_INPUT_PER_VERTEX_DATA;
+	polygonLayout[0].instanceDataStepRate = 0;
 
-	polygonLayout[1].SemanticName = "TEXCOORD";
-	polygonLayout[1].SemanticIndex = 0;
-	polygonLayout[1].Format = DXGI_FORMAT_R32G32_FLOAT;
-	polygonLayout[1].InputSlot = 0;
-	polygonLayout[1].AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT;
-	polygonLayout[1].InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA;
-	polygonLayout[1].InstanceDataStepRate = 0;
+	polygonLayout[1].semanticName = "TEXCOORD";
+	polygonLayout[1].semanticIndex = 0;
+	polygonLayout[1].format = REX::W32::DXGI_FORMAT_R32G32_FLOAT;
+	polygonLayout[1].inputSlot = 0;
+	polygonLayout[1].alignedByteOffset = 0xFFFFFFFF;
+	polygonLayout[1].inputSlotClass = REX::W32::D3D11_INPUT_PER_VERTEX_DATA;
+	polygonLayout[1].instanceDataStepRate = 0;
 
-	polygonLayout[2].SemanticName = "NORMAL";
-	polygonLayout[2].SemanticIndex = 0;
-	polygonLayout[2].Format = DXGI_FORMAT_R32G32B32_FLOAT;
-	polygonLayout[2].InputSlot = 0;
-	polygonLayout[2].AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT;
-	polygonLayout[2].InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA;
-	polygonLayout[2].InstanceDataStepRate = 0;
+	polygonLayout[2].semanticName = "NORMAL";
+	polygonLayout[2].semanticIndex = 0;
+	polygonLayout[2].format = REX::W32::DXGI_FORMAT_R32G32B32_FLOAT;
+	polygonLayout[2].inputSlot = 0;
+	polygonLayout[2].alignedByteOffset = 0xFFFFFFFF;
+	polygonLayout[2].inputSlotClass = REX::W32::D3D11_INPUT_PER_VERTEX_DATA;
+	polygonLayout[2].instanceDataStepRate = 0;
 
-	polygonLayout[3].SemanticName = "COLOR";
-	polygonLayout[3].SemanticIndex = 0;
-	polygonLayout[3].Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-	polygonLayout[3].InputSlot = 0;
-	polygonLayout[3].AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT;
-	polygonLayout[3].InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA;
-	polygonLayout[3].InstanceDataStepRate = 0;
+	polygonLayout[3].semanticName = "COLOR";
+	polygonLayout[3].semanticIndex = 0;
+	polygonLayout[3].format = REX::W32::DXGI_FORMAT_R32G32B32A32_FLOAT;
+	polygonLayout[3].inputSlot = 0;
+	polygonLayout[3].alignedByteOffset = 0xFFFFFFFF;
+	polygonLayout[3].inputSlotClass = REX::W32::D3D11_INPUT_PER_VERTEX_DATA;
+	polygonLayout[3].instanceDataStepRate = 0;
 
 	// Get a count of the elements in the layout.
 	numElements = sizeof(polygonLayout) / sizeof(polygonLayout[0]);
@@ -92,163 +94,162 @@ bool CDXShader::Initialize(const CDXInitParams & initParams)
 	}
 
 	// Create a texture sampler state description.
-	samplerDesc.Filter = D3D11_FILTER_ANISOTROPIC;
-	samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
-	samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
-	samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
-	samplerDesc.MipLODBias = 0.0f;
-	samplerDesc.MaxAnisotropy = 16;
-	samplerDesc.ComparisonFunc = D3D11_COMPARISON_ALWAYS;
-	samplerDesc.BorderColor[0] = 0;
-	samplerDesc.BorderColor[1] = 0;
-	samplerDesc.BorderColor[2] = 0;
-	samplerDesc.BorderColor[3] = 0;
-	samplerDesc.MinLOD = 0;
-	samplerDesc.MaxLOD = D3D11_FLOAT32_MAX;
+	samplerDesc.filter = REX::W32::D3D11_FILTER_ANISOTROPIC;
+	samplerDesc.addressU = REX::W32::D3D11_TEXTURE_ADDRESS_WRAP;
+	samplerDesc.addressV = REX::W32::D3D11_TEXTURE_ADDRESS_WRAP;
+	samplerDesc.addressW = REX::W32::D3D11_TEXTURE_ADDRESS_WRAP;
+	samplerDesc.mipLODBias = 0.0f;
+	samplerDesc.maxAnisotropy = 16;
+	samplerDesc.comparisonFunc = REX::W32::D3D11_COMPARISON_ALWAYS;
+	samplerDesc.borderColor[0] = 0;
+	samplerDesc.borderColor[1] = 0;
+	samplerDesc.borderColor[2] = 0;
+	samplerDesc.borderColor[3] = 0;
+	samplerDesc.minLOD = 0;
+	samplerDesc.maxLOD = REX::W32::D3D11_FLOAT32_MAX;
 
 	// Create the texture sampler state.
 	result = pDevice->CreateSamplerState(&samplerDesc, m_sampleState.ReleaseAndGetAddressOf());
 	if (FAILED(result))
 	{
-		_ERROR("%s - Failed to create sampler state", __FUNCTION__);
+		SKSE::log::error("{} - Failed to create sampler state", __FUNCTION__);
 		return false;
 	}
 
 	// Setup the description of the matrix dynamic constant buffer that is in the vertex shader.
-	bufferDesc.Usage = D3D11_USAGE_DYNAMIC;
-	bufferDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-	bufferDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-	bufferDesc.MiscFlags = 0;
-	bufferDesc.StructureByteStride = 0;
-	bufferDesc.ByteWidth = sizeof(VertexBuffer);
+	bufferDesc.usage = REX::W32::D3D11_USAGE_DYNAMIC;
+	bufferDesc.bindFlags = REX::W32::D3D11_BIND_CONSTANT_BUFFER;
+	bufferDesc.cpuAccessFlags = REX::W32::D3D11_CPU_ACCESS_WRITE;
+	bufferDesc.miscFlags = 0;
+	bufferDesc.structureByteStride = 0;
+	bufferDesc.byteWidth = sizeof(VertexBuffer);
 
 	// Create the matrix constant buffer pointer so we can access the vertex shader constant buffer from within this class.
 	result = pDevice->CreateBuffer(&bufferDesc, NULL, m_matrixBuffer.ReleaseAndGetAddressOf());
 	if (FAILED(result))
 	{
-		_ERROR("%s - Failed to create matrix buffer", __FUNCTION__);
+		SKSE::log::error("{} - Failed to create matrix buffer", __FUNCTION__);
 		return false;
 	}
 
-	bufferDesc.ByteWidth = sizeof(TransformBuffer);
+	bufferDesc.byteWidth = sizeof(TransformBuffer);
 
 	// Create the matrix constant buffer pointer so we can access the vertex shader constant buffer from within this class.
 	result = pDevice->CreateBuffer(&bufferDesc, NULL, m_transformBuffer.ReleaseAndGetAddressOf());
 	if (FAILED(result))
 	{
-		_ERROR("%s - Failed to create transform buffer", __FUNCTION__);
+		SKSE::log::error("{} - Failed to create transform buffer", __FUNCTION__);
 		return false;
 	}
 
 	// Setup the description of the light dynamic constant buffer that is in the pixel shader.
-	// Note that ByteWidth always needs to be a multiple of 16 if using D3D11_BIND_CONSTANT_BUFFER or CreateBuffer will fail.
-	bufferDesc.ByteWidth = sizeof(MaterialBuffer);
+	// Note that ByteWidth always needs to be a multiple of 16 if using REX::W32::D3D11_BIND_CONSTANT_BUFFER or CreateBuffer will fail.
+	bufferDesc.byteWidth = sizeof(MaterialBuffer);
 
 	// Create the constant buffer pointer so we can access the vertex shader constant buffer from within this class.
 	result = pDevice->CreateBuffer(&bufferDesc, NULL, m_materialBuffer.ReleaseAndGetAddressOf());
 	if (FAILED(result))
 	{
-		_ERROR("%s - Failed to create material buffer", __FUNCTION__);
+		SKSE::log::error("{} - Failed to create material buffer", __FUNCTION__);
 		return false;
 	}
 
 	// Setup the raster description which will determine how and what polygons will be drawn.
-	D3D11_RASTERIZER_DESC rasterDesc;
-	rasterDesc.AntialiasedLineEnable = false;
-	rasterDesc.CullMode = D3D11_CULL_BACK;
-	rasterDesc.DepthBias = 0;
-	rasterDesc.DepthBiasClamp = 0.0f;
-	rasterDesc.DepthClipEnable = true;
-	rasterDesc.FillMode = D3D11_FILL_SOLID;
-	rasterDesc.FrontCounterClockwise = false;
-	rasterDesc.MultisampleEnable = false;
-	rasterDesc.ScissorEnable = false;
-	rasterDesc.SlopeScaledDepthBias = 0.0f;
+	REX::W32::D3D11_RASTERIZER_DESC rasterDesc;
+	rasterDesc.antialiasedLineEnable = false;
+	rasterDesc.cullMode = REX::W32::D3D11_CULL_BACK;
+	rasterDesc.depthBias = 0;
+	rasterDesc.depthBiasClamp = 0.0f;
+	rasterDesc.depthClipEnable = true;
+	rasterDesc.fillMode = REX::W32::D3D11_FILL_SOLID;
+	rasterDesc.frontCounterClockwise = false;
+	rasterDesc.multisampleEnable = false;
+	rasterDesc.scissorEnable = false;
+	rasterDesc.slopeScaledDepthBias = 0.0f;
 
 	// Create the rasterizer state from the description we just filled out.
 	result = pDevice->CreateRasterizerState(&rasterDesc, m_solidState.ReleaseAndGetAddressOf());
 	if (FAILED(result))
 	{
-		_ERROR("%s - Failed to create solid rasterizer state", __FUNCTION__);
+		SKSE::log::error("{} - Failed to create solid rasterizer state", __FUNCTION__);
 		return false;
 	}
 
 #ifdef USE_GEOMETRY_WIREFRAME
-	rasterDesc.FillMode = D3D11_FILL_SOLID;
-	rasterDesc.CullMode = D3D11_CULL_NONE;
-	rasterDesc.FrontCounterClockwise = FALSE;
-	rasterDesc.DepthBias = D3D11_DEFAULT_DEPTH_BIAS;
-	rasterDesc.DepthBiasClamp = D3D11_DEFAULT_DEPTH_BIAS_CLAMP;
-	rasterDesc.SlopeScaledDepthBias = D3D11_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;
-	rasterDesc.DepthClipEnable = TRUE;
-	rasterDesc.ScissorEnable = FALSE;
-	rasterDesc.MultisampleEnable = TRUE;
-	rasterDesc.AntialiasedLineEnable = TRUE;
+	rasterDesc.fillMode = REX::W32::D3D11_FILL_SOLID;
+	rasterDesc.cullMode = REX::W32::D3D11_CULL_NONE;
+	rasterDesc.frontCounterClockwise = FALSE;
+	rasterDesc.depthBias = REX::W32::D3D11_DEFAULT_DEPTH_BIAS;
+	rasterDesc.depthBiasClamp = REX::W32::D3D11_DEFAULT_DEPTH_BIAS_CLAMP;
+	rasterDesc.slopeScaledDepthBias = REX::W32::D3D11_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;
+	rasterDesc.depthClipEnable = TRUE;
+	rasterDesc.scissorEnable = FALSE;
+	rasterDesc.multisampleEnable = TRUE;
+	rasterDesc.antialiasedLineEnable = TRUE;
 #else
-	rasterDesc.MultisampleEnable = true;
-	rasterDesc.AntialiasedLineEnable = true;
-	rasterDesc.DepthClipEnable = false;
-	rasterDesc.DepthBias = -1000;
-	rasterDesc.CullMode = D3D11_CULL_NONE;
-	rasterDesc.FillMode = D3D11_FILL_WIREFRAME;
+	rasterDesc.multisampleEnable = true;
+	rasterDesc.antialiasedLineEnable = true;
+	rasterDesc.depthClipEnable = false;
+	rasterDesc.depthBias = -1000;
+	rasterDesc.cullMode = REX::W32::D3D11_CULL_NONE;
+	rasterDesc.fillMode = REX::W32::D3D11_FILL_WIREFRAME;
 #endif
-
 
 	result = pDevice->CreateRasterizerState(&rasterDesc, m_wireState.ReleaseAndGetAddressOf());
 	if (FAILED(result))
 	{
-		_ERROR("%s - Failed to create wire rasterizer state", __FUNCTION__);
+		SKSE::log::error("{} - Failed to create wire rasterizer state", __FUNCTION__);
 		return false;
 	}
 
 #ifdef USE_GEOMETRY_WIREFRAME
-	D3D11_DEPTH_STENCIL_DESC depthDesc;
-	depthDesc.DepthEnable = true;
-	depthDesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
-	depthDesc.DepthFunc = D3D11_COMPARISON_LESS_EQUAL;
+	REX::W32::D3D11_DEPTH_STENCIL_DESC depthDesc;
+	depthDesc.depthEnable = true;
+	depthDesc.depthWriteMask = REX::W32::D3D11_DEPTH_WRITE_MASK_ZERO;
+	depthDesc.depthFunc = REX::W32::D3D11_COMPARISON_LESS_EQUAL;
 
-	depthDesc.StencilEnable = FALSE;
-	depthDesc.StencilReadMask = D3D11_DEFAULT_STENCIL_READ_MASK;
-	depthDesc.StencilWriteMask = D3D11_DEFAULT_STENCIL_WRITE_MASK;
+	depthDesc.stencilEnable = FALSE;
+	depthDesc.stencilReadMask = REX::W32::D3D11_DEFAULT_STENCIL_READ_MASK;
+	depthDesc.stencilWriteMask = REX::W32::D3D11_DEFAULT_STENCIL_WRITE_MASK;
 
 	// Stencil operations if pixel is front-facing.
-	depthDesc.FrontFace.StencilFailOp = D3D11_STENCIL_OP_KEEP;
-	depthDesc.FrontFace.StencilDepthFailOp = D3D11_STENCIL_OP_KEEP;
-	depthDesc.FrontFace.StencilPassOp = D3D11_STENCIL_OP_KEEP;
-	depthDesc.FrontFace.StencilFunc = D3D11_COMPARISON_ALWAYS;
+	depthDesc.frontFace.stencilFailOp = REX::W32::D3D11_STENCIL_OP_KEEP;
+	depthDesc.frontFace.stencilDepthFailOp = REX::W32::D3D11_STENCIL_OP_KEEP;
+	depthDesc.frontFace.stencilPassOp = REX::W32::D3D11_STENCIL_OP_KEEP;
+	depthDesc.frontFace.stencilFunc = REX::W32::D3D11_COMPARISON_ALWAYS;
 
 	// Stencil operations if pixel is back-facing.
-	depthDesc.BackFace.StencilFailOp = D3D11_STENCIL_OP_KEEP;
-	depthDesc.BackFace.StencilDepthFailOp = D3D11_STENCIL_OP_KEEP;
-	depthDesc.BackFace.StencilPassOp = D3D11_STENCIL_OP_KEEP;
-	depthDesc.BackFace.StencilFunc = D3D11_COMPARISON_ALWAYS;
+	depthDesc.backFace.stencilFailOp = REX::W32::D3D11_STENCIL_OP_KEEP;
+	depthDesc.backFace.stencilDepthFailOp = REX::W32::D3D11_STENCIL_OP_KEEP;
+	depthDesc.backFace.stencilPassOp = REX::W32::D3D11_STENCIL_OP_KEEP;
+	depthDesc.backFace.stencilFunc = REX::W32::D3D11_COMPARISON_ALWAYS;
 
 	pDevice->CreateDepthStencilState(&depthDesc, m_depthSS.ReleaseAndGetAddressOf());
 	if (FAILED(result))
 	{
-		_ERROR("%s - Failed to create depth stencil state", __FUNCTION__);
+		SKSE::log::error("{} - Failed to create depth stencil state", __FUNCTION__);
 		return false;
 	}
 
-	D3D11_BLEND_DESC blendStateDescription;
+	REX::W32::D3D11_BLEND_DESC blendStateDescription;
 	// Clear the blend state description.
-	ZeroMemory(&blendStateDescription, sizeof(D3D11_BLEND_DESC));
+	ZeroMemory(&blendStateDescription, sizeof(REX::W32::D3D11_BLEND_DESC));
 
 	// Create an alpha enabled blend state description.
-	blendStateDescription.RenderTarget[0].BlendEnable = TRUE;
-	blendStateDescription.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
-	blendStateDescription.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
-	blendStateDescription.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
-	blendStateDescription.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_SRC_ALPHA;
-	blendStateDescription.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_DEST_ALPHA;
-	blendStateDescription.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
-	blendStateDescription.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+	blendStateDescription.renderTarget[0].blendEnable = TRUE;
+	blendStateDescription.renderTarget[0].srcBlend = REX::W32::D3D11_BLEND_SRC_ALPHA;
+	blendStateDescription.renderTarget[0].destBlend = REX::W32::D3D11_BLEND_INV_SRC_ALPHA;
+	blendStateDescription.renderTarget[0].blendOp = REX::W32::D3D11_BLEND_OP_ADD;
+	blendStateDescription.renderTarget[0].srcBlendAlpha = REX::W32::D3D11_BLEND_SRC_ALPHA;
+	blendStateDescription.renderTarget[0].destBlendAlpha = REX::W32::D3D11_BLEND_DEST_ALPHA;
+	blendStateDescription.renderTarget[0].blendOpAlpha = REX::W32::D3D11_BLEND_OP_ADD;
+	blendStateDescription.renderTarget[0].renderTargetWriteMask = REX::W32::D3D11_COLOR_WRITE_ENABLE_ALL;
 
 	// Create the blend state using the description.
 	result = pDevice->CreateBlendState(&blendStateDescription, m_wireBlendState.ReleaseAndGetAddressOf());
 	if (FAILED(result))
 	{
-		_ERROR("%s - Failed to create wire blend state", __FUNCTION__);
+		SKSE::log::error("{} - Failed to create wire blend state", __FUNCTION__);
 		return false;
 	}
 #endif
@@ -259,21 +260,21 @@ bool CDXShader::Initialize(const CDXInitParams & initParams)
 bool CDXShader::VSSetShaderBuffer(CDXD3DDevice * device, VertexBuffer & params)
 {
 	HRESULT result;
-	D3D11_MAPPED_SUBRESOURCE mappedResource;
+	REX::W32::D3D11_MAPPED_SUBRESOURCE mappedResource;
 	VertexBuffer* dataPtr;
 
 	auto pDeviceContext = device->GetDeviceContext();
 
 	// Lock the matrix constant buffer so it can be written to.
-	result = pDeviceContext->Map(m_matrixBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
+	result = pDeviceContext->Map(m_matrixBuffer.Get(), 0, REX::W32::D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
 	if (FAILED(result))
 	{
-		_ERROR("%s - Failed to map matrix buffer", __FUNCTION__);
+		SKSE::log::error("{} - Failed to map matrix buffer", __FUNCTION__);
 		return false;
 	}
 
 	// Get a pointer to the data in the constant buffer.
-	dataPtr = (VertexBuffer*)mappedResource.pData;
+	dataPtr = (VertexBuffer*)mappedResource.data;
 
 	// Transpose the matrices to prepare them for the shader.
 	params.world = XMMatrixTranspose(params.world);
@@ -285,7 +286,7 @@ bool CDXShader::VSSetShaderBuffer(CDXD3DDevice * device, VertexBuffer & params)
 	// Unlock the matrix constant buffer.
 	pDeviceContext->Unmap(m_matrixBuffer.Get(), 0);
 
-	ID3D11Buffer* buffers[] = { m_matrixBuffer.Get() };
+	REX::W32::ID3D11Buffer* buffers[] = { m_matrixBuffer.Get() };
 	pDeviceContext->VSSetConstantBuffers(0, 1, buffers);
 	pDeviceContext->GSSetConstantBuffers(0, 1, buffers);
 	return true;
@@ -294,28 +295,28 @@ bool CDXShader::VSSetShaderBuffer(CDXD3DDevice * device, VertexBuffer & params)
 bool CDXShader::VSSetTransformBuffer(CDXD3DDevice * device, TransformBuffer & params)
 {
 	HRESULT result;
-	D3D11_MAPPED_SUBRESOURCE mappedResource;
+	REX::W32::D3D11_MAPPED_SUBRESOURCE mappedResource;
 	TransformBuffer* dataPtr;
 
 	auto pDeviceContext = device->GetDeviceContext();
 
 	// Lock the matrix constant buffer so it can be written to.
-	result = pDeviceContext->Map(m_transformBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
+	result = pDeviceContext->Map(m_transformBuffer.Get(), 0, REX::W32::D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
 	if (FAILED(result))
 	{
-		_ERROR("%s - Failed to map transform buffer", __FUNCTION__);
+		SKSE::log::error("{} - Failed to map transform buffer", __FUNCTION__);
 		return false;
 	}
 
 	// Get a pointer to the data in the constant buffer.
-	dataPtr = (TransformBuffer*)mappedResource.pData;
+	dataPtr = (TransformBuffer*)mappedResource.data;
 
 	*dataPtr = params;
 
 	// Unlock the matrix constant buffer.
 	pDeviceContext->Unmap(m_transformBuffer.Get(), 0);
 
-	ID3D11Buffer* buffers[] = { m_transformBuffer.Get() };
+	REX::W32::ID3D11Buffer* buffers[] = { m_transformBuffer.Get() };
 	pDeviceContext->VSSetConstantBuffers(1, 1, buffers);
 	return true;
 }
@@ -323,21 +324,21 @@ bool CDXShader::VSSetTransformBuffer(CDXD3DDevice * device, TransformBuffer & pa
 bool CDXShader::PSSetMaterialBuffers(CDXD3DDevice * device, MaterialBuffer & params)
 {
 	HRESULT result;
-	D3D11_MAPPED_SUBRESOURCE mappedResource;
+	REX::W32::D3D11_MAPPED_SUBRESOURCE mappedResource;
 	MaterialBuffer* dataPtr;
 
 	auto pDeviceContext = device->GetDeviceContext();
 
 	// Lock the light constant buffer so it can be written to.
-	result = pDeviceContext->Map(m_materialBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
+	result = pDeviceContext->Map(m_materialBuffer.Get(), 0, REX::W32::D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
 	if (FAILED(result))
 	{
-		_ERROR("%s - Failed to map material buffer", __FUNCTION__);
+		SKSE::log::error("{} - Failed to map material buffer", __FUNCTION__);
 		return false;
 	}
 
 	// Get a pointer to the data in the constant buffer.
-	dataPtr = (MaterialBuffer*)mappedResource.pData;
+	dataPtr = (MaterialBuffer*)mappedResource.data;
 
 	// Copy the lighting variables into the constant buffer.
 	*dataPtr = params;
@@ -345,7 +346,7 @@ bool CDXShader::PSSetMaterialBuffers(CDXD3DDevice * device, MaterialBuffer & par
 	// Unlock the constant buffer.
 	pDeviceContext->Unmap(m_materialBuffer.Get(), 0);
 
-	ID3D11Buffer* buffers[] = { m_materialBuffer.Get() };
+	REX::W32::ID3D11Buffer* buffers[] = { m_materialBuffer.Get() };
 	pDeviceContext->PSSetConstantBuffers(0, 1, buffers);
 	return true;
 }
@@ -358,18 +359,18 @@ void CDXShader::RenderShader(CDXD3DDevice * device, const std::shared_ptr<CDXMat
 
 	// Set the vertex and pixel shaders that will be used to render this triangle.
 #ifdef USE_GEOMETRY_WIREFRAME
-	if (!m_baseSS) {
-		pDeviceContext->OMGetDepthStencilState(&m_baseSS, &m_baseRef);
+	if (!m_baseSS.Get()) {
+		pDeviceContext->OMGetDepthStencilState(m_baseSS.GetAddressOf(), &m_baseRef);
 	}
 #endif
 	
 	CDXShader::MaterialBuffer mat;
 
-	ID3D11RasterizerState* state = m_solidState.Get();
-	ID3D11VertexShader* vshader = m_vertexShader.Get();
-	ID3D11PixelShader* pshader = m_pixelShader.Get();
-	ID3D11GeometryShader* gshader = nullptr;
-	ID3D11BlendState * blendingState = material->GetBlendingState(device).Get();
+	REX::W32::ID3D11RasterizerState* state = m_solidState.Get();
+	REX::W32::ID3D11VertexShader* vshader = m_vertexShader.Get();
+	REX::W32::ID3D11PixelShader* pshader = m_pixelShader.Get();
+	REX::W32::ID3D11GeometryShader* gshader = nullptr;
+	REX::W32::ID3D11BlendState * blendingState = material->GetBlendingState(device).Get();
 
 	float blendFactor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 	if (material->IsWireframe())
@@ -388,13 +389,13 @@ void CDXShader::RenderShader(CDXD3DDevice * device, const std::shared_ptr<CDXMat
 		gshader = m_wgShader.Get();
 #endif
 
-		if (m_wireBlendState)
+		if (m_wireBlendState.Get())
 		{
 			blendingState = m_wireBlendState.Get();
 		}
 		
 
-		if (m_depthSS)
+		if (m_depthSS.Get())
 		{
 			pDeviceContext->OMSetDepthStencilState(m_depthSS.Get(), 0);
 		}
@@ -427,7 +428,7 @@ void CDXShader::RenderShader(CDXD3DDevice * device, const std::shared_ptr<CDXMat
 	// Set shader texture resource in the pixel shader.
 
 	auto textures = material->GetTextures();
-	ID3D11ShaderResourceView* resources[] = {
+	REX::W32::ID3D11ShaderResourceView* resources[] = {
 		textures[0].Get(),
 		textures[1].Get(),
 		textures[2].Get(),
@@ -438,6 +439,6 @@ void CDXShader::RenderShader(CDXD3DDevice * device, const std::shared_ptr<CDXMat
 
 	// Set the sampler state in the pixel shader.
 
-	ID3D11SamplerState * samplers[] = { m_sampleState.Get() };
+	REX::W32::ID3D11SamplerState * samplers[] = { m_sampleState.Get() };
 	pDeviceContext->PSSetSamplers(0, 1, samplers);
 }

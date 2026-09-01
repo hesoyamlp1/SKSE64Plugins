@@ -6,9 +6,12 @@
 #include "CDXTypes.h"
 
 #include <mutex>
-#include <d3d11_3.h>
+#include "REX/W32/D3D11_3.h"
 #include <DirectXMath.h>
-#include <wrl/client.h>
+#include "REX/W32/COMPTR.h"
+#include <cstdint>
+
+
 
 #define DeclareFlags(type) \
 	private: \
@@ -37,29 +40,29 @@
 		return (m_uFlags & uMask) != 0; \
 		}
 
-static UInt32 mappedAlphaFunctions[] = {
-	D3D11_BLEND_ONE,
-	D3D11_BLEND_ZERO,
-	D3D11_BLEND_SRC_COLOR,
-	D3D11_BLEND_INV_SRC_COLOR,
-	D3D11_BLEND_DEST_COLOR,
-	D3D11_BLEND_INV_DEST_COLOR,
-	D3D11_BLEND_SRC_ALPHA,
-	D3D11_BLEND_INV_SRC_ALPHA,
-	D3D11_BLEND_DEST_ALPHA,
-	D3D11_BLEND_INV_DEST_ALPHA,
-	D3D11_BLEND_SRC_ALPHA_SAT
+static std::uint32_t mappedAlphaFunctions[] = {
+	REX::W32::D3D11_BLEND_ONE,
+	REX::W32::D3D11_BLEND_ZERO,
+	REX::W32::D3D11_BLEND_SRC_COLOR,
+	REX::W32::D3D11_BLEND_INV_SRC_COLOR,
+	REX::W32::D3D11_BLEND_DEST_COLOR,
+	REX::W32::D3D11_BLEND_INV_DEST_COLOR,
+	REX::W32::D3D11_BLEND_SRC_ALPHA,
+	REX::W32::D3D11_BLEND_INV_SRC_ALPHA,
+	REX::W32::D3D11_BLEND_DEST_ALPHA,
+	REX::W32::D3D11_BLEND_INV_DEST_ALPHA,
+	REX::W32::D3D11_BLEND_SRC_ALPHA_SAT
 };
 
-static UInt32 mappedTestFunctions[] = {
-	D3D11_COMPARISON_ALWAYS,
-	D3D11_COMPARISON_LESS,
-	D3D11_COMPARISON_EQUAL,
-	D3D11_COMPARISON_LESS_EQUAL,
-	D3D11_COMPARISON_GREATER,
-	D3D11_COMPARISON_NOT_EQUAL,
-	D3D11_COMPARISON_GREATER_EQUAL,
-	D3D11_COMPARISON_NEVER,
+static std::uint32_t mappedTestFunctions[] = {
+	REX::W32::D3D11_COMPARISON_ALWAYS,
+	REX::W32::D3D11_COMPARISON_LESS,
+	REX::W32::D3D11_COMPARISON_EQUAL,
+	REX::W32::D3D11_COMPARISON_LESS_EQUAL,
+	REX::W32::D3D11_COMPARISON_GREATER,
+	REX::W32::D3D11_COMPARISON_NOT_EQUAL,
+	REX::W32::D3D11_COMPARISON_GREATER_EQUAL,
+	REX::W32::D3D11_COMPARISON_NEVER,
 };
 
 class CDXD3DDevice;
@@ -71,10 +74,10 @@ public:
 	CDXMaterial();
 	~CDXMaterial();
 
-	void SetTexture(int index, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> texture);
-	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>* GetTextures() { return m_pTextures; }
+	void SetTexture(int index, REX::W32::ComPtr<REX::W32::ID3D11ShaderResourceView> texture);
+	REX::W32::ComPtr<REX::W32::ID3D11ShaderResourceView>* GetTextures() { return m_pTextures; }
 
-	Microsoft::WRL::ComPtr<ID3D11BlendState> GetBlendingState(CDXD3DDevice * device);
+	REX::W32::ComPtr<REX::W32::ID3D11BlendState> GetBlendingState(CDXD3DDevice * device);
 
 	void SetWireframeColor(DirectX::XMFLOAT4 color);
 	DirectX::XMFLOAT4 & GetWireframeColor();
@@ -82,13 +85,13 @@ public:
 	void SetTintColor(DirectX::XMFLOAT4 color);
 	DirectX::XMFLOAT4 & GetTintColor();
 
-	UInt32 GetShaderFlags1() const { return m_shaderFlags1; }
-	UInt32 GetShaderFlags2() const { return m_shaderFlags2; }
+	std::uint32_t GetShaderFlags1() const { return m_shaderFlags1; }
+	std::uint32_t GetShaderFlags2() const { return m_shaderFlags2; }
 
-	void SetShaderFlags1(UInt32 flags);
-	void SetShaderFlags2(UInt32 flags);
+	void SetShaderFlags1(std::uint32_t flags);
+	void SetShaderFlags2(std::uint32_t flags);
 
-	void SetFlags(UInt16 flags);
+	void SetFlags(std::uint16_t flags);
 
 	enum AlphaFunction
 	{
@@ -106,7 +109,7 @@ public:
 		ALPHA_MAX_MODES
 	};
 
-	D3D11_BLEND GetD3DBlendMode(AlphaFunction alphaFunc);
+	REX::W32::D3D11_BLEND GetD3DBlendMode(AlphaFunction alphaFunc);
 
 	enum
 	{
@@ -149,29 +152,29 @@ public:
 	void SetTestMode(TestFunction eTestFunc);
 	TestFunction GetTestMode() const;
 
-	void SetAlphaThreshold(UInt8 thresh) { m_alphaThreshold = thresh; }
-	UInt8 GetAlphaThreshold() const { return m_alphaThreshold; }
+	void SetAlphaThreshold(std::uint8_t thresh) { m_alphaThreshold = thresh; }
+	std::uint8_t GetAlphaThreshold() const { return m_alphaThreshold; }
 
 	bool IsWireframe() const { return m_wireframe; }
 	void SetWireframe(bool w) { m_wireframe = w; }
 
-	bool HasDiffuse() const { return m_pTextures[0] != nullptr; }
-	bool HasNormal() const { return m_pTextures[1] != nullptr; }
-	bool HasSpecular() const { return m_pTextures[2] != nullptr; }
-	bool HasDetail() const { return m_pTextures[3] != nullptr; }
-	bool HasTintMask() const { return m_pTextures[4] != nullptr; }
+	bool HasDiffuse() const { return m_pTextures[0] .Get() != nullptr; }
+	bool HasNormal() const { return m_pTextures[1] .Get() != nullptr; }
+	bool HasSpecular() const { return m_pTextures[2] .Get() != nullptr; }
+	bool HasDetail() const { return m_pTextures[3] .Get() != nullptr; }
+	bool HasTintMask() const { return m_pTextures[4] .Get() != nullptr; }
 
 protected:
-	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> m_pTextures[5];
-	Microsoft::WRL::ComPtr<ID3D11BlendState> m_blendingState;
+	REX::W32::ComPtr<REX::W32::ID3D11ShaderResourceView> m_pTextures[5];
+	REX::W32::ComPtr<REX::W32::ID3D11BlendState> m_blendingState;
 	bool m_blendingDirty;
 
 	DirectX::XMFLOAT4 m_wireframeColor;
 	DirectX::XMFLOAT4 m_tintColor;
-	DeclareFlags(UInt16);
-	UInt32	m_shaderFlags1;
-	UInt32	m_shaderFlags2;
-	UInt8	m_alphaThreshold;
+	DeclareFlags(std::uint16_t);
+	std::uint32_t	m_shaderFlags1;
+	std::uint32_t	m_shaderFlags2;
+	std::uint8_t	m_alphaThreshold;
 	bool	m_wireframe;
 
 #ifdef CDX_MUTEX

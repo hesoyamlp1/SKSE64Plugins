@@ -7,25 +7,25 @@
 #include <functional>
 #include <unordered_set>
 
-#include "skse64/NiTypes.h"
-
-class BSGeometry;
-class NiSkinPartition;
+#include <RE/B/BSGeometry.h>
+#include <RE/N/NiSkinPartition.h>
+#include <RE/N/NiSmartPointer.h>
+#include <cstdint>
 
 class NormalApplicator
 {
 public:
-	NormalApplicator(NiPointer<BSGeometry> _geometry, NiPointer<NiSkinPartition> _skinPartition);
+	NormalApplicator(RE::NiPointer<RE::BSGeometry> _geometry, RE::NiPointer<RE::NiSkinPartition> _skinPartition);
 
 	void Apply();
 
-	void RecalcNormals(UInt32 numTriangles, Morpher::Triangle* triangles, const bool smooth = true, const float smoothThres = 60.0f);
-	void CalcTangentSpace(UInt32 numTriangles, Morpher::Triangle * triangles);
+	void RecalcNormals(std::uint32_t numTriangles, Morpher::Triangle* triangles, const bool smooth = true, const float smoothThres = 60.0f);
+	void CalcTangentSpace(std::uint32_t numTriangles, Morpher::Triangle * triangles);
 
 protected:
-	NiPointer<BSGeometry> geometry;
-	NiPointer<NiSkinPartition> skinPartition;
-	std::unordered_set<UInt16> lockedVertices;
+	RE::NiPointer<RE::BSGeometry> geometry;
+	RE::NiPointer<RE::NiSkinPartition> skinPartition;
+	std::unordered_set<std::uint16_t> lockedVertices;
 	std::vector<Morpher::Vector3> rawVertices;
 	std::vector<Morpher::Vector3> rawNormals;
 	std::vector<Morpher::Vector2> rawUV;

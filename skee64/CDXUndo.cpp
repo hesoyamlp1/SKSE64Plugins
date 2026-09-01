@@ -1,4 +1,5 @@
 #include "CDXUndo.h"
+#include <cstdint>
 
 CDXUndoStack	g_undoStack;
 
@@ -14,10 +15,10 @@ void CDXUndoStack::Release()
 	clear();
 }
 
-SInt32 CDXUndoStack::Push(CDXUndoCommandPtr action)
+std::int32_t CDXUndoStack::Push(CDXUndoCommandPtr action)
 {
 	CDXUndoStack::iterator actionIt;
-	SInt32 maxState = (SInt32)size() - 1;
+	std::int32_t maxState = (std::int32_t)size() - 1;
 	if(m_index != maxState) { // Not at the end, erase everything from now til the end
 		erase(begin() + (m_index + 1), end());
 		m_index++;
@@ -30,7 +31,7 @@ SInt32 CDXUndoStack::Push(CDXUndoCommandPtr action)
 	return m_index;
 }
 
-SInt32 CDXUndoStack::Undo(bool doUpdate)
+std::int32_t CDXUndoStack::Undo(bool doUpdate)
 {
 	if(m_index > -1) {
 		if(doUpdate)
@@ -41,9 +42,9 @@ SInt32 CDXUndoStack::Undo(bool doUpdate)
 	return -1;
 }
 
-SInt32 CDXUndoStack::Redo(bool doUpdate)
+std::int32_t CDXUndoStack::Redo(bool doUpdate)
 {
-	SInt32 maxState = (SInt32)size() - 1;
+	std::int32_t maxState = (std::int32_t)size() - 1;
 	if(m_index < maxState) {
 		m_index++;
 		if(doUpdate) 
@@ -53,15 +54,15 @@ SInt32 CDXUndoStack::Redo(bool doUpdate)
 	return -1;
 }
 
-SInt32 CDXUndoStack::GoTo(SInt32 index, bool doUpdate)
+std::int32_t CDXUndoStack::GoTo(std::int32_t index, bool doUpdate)
 {
-	SInt32 result = -1;
-	SInt32 amount = index - m_index;
+	std::int32_t result = -1;
+	std::int32_t amount = index - m_index;
 
 	if (amount == 0)
 		return m_index;
 
-	for (UInt32 i = 0; i < abs(amount); i++) {
+	for (std::uint32_t i = 0; i < abs(amount); i++) {
 		result = amount < 0 ? Undo(doUpdate) : Redo(doUpdate);
 	}
 	

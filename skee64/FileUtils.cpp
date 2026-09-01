@@ -1,13 +1,16 @@
 #include "FileUtils.h"
+#include <REX/W32/KERNEL32.h>
 
 #include <unordered_set>
 #include <queue>
-#include <Shlwapi.h>
+#include <RE/T/TESDataHandler.h>
+#include <RE/T/TESFile.h>
+#include <RE/T/TESLevCharacter.h>
+#include <RE/N/NiBinaryStream.h>
+#include <filesystem>
 
-#include "skse64/GameStreams.h"
-#include "skse64/GameData.h"
-#include "skse64/GameForms.h"
-#include "skse64/GameRTTI.h"
+#include <cstdint>
+
 
 // trim from start
 namespace std
@@ -52,80 +55,112 @@ namespace std
 
 namespace BSFileUtil
 {
-bool ReadLine(BSResourceNiBinaryStream* fin, std::string* str)
+bool ReadLine(RE::BSResourceNiBinaryStream* fin, std::string* str)
 {
 	char buf[1024];
-	UInt32 ret = 0;
+	std::uint32_t ret = 0;
 
-	ret = fin->ReadLine((char*)buf, 1024, '\n');
+	for (std::uint32_t i = 0; i < 1023; ++i) {
+		if (!fin->get(buf[i])) break;
+		buf[i + 1] = '\0';
+		ret = i + 1;
+		if (buf[i] == '\n') break;
+	}
 	if (ret > 0) {
-		buf[ret - 1] = '\0';
+		if (buf[ret - 1] == '\n') buf[ret - 1] = '\0';
 		*str = buf;
 		return true;
 	}
 	return false;
 }
+bool IsActive(const RE::TESFile* modInfo)
+{
+    if (modInfo) {
+        return modInfo->GetCompileIndex() != 0xFF;
+    }
+    return false;
+}
 }
 
 namespace FileUtils
 {
-void GetAllFiles(LPCTSTR lpFolder, LPCTSTR lpFilePattern, std::vector<SKEEFixedString> & filePaths)
+static void SKEEPathCombine(char (&dst)[REX::W32::MAX_PATH], const char* dir, const char* file)
 {
-	TCHAR szFullPattern[MAX_PATH];
-	WIN32_FIND_DATA FindFileData;
-	HANDLE hFindFile;
+    auto p = std::filesystem::path(dir) / file;
+    std::snprintf(dst, sizeof(dst), "%s", p.string().c_str());
+}
+
+void GetAllFiles(const char* lpFolder, const char* lpFilePattern, std::vector<SKEEFixedString> & filePaths)
+{
+	char szFullPattern[REX::W32::MAX_PATH];
+	REX::W32::WIN32_FIND_DATAA FindFileData;
+	REX::W32::HANDLE hFindFile;
 	// first we are going to process any subdirectories
-	PathCombine(szFullPattern, lpFolder, "*");
-	hFindFile = FindFirstFile(szFullPattern, &FindFileData);
-	if (hFindFile != INVALID_HANDLE_VALUE)
+	SKEEPathCombine(szFullPattern, lpFolder, "*");
+	hFindFile = REX::W32::FindFirstFileA(szFullPattern, &FindFileData);
+	if (hFindFile != REX::W32::INVALID_HANDLE_VALUE)
 	{
 		do
 		{
-			if (FindFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+			if (FindFileData.fileAttributes & REX::W32::FILE_ATTRIBUTE_DIRECTORY)
 			{
 				// found a subdirectory; recurse into it
-				PathCombine(szFullPattern, lpFolder, FindFileData.cFileName);
-				if (FindFileData.cFileName[0] == '.')
+				SKEEPathCombine(szFullPattern, lpFolder, FindFileData.fileName);
+				if (FindFileData.fileName[0] == '.')
 					continue;
 				GetAllFiles(szFullPattern, lpFilePattern, filePaths);
 			}
-		} while (FindNextFile(hFindFile, &FindFileData));
-		FindClose(hFindFile);
+		} while (REX::W32::FindNextFileA(hFindFile, &FindFileData));
+		REX::W32::FindClose(hFindFile);
 	}
 	// now we are going to look for the matching files
-	PathCombine(szFullPattern, lpFolder, lpFilePattern);
-	hFindFile = FindFirstFile(szFullPattern, &FindFileData);
-	if (hFindFile != INVALID_HANDLE_VALUE)
+	SKEEPathCombine(szFullPattern, lpFolder, lpFilePattern);
+	hFindFile = REX::W32::FindFirstFileA(szFullPattern, &FindFileData);
+	if (hFindFile != REX::W32::INVALID_HANDLE_VALUE)
 	{
 		do
 		{
-			if (!(FindFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+			if (!(FindFileData.fileAttributes & REX::W32::FILE_ATTRIBUTE_DIRECTORY))
 			{
 				// found a file; do something with it
-				PathCombine(szFullPattern, lpFolder, FindFileData.cFileName);
+				SKEEPathCombine(szFullPattern, lpFolder, FindFileData.fileName);
 				filePaths.push_back(szFullPattern);
 			}
-		} while (FindNextFile(hFindFile, &FindFileData));
-		FindClose(hFindFile);
+		} while (REX::W32::FindNextFileA(hFindFile, &FindFileData));
+		REX::W32::FindClose(hFindFile);
+	}
+}
+
+void MakeAllDirs(const char* path)
+{
+	// Create every directory component of `path` (legacy IFileStream::MakeAllDirs).
+	std::string_view p(path);
+	while (true)
+	{
+		const auto pos = p.find_last_of("\\/");
+		if (pos == std::string_view::npos || pos == 0)
+			break;
+		std::error_code ec;
+		std::filesystem::create_directories(std::string(p.substr(0, pos)), ec);
+		p = p.substr(0, pos);
 	}
 }
 }
 
-TESRace * GetRaceByName(std::string & raceName)
+RE::TESRace * GetRaceByName(std::string & raceName)
 {
-	DataHandler * dataHandler = DataHandler::GetSingleton();
+	RE::TESDataHandler* dataHandler = RE::TESDataHandler::GetSingleton();
 	if (dataHandler)
 	{
-		for (UInt32 i = 0; i < dataHandler->races.count; i++)
+		auto& races = dataHandler->GetFormArray(RE::FormType::Race);
+		for (std::uint32_t i = 0; i < races.size(); i++)
 		{
-			TESRace * race = NULL;
-			if (dataHandler->races.GetNthItem(i, race)) {
-				BSFixedString raceStrName(raceName.c_str());
-				if (race->editorId == raceStrName) {
-					raceStrName.Release();
+			RE::TESRace * race = races[i] ? races[i]->As<RE::TESRace>() : nullptr;
+			if (race) {
+				RE::BSFixedString raceStrName(raceName.c_str());
+				if (race->formEditorID == raceStrName) {
 					return race;
 				}
-				raceStrName.Release();
 			}
 		}
 	}
@@ -133,21 +168,20 @@ TESRace * GetRaceByName(std::string & raceName)
 	return NULL;
 }
 
-BGSHeadPart * GetHeadPartByName(std::string & headPartName)
+RE::BGSHeadPart * GetHeadPartByName(std::string & headPartName)
 {
-	DataHandler * dataHandler = DataHandler::GetSingleton();
+	RE::TESDataHandler* dataHandler = RE::TESDataHandler::GetSingleton();
 	if (dataHandler)
 	{
-		for (UInt32 i = 0; i < dataHandler->headParts.count; i++)
+		auto& headParts = dataHandler->GetFormArray(RE::FormType::HeadPart);
+		for (std::uint32_t i = 0; i < headParts.size(); i++)
 		{
-			BGSHeadPart * headPart = NULL;
-			if (dataHandler->headParts.GetNthItem(i, headPart)) {
-				BSFixedString partName(headPartName.c_str());
-				if (headPart->partName == partName) {
-					partName.Release();
+			RE::BGSHeadPart * headPart = headParts[i] ? headParts[i]->As<RE::BGSHeadPart>() : nullptr;
+			if (headPart) {
+				RE::BSFixedString partName(headPartName.c_str());
+				if (headPart->formEditorID == partName) {
 					return headPart;
 				}
-				partName.Release();
 			}
 		}
 	}
@@ -155,74 +189,72 @@ BGSHeadPart * GetHeadPartByName(std::string & headPartName)
 	return NULL;
 }
 
-ModInfo* GetModInfoByFormID(UInt32 formId, bool allowLight)
+RE::TESFile* GetModInfoByFormID(std::uint32_t formId, bool allowLight)
 {
-	DataHandler * dataHandler = DataHandler::GetSingleton();
+	auto * dataHandler = RE::TESDataHandler::GetSingleton();
 
-	UInt8 modIndex = formId >> 24;
-	UInt16 lightIndex = ((formId >> 12) & 0xFFF);
+	std::uint8_t modIndex = formId >> 24;
+	std::uint16_t lightIndex = ((formId >> 12) & 0xFFF);
 
-	ModInfo* modInfo = nullptr;
+	RE::TESFile* modInfo = nullptr;
 	if (modIndex == 0xFE && allowLight) {
-		if (lightIndex < dataHandler->modList.loadedCCMods.count)
-			dataHandler->modList.loadedCCMods.GetNthItem(lightIndex, modInfo);
-	} else {
-		if(modIndex < 0xFE)
-			dataHandler->modList.loadedMods.GetNthItem(modIndex, modInfo);
+		modInfo = const_cast<RE::TESFile*>(dataHandler->LookupLoadedLightModByIndex(lightIndex));
+	} else if (modIndex < 0xFE) {
+		modInfo = const_cast<RE::TESFile*>(dataHandler->LookupLoadedModByIndex(modIndex));
 	}
 
 	return modInfo;
 }
 
-std::string GetFormIdentifier(TESForm * form)
+std::string GetFormIdentifier(RE::TESForm * form)
 {
-	char formName[MAX_PATH];
-	UInt8 modIndex = form->formID >> 24;
-	UInt32 modForm = form->formID & 0xFFFFFF;
+	char formName[REX::W32::MAX_PATH];
+	std::uint8_t modIndex = form->formID >> 24;
+	std::uint32_t modForm = form->formID & 0xFFFFFF;
 
-	ModInfo* modInfo = nullptr;
+	RE::TESDataHandler* dataHandler = RE::TESDataHandler::GetSingleton();
+	RE::TESFile* modInfo = nullptr;
 	if (modIndex == 0xFE)
 	{
-		UInt16 lightIndex = (form->formID >> 12) & 0xFFF;
-		if (lightIndex < (*g_dataHandler)->modList.loadedCCMods.count)
-			modInfo = (*g_dataHandler)->modList.loadedCCMods[lightIndex];
+		std::uint16_t lightIndex = (form->formID >> 12) & 0xFFF;
+		modInfo = const_cast<RE::TESFile*>(dataHandler->LookupLoadedLightModByIndex(lightIndex));
 	}
-	else
+	else if (modIndex < 0xFE)
 	{
-		modInfo = (*g_dataHandler)->modList.loadedMods[modIndex];
+		modInfo = const_cast<RE::TESFile*>(dataHandler->LookupLoadedModByIndex(modIndex));
 	}
 
 	if (modInfo) {
-		sprintf_s(formName, "%s|%06X", modInfo->name, modForm);
+		sprintf_s(formName, "%s|%06X", modInfo->GetFilename().data(), modForm);
 	}
 
-	return formName;
+	return std::string(formName);
 }
 
-TESForm * GetFormFromIdentifier(const std::string & formIdentifier)
+RE::TESForm * GetFormFromIdentifier(const std::string & formIdentifier)
 {
 	std::size_t pos = formIdentifier.find_first_of('|');
 	if (pos == std::string::npos) {
-		return LookupFormByEditorID(formIdentifier.c_str());
+		return RE::TESForm::LookupByEditorID(formIdentifier);
 	}
 	std::string modName = formIdentifier.substr(0, pos);
 	std::string modForm = formIdentifier.substr(pos + 1);
 
-	UInt32 formId = 0;
+	std::uint32_t formId = 0;
 	sscanf_s(modForm.c_str(), "%X", &formId);
 
-	const ModInfo * modInfo = (*g_dataHandler)->LookupModByName(modName.c_str());
-	if (!modInfo || !modInfo->IsActive()) {
+	const RE::TESFile* modInfo = RE::TESDataHandler::GetSingleton()->LookupModByName(modName);
+	if (!modInfo || !BSFileUtil::IsActive(modInfo)) {
 		return nullptr;
 	}
 
-	return LookupFormByID(modInfo->GetFormID(formId));
+	return RE::TESForm::LookupByID(modInfo->GetFormID(formId));
 }
 
-void VisitLeveledCharacter(TESLevCharacter * character, std::function<void(TESNPC*)> functor)
+void VisitLeveledCharacter(RE::TESLevCharacter * character, std::function<void(RE::TESNPC*)> functor)
 {
-	std::unordered_set<TESLevCharacter*> visited;
-	std::queue<TESLevCharacter*> visit;
+	std::unordered_set<RE::TESLevCharacter*> visited;
+	std::queue<RE::TESLevCharacter*> visit;
 
 	visit.push(character);
 
@@ -233,15 +265,15 @@ void VisitLeveledCharacter(TESLevCharacter * character, std::function<void(TESNP
 
 		if (character)
 		{
-			for (UInt32 i = 0; i < character->leveledList.length; i++)
+			for (std::uint32_t i = 0; i < character->numEntries; i++)
 			{
-				TESForm * form = character->leveledList.entries[i].form;
+				RE::TESForm * form = character->entries[i].form;
 				if (form) {
-					TESLevCharacter * levCharacter = DYNAMIC_CAST(form, TESForm, TESLevCharacter);
+					RE::TESLevCharacter * levCharacter = form ? form->As<RE::TESLevCharacter>() : nullptr;
 					if (levCharacter && visited.find(levCharacter) == visited.end())
 						visit.push(levCharacter);
 
-					TESNPC * npc = DYNAMIC_CAST(form, TESForm, TESNPC);
+					RE::TESNPC * npc = form ? form->As<RE::TESNPC>() : nullptr;
 					if (npc)
 						functor(npc);
 				}
@@ -252,25 +284,19 @@ void VisitLeveledCharacter(TESLevCharacter * character, std::function<void(TESNP
 	}
 }
 
-void ForEachMod(std::function<void(ModInfo *)> functor)
+void ForEachMod(std::function<void(RE::TESFile*)> functor)
 {
-	class ActiveModVisitor
+	RE::TESDataHandler* dataHandler = RE::TESDataHandler::GetSingleton();
+	if (!dataHandler)
+		return;
+
+	// Walk the data handler's aggregate list of all loaded mods (load order,
+	// including light plugins); skip inactive entries.
+	for (RE::TESFile* modInfo : dataHandler->files)
 	{
-	public:
-		ActiveModVisitor(std::function<void(ModInfo *)> fn) : m_function(fn) { }
-
-		bool Accept(ModInfo* modInfo)
+		if (modInfo && BSFileUtil::IsActive(modInfo))
 		{
-			if (modInfo->IsActive())
-			{
-				m_function(modInfo);
-			}
-			return true;
+			functor(modInfo);
 		}
-
-		std::function<void(ModInfo *)> m_function;
-	};
-
-	ActiveModVisitor visitor(functor);
-	(*g_dataHandler)->modList.modInfoList.Visit(visitor);
+	}
 }

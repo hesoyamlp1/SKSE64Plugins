@@ -1,5 +1,5 @@
 #include "CDXBSShaderResource.h"
-#include "skse64/GameStreams.h"
+#include "RE/B/BSResourceNiBinaryStream.h"
 #include "FileUtils.h"
 
 CDXBSShaderResource::CDXBSShaderResource(const char * filePath, const char * entryPoint)
@@ -7,10 +7,10 @@ CDXBSShaderResource::CDXBSShaderResource(const char * filePath, const char * ent
 	const char * shaderPath = "SKSE/Plugins/NiOverride/texture.fx";
 
 	std::vector<char> vsb;
-	BSResourceNiBinaryStream vs(filePath);
-	if (!vs.IsValid())
+	RE::BSResourceNiBinaryStream vs(filePath);
+	if (!vs.good())
 	{
-		_ERROR("%s - Failed to read %s", __FUNCTION__, filePath);
+		SKSE::log::error("{} - Failed to read {}", __FUNCTION__, filePath);
 	}
 	else
 	{

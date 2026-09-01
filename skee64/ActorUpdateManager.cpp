@@ -1,9 +1,8 @@
-#include "ITypes.h"
-
 #include "ActorUpdateManager.h"
+#include "SKEETasks.h"
 
-#include "skse64/GameReferences.h"
-#include "skse64/GameRTTI.h"
+#include <cstdint>
+
 
 #include "NiTransformInterface.h"
 #include "OverrideInterface.h"
@@ -16,7 +15,7 @@
 #include "NifUtils.h"
 #include "Utilities.h"
 
-extern SKSETaskInterface* g_task;
+extern const SKSE::TaskInterface* g_task;
 
 extern BodyMorphInterface		g_bodyMorphInterface;
 extern OverlayInterface			g_overlayInterface;
@@ -28,22 +27,22 @@ extern bool	g_enableBodyGen;
 extern bool	g_enableAutoTransforms;
 extern bool	g_enableBodyInit;
 
-EventResult ActorUpdateManager::ReceiveEvent(TESObjectLoadedEvent * evn, EventDispatcher<TESObjectLoadedEvent>* dispatcher)
+RE::BSEventNotifyControl ActorUpdateManager::ProcessEvent(const RE::TESObjectLoadedEvent* a_event, RE::BSTEventSource<RE::TESObjectLoadedEvent>* a_source)
 {
-	if (evn) {
-		TESForm * form = LookupFormByID(evn->formId);
+	if (a_event) {
+		RE::TESForm * form = RE::TESForm::LookupByID(a_event->formID);
 		if (form) {
-			if (form->formType == Character::kTypeID) {
-				TESObjectREFR * reference = DYNAMIC_CAST(form, TESForm, TESObjectREFR);
+			if (form->IsActor()) {
+				RE::TESObjectREFR * reference = form ? form->As<RE::TESObjectREFR>() : nullptr;
 				if (reference) {
 					if (g_enableBodyGen && !g_bodyMorphInterface.HasMorphs(reference)) {
-						UInt32 total = g_bodyMorphInterface.EvaluateBodyMorphs(reference);
+						std::uint32_t total = g_bodyMorphInterface.EvaluateBodyMorphs(reference);
 						if (total) {
-							_DMESSAGE("%s - ObjectLoad applied %d morph(s) to %s", __FUNCTION__, total, CALL_MEMBER_FN(reference, GetReferenceName)());
+							SKSE::log::debug("{} - ObjectLoad applied {} morph(s) to {}", __FUNCTION__, total, reference->GetName());
 
 							if (m_isReverting)
 							{
-								AddBodyUpdate(evn->formId);
+								AddBodyUpdate(a_event->formID);
 							}
 							else
 							{
@@ -56,53 +55,53 @@ EventResult ActorUpdateManager::ReceiveEvent(TESObjectLoadedEvent * evn, EventDi
 					if (g_enableAutoTransforms) {
 						if (m_isReverting)
 						{
-							AddTransformUpdate(evn->formId);
+							AddTransformUpdate(a_event->formID);
 						}
 						else
 						{
-							g_transformInterface.SetTransforms(evn->formId);
+							g_transformInterface.SetTransforms(a_event->formID);
 						}
 					}
 				}
 			}
 		}
 	}
-	return kEvent_Continue;
+	return RE::BSEventNotifyControl::kContinue;
 }
 
-EventResult ActorUpdateManager::ReceiveEvent(TESInitScriptEvent * evn, EventDispatcher<TESInitScriptEvent>* dispatcher)
+RE::BSEventNotifyControl ActorUpdateManager::ProcessEvent(const RE::TESInitScriptEvent* a_event, RE::BSTEventSource<RE::TESInitScriptEvent>* a_source)
 {
-	if (evn) {
-		TESObjectREFR * reference = evn->reference;
+	if (a_event) {
+		RE::TESObjectREFR * reference = a_event->objectInitialized.get();
 		if (reference && g_enableBodyInit) {
-			if (reference->formType == Character::kTypeID) {
+			if (reference->IsActor()) {
 				if (!g_bodyMorphInterface.HasMorphs(reference)) {
-					UInt32 total = g_bodyMorphInterface.EvaluateBodyMorphs(reference);
+					std::uint32_t total = g_bodyMorphInterface.EvaluateBodyMorphs(reference);
 					if (total) {
-						_DMESSAGE("%s - ObjectInit applied %d morph(s) to %s", __FUNCTION__, total, CALL_MEMBER_FN(reference, GetReferenceName)());
+						SKSE::log::debug("{} - ObjectInit applied {} morph(s) to {}", __FUNCTION__, total, reference->GetName());
 					}
 				}
 			}
 		}
 	}
-	return kEvent_Continue;
+	return RE::BSEventNotifyControl::kContinue;
 }
 
-EventResult ActorUpdateManager::ReceiveEvent(TESLoadGameEvent* evn, EventDispatcher<TESLoadGameEvent>* dispatcher)
+RE::BSEventNotifyControl ActorUpdateManager::ProcessEvent(const RE::TESLoadGameEvent* a_event, RE::BSTEventSource<RE::TESLoadGameEvent>* a_source)
 {
 	Flush();
 	m_isReverting = false;
 	m_isNewGame = false;
-	return kEvent_Continue;
+	return RE::BSEventNotifyControl::kContinue;
 }
 
-EventResult ActorUpdateManager::ReceiveEvent(TESCellFullyLoadedEvent* evn, EventDispatcher<TESCellFullyLoadedEvent>* dispatcher)
+RE::BSEventNotifyControl ActorUpdateManager::ProcessEvent(const RE::TESCellFullyLoadedEvent* a_event, RE::BSTEventSource<RE::TESCellFullyLoadedEvent>* a_source)
 {
 	if (m_isNewGame) {
 		Flush();
 		m_isNewGame = false;
 	}
-	return kEvent_Continue;
+	return RE::BSEventNotifyControl::kContinue;
 }
 
 void ActorUpdateManager::AddInterface(IAddonAttachmentInterface* observer)
@@ -127,7 +126,7 @@ void ActorUpdateManager::RemoveInterface(IAddonAttachmentInterface* observer)
 	}), m_observers.end());
 }
 
-void ActorUpdateManager::OnAttach(TESObjectREFR * refr, TESObjectARMO * armor, TESObjectARMA * addon, NiAVObject * object, bool isFirstPerson, NiNode * skeleton, NiNode * root)
+void ActorUpdateManager::OnAttach(RE::TESObjectREFR * refr, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::NiAVObject * object, bool isFirstPerson, RE::NiNode * skeleton, RE::NiNode * root)
 {
 	std::lock_guard<std::recursive_mutex> scs(m_lock);
 	for (auto observer : m_observers)
@@ -211,17 +210,17 @@ bool ActorUpdateManager::UnregisterFlushCallback(const char* key)
 void ActorUpdateManager::Flush()
 {
 	std::lock_guard<std::recursive_mutex> scs(m_lock);
-	g_task->AddTask(new SKSETaskApplyMorphs(*g_thePlayer));
+	SKEE_AddTask(g_task, new SKSETaskApplyMorphs(RE::PlayerCharacter::GetSingleton()));
 
-	std::unordered_set<UInt32> flushedSet;
-	std::vector<UInt32> flushedForms;
+	std::unordered_set<std::uint32_t> flushedSet;
+	std::vector<std::uint32_t> flushedForms;
 
-	for (UInt32 formId : m_bodyUpdates)
+	for (std::uint32_t formId : m_bodyUpdates)
 	{
-		auto refr = LookupFormByID(formId);
-		if (refr && refr->formType == Character::kTypeID)
+		auto refr = RE::TESForm::LookupByID(formId);
+		if (refr && refr->IsActor())
 		{
-			g_bodyMorphInterface.UpdateModelWeight(static_cast<TESObjectREFR*>(refr), false);
+			g_bodyMorphInterface.UpdateModelWeight(static_cast<RE::TESObjectREFR*>(refr), false);
 			if (flushedSet.count(formId) == 0)
 			{
 				flushedSet.emplace(formId);
@@ -230,7 +229,7 @@ void ActorUpdateManager::Flush()
 		}
 	}
 
-	for (UInt32 formId : m_transformUpdates)
+	for (std::uint32_t formId : m_transformUpdates)
 	{
 		g_transformInterface.SetTransforms(formId, false);
 		if (flushedSet.count(formId) == 0)
@@ -240,12 +239,12 @@ void ActorUpdateManager::Flush()
 		}
 	}
 
-	for (UInt32 formId : m_overlayUpdates)
+	for (std::uint32_t formId : m_overlayUpdates)
 	{
-		auto refr = LookupFormByID(formId);
-		if (refr && refr->formType == Character::kTypeID)
+		auto refr = RE::TESForm::LookupByID(formId);
+		if (refr && refr->IsActor())
 		{
-			g_overlayInterface.QueueOverlayBuild(static_cast<TESObjectREFR*>(refr));
+			g_overlayInterface.QueueOverlayBuild(static_cast<RE::TESObjectREFR*>(refr));
 			if (flushedSet.count(formId) == 0)
 			{
 				flushedSet.emplace(formId);
@@ -254,7 +253,7 @@ void ActorUpdateManager::Flush()
 		}
 	}
 
-	for (UInt32 formId : m_overrideNodeUpdates)
+	for (std::uint32_t formId : m_overrideNodeUpdates)
 	{
 		g_overrideInterface.Impl_SetNodeProperties(formId, false);
 		if (flushedSet.count(formId) == 0)
@@ -264,7 +263,7 @@ void ActorUpdateManager::Flush()
 		}
 	}
 
-	for (UInt32 formId : m_overrideWeapUpdates)
+	for (std::uint32_t formId : m_overrideWeapUpdates)
 	{
 		g_overrideInterface.Impl_SetWeaponProperties(formId, false);
 		if (flushedSet.count(formId) == 0)
@@ -274,7 +273,7 @@ void ActorUpdateManager::Flush()
 		}
 	}
 
-	for (UInt32 formId : m_overrideAddonUpdates)
+	for (std::uint32_t formId : m_overrideAddonUpdates)
 	{
 		g_overrideInterface.Impl_SetProperties(formId, false);
 		if (flushedSet.count(formId) == 0)
@@ -284,7 +283,7 @@ void ActorUpdateManager::Flush()
 		}
 	}
 
-	for (UInt32 formId : m_overrideSkinUpdates)
+	for (std::uint32_t formId : m_overrideSkinUpdates)
 	{
 		g_overrideInterface.Impl_SetSkinProperties(formId, false);
 		if (flushedSet.count(formId) == 0)
@@ -296,7 +295,7 @@ void ActorUpdateManager::Flush()
 
 	for (NIOVTaskUpdateItemDye* task : m_dyeUpdates)
 	{
-		g_task->AddTask(task);
+		SKEE_AddTask(g_task, task);
 		if (flushedSet.count(task->GetActor()) == 0)
 		{
 			flushedSet.emplace(task->GetActor());

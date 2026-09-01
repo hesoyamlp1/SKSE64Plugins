@@ -1,6 +1,10 @@
 #include "StringTable.h"
 
-#include "skse64/PluginAPI.h"
+#include <SKSE/Interfaces.h>
+
+#include "Utilities.h"
+
+#include <cstdint>
 
 extern StringTable g_stringTable;
 
@@ -9,13 +13,13 @@ using namespace Serialization;
 void StringTable::PrintDiagnostics()
 {
 	Console_Print("StringTable Diagnostics:");
-	IScopedCriticalSection locker(&m_lock);
+	std::lock_guard<std::recursive_mutex> locker(m_lock);
 	Console_Print("\t%llu string entries", m_table.size());
 	size_t byteSize = 0;
 	for (auto& item : m_table)
 	{
 		byteSize += item.first.length();
-		_MESSAGE("String: %s", item.first.c_str());
+		SKSE::log::info("String: {}", item.first.c_str());
 	}
 	Console_Print("\t%llu total bytes", byteSize);
 }
@@ -28,7 +32,7 @@ void DeleteStringEntry(const SKEEFixedString* string)
 
 StringTableItem StringTable::GetString(const SKEEFixedString & str)
 {
-	IScopedCriticalSection locker(&m_lock);
+	std::lock_guard<std::recursive_mutex> locker(m_lock);
 	auto it = m_table.find(str);
 	if (it != m_table.end()) {
 		return it->second.lock();
@@ -45,7 +49,7 @@ StringTableItem StringTable::GetString(const SKEEFixedString & str)
 
 void StringTable::RemoveString(const SKEEFixedString & str)
 {
-	IScopedCriticalSection locker(&m_lock);
+	std::lock_guard<std::recursive_mutex> locker(m_lock);
 	auto it = m_table.find(str);
 	if (it != m_table.end())
 	{
@@ -61,10 +65,10 @@ void StringTable::RemoveString(const SKEEFixedString & str)
 	}
 }
 
-UInt32 StringTable::GetStringID(const StringTableItem & str)
+std::uint32_t StringTable::GetStringID(const StringTableItem & str)
 {
-	IScopedCriticalSection locker(&m_lock);
-	UInt32 i = 0;
+	std::lock_guard<std::recursive_mutex> locker(m_lock);
+	std::uint32_t i = 0;
 	for (auto it = m_tableVector.begin(); it != m_tableVector.end(); ++it, ++i)
 	{
 		auto item = it->lock();
@@ -75,20 +79,22 @@ UInt32 StringTable::GetStringID(const StringTableItem & str)
 	return -1;
 }
 
-void StringTable::Save(const SKSESerializationInterface * intfc, UInt32 kVersion)
+void StringTable::Save(const SKSE::SerializationInterface * intfc, std::uint32_t kVersion)
 {
-	intfc->OpenRecord('STTB', kVersion);
+	if (!intfc->OpenRecord('STTB', kVersion)) {
+		SKSE::log::error("{} - Failed to open record", __FUNCTION__);
+	}
 
-	IScopedCriticalSection locker(&m_lock);
-	UInt32 totalStrings = m_tableVector.size();
-	WriteData<UInt32>(intfc, &totalStrings);
+	std::lock_guard<std::recursive_mutex> locker(m_lock);
+	std::uint32_t totalStrings = m_tableVector.size();
+	WriteData<std::uint32_t>(intfc, &totalStrings);
 
 	for (auto & str : m_tableVector)
 	{
 		auto data = str.lock();
-		UInt16 length = 0;
+		std::uint16_t length = 0;
 		if (!data) {
-			WriteData<UInt16>(intfc, &length);
+			WriteData<std::uint16_t>(intfc, &length);
 		}
 		else {
 			WriteData<SKEEFixedString>(intfc, data.get());
@@ -96,25 +102,25 @@ void StringTable::Save(const SKSESerializationInterface * intfc, UInt32 kVersion
 	}
 }
 
-bool StringTable::Load(const SKSESerializationInterface * intfc, UInt32 kVersion, StringIdMap & stringTable)
+bool StringTable::Load(const SKSE::SerializationInterface * intfc, std::uint32_t kVersion, StringIdMap & stringTable)
 {
 	bool error = false;
-	UInt32 totalStrings = 0;
+	std::uint32_t totalStrings = 0;
 
 	if (kVersion >= kSerializationVersion3)
 	{
-		if (!ReadData<UInt32>(intfc, &totalStrings))
+		if (!ReadData<std::uint32_t>(intfc, &totalStrings))
 		{
-			_ERROR("%s - Error loading total strings from table", __FUNCTION__);
+			SKSE::log::error("{} - Error loading total strings from table", __FUNCTION__);
 			error = true;
 			return error;
 		}
 
-		for (UInt32 i = 0; i < totalStrings; i++)
+		for (std::uint32_t i = 0; i < totalStrings; i++)
 		{
 			SKEEFixedString str;
 			if (!ReadData<SKEEFixedString>(intfc, &str)) {
-				_ERROR("%s - Error loading string", __FUNCTION__);
+				SKSE::log::error("{} - Error loading string", __FUNCTION__);
 				error = true;
 				return error;
 			}
@@ -127,18 +133,18 @@ bool StringTable::Load(const SKSESerializationInterface * intfc, UInt32 kVersion
 	{
 		if (!intfc->ReadRecordData(&totalStrings, sizeof(totalStrings)))
 		{
-			_ERROR("%s - Error loading total strings from table", __FUNCTION__);
+			SKSE::log::error("{} - Error loading total strings from table", __FUNCTION__);
 			error = true;
 			return error;
 		}
 
-		for (UInt32 i = 0; i < totalStrings; i++)
+		for (std::uint32_t i = 0; i < totalStrings; i++)
 		{
 			char * stringName = NULL;
-			UInt16 stringLength = 0;
+			std::uint16_t stringLength = 0;
 			if (!intfc->ReadRecordData(&stringLength, sizeof(stringLength)))
 			{
-				_ERROR("%s - Error loading string length", __FUNCTION__);
+				SKSE::log::error("{} - Error loading string length", __FUNCTION__);
 				error = true;
 				return error;
 			}
@@ -146,7 +152,7 @@ bool StringTable::Load(const SKSESerializationInterface * intfc, UInt32 kVersion
 			stringName = new char[stringLength + 1];
 
 			if (stringLength > 0 && !intfc->ReadRecordData(stringName, stringLength)) {
-				_ERROR("%s - Error loading string of length %d", __FUNCTION__, stringLength);
+				SKSE::log::error("{} - Error loading string of length {}", __FUNCTION__, stringLength);
 				error = true;
 				return error;
 			}
@@ -156,10 +162,10 @@ bool StringTable::Load(const SKSESerializationInterface * intfc, UInt32 kVersion
 			SKEEFixedString str(stringName);
 			delete[] stringName;
 
-			UInt32 stringId = 0;
+			std::uint32_t stringId = 0;
 			if (!intfc->ReadRecordData(&stringId, sizeof(stringId)))
 			{
-				_ERROR("%s - Error loading string id", __FUNCTION__);
+				SKSE::log::error("{} - Error loading string id", __FUNCTION__);
 				error = true;
 				return error;
 			}
@@ -174,27 +180,27 @@ bool StringTable::Load(const SKSESerializationInterface * intfc, UInt32 kVersion
 
 void StringTable::Revert()
 {
-	IScopedCriticalSection locker(&m_lock);
+	std::lock_guard<std::recursive_mutex> locker(m_lock);
 	m_table.clear();
 	m_tableVector.clear();
 }
 
 template <typename T>
-bool Serialization::WriteData(const SKSESerializationInterface * intfc, const T * data)
+bool Serialization::WriteData(const SKSE::SerializationInterface * intfc, const T * data)
 {
 	return intfc->WriteRecordData(data, sizeof(T));
 }
 
 template <typename T>
-bool Serialization::ReadData(const SKSESerializationInterface * intfc, T * data)
+bool Serialization::ReadData(const SKSE::SerializationInterface * intfc, T * data)
 {
 	return intfc->ReadRecordData(data, sizeof(T)) > 0;
 }
 
 template<>
-bool Serialization::WriteData<SKEEFixedString>(const SKSESerializationInterface * intfc, const SKEEFixedString * str)
+bool Serialization::WriteData<SKEEFixedString>(const SKSE::SerializationInterface * intfc, const SKEEFixedString * str)
 {
-	UInt16 len = str->length();
+	std::uint16_t len = str->length();
 	if (len > SHRT_MAX)
 		return false;
 	if (!intfc->WriteRecordData(&len, sizeof(len)))
@@ -207,9 +213,9 @@ bool Serialization::WriteData<SKEEFixedString>(const SKSESerializationInterface 
 }
 
 template<>
-bool Serialization::ReadData<SKEEFixedString>(const SKSESerializationInterface * intfc, SKEEFixedString * str)
+bool Serialization::ReadData<SKEEFixedString>(const SKSE::SerializationInterface * intfc, SKEEFixedString * str)
 {
-	UInt16 len = 0;
+	std::uint16_t len = 0;
 
 	if (!intfc->ReadRecordData(&len, sizeof(len)))
 		return false;

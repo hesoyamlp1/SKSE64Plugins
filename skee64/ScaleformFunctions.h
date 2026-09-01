@@ -1,32 +1,27 @@
 #pragma once
 
-#include "skse64/ScaleformCallbacks.h"
-#include "skse64/GameThreads.h"
-#include "skse64/GameTypes.h"
+#include "RE/G/GFxFunctionHandler.h"
 
-class GFxValue;
-class GFxMovieView;
-
-class SKSEScaleform_GetDyeableItems : public GFxFunctionHandler
+class SKSEScaleform_GetDyeableItems : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_GetDyeItems : public GFxFunctionHandler
+class SKSEScaleform_GetDyeItems : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_SetItemDyeColor : public GFxFunctionHandler
+class SKSEScaleform_SetItemDyeColor : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_SetItemDyeColors : public GFxFunctionHandler
+class SKSEScaleform_SetItemDyeColors : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };

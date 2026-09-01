@@ -1,26 +1,32 @@
-#include "skse64/PluginAPI.h"
-
-#include "skse64/GameAPI.h"
-#include "skse64/GameData.h"
-#include "skse64/GameObjects.h"
-#include "skse64/GameMenus.h"
-#include "skse64/GameRTTI.h"
-#include "skse64/GameStreams.h"
-
-#include "skse64/NiNodes.h"
-#include "skse64/NiGeometry.h"
-#include "skse64/NiMaterial.h"
-#include "skse64/NiProperties.h"
-#include "skse64/NiExtraData.h"
-#include "skse64/NiSerialization.h"
-
-#include "skse64/ScaleformMovie.h"
-
-#include "skse64/HashUtil.h"
+#include <RE/A/Actor.h>
+#include "SKEETasks.h"
+#include <RE/M/MemoryManager.h>
+#include <RE/B/BSFaceGenNiNode.h>
+#include <RE/B/BSGeometry.h>
+#include <RE/B/BSLightingShaderMaterial.h>
+#include <RE/B/BSLightingShaderProperty.h>
+#include <RE/B/BSShaderProperty.h>
+#include <RE/N/NiAVObject.h>
+#include <RE/N/NiExtraData.h>
+#include <RE/N/NiPoint3.h>
+#include <RE/N/NiSkinInstance.h>
+#include <RE/N/NiSkinPartition.h>
+#include <RE/N/NiSmartPointer.h>
+#include <RE/T/TESForm.h>
+#include <RE/T/TESModelTri.h>
+#include <RE/T/TESNPC.h>
+#include <RE/T/TESRace.h>
+#include <RE/G/GameSettingCollection.h>
+#include <RE/T/TESDataHandler.h>
+#include <RE/T/TESFile.h>
+#include <RE/V/VertexDesc.h>
+#include <REL/Relocation.h>
+#include "NiRTTIUtils.h"
+#include <SKSE/API.h>
+#include <SKSE/Interfaces.h>
 
 #include "FaceMorphInterface.h"
 #include "PartHandler.h"
-#include "ScaleformFunctions.h"
 #include "NifUtils.h"
 #include "SKEEHooks.h"
 
@@ -29,12 +35,31 @@
 #include "Utilities.h"
 #include "Morpher.h"
 
+// CommonLibSSE-NG has no BSFileUtil; replicate the legacy line reader over a
+// RE::BSResourceNiBinaryStream (read bytes until newline or EOF).
+static bool SKEE_ReadLine(RE::BSResourceNiBinaryStream* file, std::string* out)
+{
+	out->clear();
+	char c;
+	while (file->get(c)) {
+		if (c == '\n') {
+			return true;
+		}
+		if (c != '\r') {
+			out->push_back(c);
+		}
+	}
+	return !out->empty();
+}
+
+
+
 #include "OverrideVariant.h"
 #include "OverrideInterface.h"
 #include "BodyMorphInterface.h"
+#include <cstdint>
 
 extern StringTable			g_stringTable;
-extern SKSETaskInterface*	g_task;
 
 #include <map>
 #include <vector>
@@ -50,8 +75,7 @@ extern std::string g_raceTemplate;
 extern bool	g_extendedMorphs;
 extern bool g_allowAllMorphs;
 
-extern SKSEMessagingInterface	* g_messaging;
-extern PluginHandle	g_pluginHandle;
+extern SKSE::PluginHandle g_pluginHandle;
 
 void RaceMap::Revert()
 {
@@ -90,7 +114,7 @@ bool SliderSet::for_each_slider(std::function<bool(SliderGenderPtr)> func)
 	return false;
 }
 
-SliderSetPtr RaceMap::GetSliderSet(TESRace * race)
+SliderSetPtr RaceMap::GetSliderSet(RE::TESRace * race)
 {
 	RaceMap::iterator it = find(race);
 	if(it != end())
@@ -99,111 +123,106 @@ SliderSetPtr RaceMap::GetSliderSet(TESRace * race)
 	return NULL;
 }
 
-SInt32 ReadTRIVertexCount(const char * triPath)
+std::int32_t ReadTRIVertexCount(const char * triPath)
 {
 	if(triPath[0] == 0) {
 		return -1;
 	}
 
-	char filePath[MAX_PATH];
-	memset(filePath, 0, MAX_PATH);
-	sprintf_s(filePath, MAX_PATH, "Meshes\\%s", triPath);
-	BSFixedString newPath(filePath);
+	char filePath[REX::W32::MAX_PATH] = { 0 };
+	sprintf_s(filePath, REX::W32::MAX_PATH, "Meshes\\%s", triPath);
 
 	// Cached file already exists, load it
-	BSResourceNiBinaryStream file(newPath.data);
-	if (!file.IsValid()) {
+	RE::BSResourceNiBinaryStream file(filePath);
+	if (!file.good()) {
 		return -1;
 	}
 
 	char header[0x08];
-	file.Read(header, 0x08);
+	file.read(header, 0x08);
 	if(strncmp(header, "FRTRI003", 8) != 0)
 		return -1;
 
-	UInt32 vertexNum = 0;
-	file.Read(&vertexNum, sizeof(vertexNum));
+	std::uint32_t vertexNum = 0;
+	file.get(vertexNum);
 	return vertexNum;
 }
-
 
 bool TRIFile::Load(const char * triPath)
 {
 	if (triPath[0] == 0) {
-		return -1;
+		return false;
 	}
 
-	char filePath[MAX_PATH];
-	memset(filePath, 0, MAX_PATH);
-	sprintf_s(filePath, MAX_PATH, "Meshes\\%s", triPath);
-	BSFixedString newPath(filePath);
+	char filePath[REX::W32::MAX_PATH] = { 0 };
+	sprintf_s(filePath, REX::W32::MAX_PATH, "Meshes\\%s", triPath);
 
-	BSResourceNiBinaryStream file(newPath.data);
-	if (!file.IsValid()) {
+	RE::BSResourceNiBinaryStream file(filePath);
+	if (!file.good()) {
 		return false;
 	}
 
 	char header[0x08];
-	file.Read(header, 0x08);
+	file.read(header, 0x08);
 	if (strncmp(header, "FRTRI003", 8) != 0)
 		return false;
 
-	file.Read(&vertexCount, sizeof(vertexCount));
+	file.get(vertexCount);
 
-	UInt32 polytris = 0, polyquads = 0, unk2 = 0, unk3 = 0, 
+	std::uint32_t polytris = 0, polyquads = 0, unk2 = 0, unk3 = 0, 
 		uvverts = 0, flags = 0, numMorphs = 0, numMods = 0, 
 		modVerts = 0, unk7 = 0, unk8 = 0, unk9 = 0, unk10 = 0;
 
-	file.Read(&polytris, sizeof(polytris));
-	file.Read(&polyquads, sizeof(polyquads));
-	file.Read(&unk2, sizeof(unk2));
-	file.Read(&unk3, sizeof(unk3));
-	file.Read(&uvverts, sizeof(uvverts));
-	file.Read(&flags, sizeof(flags));
-	file.Read(&numMorphs, sizeof(numMorphs));
-	file.Read(&numMods, sizeof(numMods));
-	file.Read(&modVerts, sizeof(modVerts));
-	file.Read(&unk7, sizeof(unk7));
-	file.Read(&unk8, sizeof(unk8));
-	file.Read(&unk9, sizeof(unk9));
-	file.Read(&unk10, sizeof(unk10));
+	file.get(polytris);
+	file.get(polyquads);
+	file.get(unk2);
+	file.get(unk3);
+	file.get(uvverts);
+	file.get(flags);
+	file.get(numMorphs);
+	file.get(numMods);
+	file.get(modVerts);
+	file.get(unk7);
+	file.get(unk8);
+	file.get(unk9);
+	file.get(unk10);
 
 	// Skip reference verts
-	file.Seek(vertexCount * 3 * sizeof(float));
+	file.seek(vertexCount * 3 * sizeof(float));
 
 	// Skip polytris
-	file.Seek(polytris * 3 * sizeof(UInt32));
+	file.seek(polytris * 3 * sizeof(std::uint32_t));
 
 	// Skip UV
 	if (uvverts > 0)
-		file.Seek(uvverts * 2 * sizeof(float));
+		file.seek(uvverts * 2 * sizeof(float));
 
 	// Skip text coords
-	file.Seek(polytris * 3 * sizeof(UInt32));
+	file.seek(polytris * 3 * sizeof(std::uint32_t));
 
-	for (UInt32 i = 0; i < numMorphs; i++)
+	for (std::uint32_t i = 0; i < numMorphs; i++)
 	{
-		UInt32 strLen = 0;
-		file.Read(&strLen, sizeof(strLen));
+		std::uint32_t strLen = 0;
+		file.get(strLen);
 
 		char * name = new char[strLen+1];
-		for (UInt32 l = 0; l < strLen; l++)
+		for (std::uint32_t l = 0; l < strLen; l++)
 		{
-			file.Read(&name[l], sizeof(char));
+			file.get(name[l]);
 		}
 		name[strLen] = 0;
 
 		float mult = 0.0f;
-		file.Read(&mult, sizeof(mult));
+		file.get(mult);
 
 		Morph morph;
 		morph.name = name;
 		morph.multiplier = mult;
 
-		for (UInt32 v = 0; v < vertexCount; v++)
+		for (std::uint32_t v = 0; v < vertexCount; v++)
 		{
 			Morph::Vertex vert;
-			file.Read(&vert, sizeof(vert));
+			file.get(vert);
 			morph.vertices.push_back(vert);
 		}
 
@@ -213,9 +232,9 @@ bool TRIFile::Load(const char * triPath)
 	return true;
 }
 
-bool TRIFile::Apply(BSGeometry * geometry, SKEEFixedString morphName, float relative)
+bool TRIFile::Apply(RE::BSGeometry * geometry, SKEEFixedString morphName, float relative)
 {
-	BSFaceGenBaseMorphExtraData * extraData = (BSFaceGenBaseMorphExtraData *)NifUtils::GetExtraData(geometry, "FOD");
+	RE::BSFaceGenBaseMorphExtraData * extraData = (RE::BSFaceGenBaseMorphExtraData *)geometry->GetExtraData("FOD");
 	if (!extraData)
 		return false;
 
@@ -232,8 +251,8 @@ bool TRIFile::Apply(BSGeometry * geometry, SKEEFixedString morphName, float rela
 	if (extraData->vertexCount != morph->second.vertices.size())
 		return false;
 
-	UInt32 size = morph->second.vertices.size();
-	for (UInt32 i = 0; i < size; i++)
+	std::uint32_t size = morph->second.vertices.size();
+	for (std::uint32_t i = 0; i < size; i++)
 	{
 		auto & vert = morph->second.vertices.at(i);
 		extraData->vertexData[i].x += (float)((double)vert.x * (double)morph->second.multiplier * (double)relative);
@@ -241,25 +260,25 @@ bool TRIFile::Apply(BSGeometry * geometry, SKEEFixedString morphName, float rela
 		extraData->vertexData[i].z += (float)((double)vert.z * (double)morph->second.multiplier * (double)relative);
 	}
 
-	UpdateModelFace(geometry);
+	SKEE::UpdateModelFace(geometry);
 	return true;
 }
 
 class RacePartVisitor
 {
 public:
-	virtual bool Accept(BGSHeadPart * headPart) = 0;
+	virtual bool Accept(RE::BGSHeadPart * headPart) = 0;
 };
 
-void VisitRaceParts(TESRace * race, UInt32 gender, RacePartVisitor & visitor)
+void VisitRaceParts(RE::TESRace * race, std::uint32_t gender, RacePartVisitor & visitor)
 {
-	TESRace::CharGenData * chargenData = race->chargenData[gender];
+	RE::TESRace::FaceRelatedData* chargenData = race->faceRelatedData[gender];
 	if(chargenData) {
-		tArray<BGSHeadPart*> * headParts = chargenData->headParts;
+		RE::BSTArray<RE::BGSHeadPart*> * headParts = chargenData->headParts;
 		if(headParts) {
-			for(UInt32 i = 0; i < headParts->count; i++) {
-				BGSHeadPart* headPart = NULL;
-				if(headParts->GetNthItem(i, headPart)) {
+			for(std::uint32_t i = 0; i < headParts->size(); i++) {
+				RE::BGSHeadPart* headPart = (*headParts)[i];
+				if(headPart) {
 					if(visitor.Accept(headPart))
 						break;
 				}
@@ -271,10 +290,10 @@ void VisitRaceParts(TESRace * race, UInt32 gender, RacePartVisitor & visitor)
 class RacePartByType : public RacePartVisitor
 {
 public:
-	RacePartByType(UInt32 partType) : m_type(partType), m_headPart(NULL) {}
-	virtual bool Accept(BGSHeadPart * headPart)
+	RacePartByType(std::uint32_t partType) : m_type(partType), m_headPart(NULL) {}
+	virtual bool Accept(RE::BGSHeadPart * headPart)
 	{
-		if(headPart->type == m_type) {
+		if(headPart->type.underlying() == m_type) {
 			m_headPart = headPart;
 			return true;
 		}
@@ -282,34 +301,34 @@ public:
 		return false;
 	}
 
-	UInt32			m_type;
-	BGSHeadPart		* m_headPart;
+	std::uint32_t			m_type;
+	RE::BGSHeadPart		* m_headPart;
 };
 
 class RacePartDefaultGen : public RacePartVisitor
 {
 public:
-	RacePartDefaultGen(TESRace * sourceRace, TESRace * targetRace, std::vector<BSFixedString> * parts, UInt32 gender) : m_sourceRace(sourceRace), m_targetRace(targetRace), m_gender(gender), m_partList(parts), m_acceptDefault(false) {}
+	RacePartDefaultGen(RE::TESRace * sourceRace, RE::TESRace * targetRace, std::vector<RE::BSFixedString> * parts, std::uint32_t gender) : m_sourceRace(sourceRace), m_targetRace(targetRace), m_gender(gender), m_partList(parts), m_acceptDefault(false) {}
 
-	virtual bool Accept(BGSHeadPart * headPart)
+	virtual bool Accept(RE::BGSHeadPart * headPart)
 	{
-		BSFixedString sourceMorphPath(headPart->chargenMorph.GetModelName());
-		if(sourceMorphPath == BSFixedString(""))
+		RE::BSFixedString sourceMorphPath(headPart->morphs[RE::BGSHeadPart::MorphIndices::kChargenMorph].GetModel());
+		if(sourceMorphPath == RE::BSFixedString(""))
 			return false;
 
 		auto it = std::find(m_partList->begin(), m_partList->end(), sourceMorphPath);
 		if (it != m_partList->end()) { // Found part tri file
-			if(headPart->type == BGSHeadPart::kTypeFace)
+			if(headPart->type == RE::BGSHeadPart::HeadPartType::kFace)
 				m_acceptDefault = true;
 		} else {
-			RacePartByType racePart(headPart->type);
+			RacePartByType racePart(headPart->type.underlying());
 			VisitRaceParts(m_targetRace, m_gender, racePart);
 
-			BGSHeadPart * targetPart = racePart.m_headPart;
+			RE::BGSHeadPart * targetPart = racePart.m_headPart;
 			if(targetPart) {
-				BSFixedString targetMorphPath(targetPart->chargenMorph.GetModelName());
-				if(targetMorphPath == BSFixedString("")) {
-					_ERROR("%s - Could not bind default morphs for %s on %s[%d] using %s. No valid morph path.", __FUNCTION__, headPart->partName.data, m_sourceRace->editorId.data, m_gender, m_targetRace->editorId.data, sourceMorphPath.data);
+				RE::BSFixedString targetMorphPath(targetPart->morphs[RE::BGSHeadPart::MorphIndices::kChargenMorph].GetModel());
+				if(targetMorphPath == RE::BSFixedString("")) {
+					SKSE::log::error("{} - Could not bind default morphs for {} on {}[{}] using {}. No valid morph path.", __FUNCTION__, headPart->GetName(), m_sourceRace->GetName(), m_gender, m_targetRace->GetName(), sourceMorphPath.c_str());
 					return false;
 				}
 
@@ -319,16 +338,16 @@ public:
 
 				if (sourceData.vertexCount == targetData.vertexCount && sourceData.vertexCount > 0 && targetData.vertexCount > 0) {
 					// Bind additional morphs here, the source and target morphs are identical
-					_DMESSAGE("%s - Binding default morphs for %s (%s) on %s[%d] using %s. (%s - %d | %s - %d)", __FUNCTION__, headPart->partName.data, sourceMorphPath.data, m_sourceRace->editorId.data, m_gender, m_targetRace->editorId.data, sourceMorphPath.data, sourceData.vertexCount, targetMorphPath.data, targetData.vertexCount);
+					SKSE::log::debug("{} - Binding default morphs for {} ({}) on {}[{}] using {}. ({} - {} | {} - {})", __FUNCTION__, headPart->GetName(), sourceMorphPath.c_str(), m_sourceRace->GetName(), m_gender, m_targetRace->GetName(), sourceMorphPath.c_str(), sourceData.vertexCount, targetMorphPath.c_str(), targetData.vertexCount);
 					auto titer = g_morphInterface.m_morphMap.find(targetMorphPath);
 					if(titer != g_morphInterface.m_morphMap.end())
 						g_morphInterface.m_morphMap.emplace(sourceMorphPath, titer->second);
-					if(headPart->type == BGSHeadPart::kTypeFace)
+					if(headPart->type == RE::BGSHeadPart::HeadPartType::kFace)
 						m_acceptDefault = true;
 				} else if(sourceData.vertexCount == 0 || targetData.vertexCount == 0) {
-					_ERROR("%s - Could not bind default morphs for %s on %s[%d] using %s. Invalid vertex count (%s - %d | %s - %d).", __FUNCTION__, headPart->partName.data, m_sourceRace->editorId.data, m_gender, m_targetRace->editorId.data, sourceMorphPath.data, sourceData.vertexCount, targetMorphPath.data, targetData.vertexCount);
+					SKSE::log::error("{} - Could not bind default morphs for {} on {}[{}] using {}. Invalid vertex count ({} - {} | {} - {}).", __FUNCTION__, headPart->GetName(), m_sourceRace->GetName(), m_gender, m_targetRace->GetName(), sourceMorphPath.c_str(), sourceData.vertexCount, targetMorphPath.c_str(), targetData.vertexCount);
 				} else {
-					_ERROR("%s - Could not bind default morphs for %s on %s[%d] using %s. Vertex mismatch (%s - %d | %s - %d).", __FUNCTION__, headPart->partName.data, m_sourceRace->editorId.data, m_gender, m_targetRace->editorId.data, sourceMorphPath.data, sourceData.vertexCount, targetMorphPath.data, targetData.vertexCount);
+					SKSE::log::error("{} - Could not bind default morphs for {} on {}[{}] using {}. Vertex mismatch ({} - {} | {} - {}).", __FUNCTION__, headPart->GetName(), m_sourceRace->GetName(), m_gender, m_targetRace->GetName(), sourceMorphPath.c_str(), sourceData.vertexCount, targetMorphPath.c_str(), targetData.vertexCount);
 				}
 			}
 		}
@@ -336,44 +355,44 @@ public:
 		return false;
 	}
 
-	UInt32	m_gender;
-	TESRace	* m_sourceRace;
-	TESRace	* m_targetRace;
-	std::vector<BSFixedString>	* m_partList;
+	std::uint32_t	m_gender;
+	RE::TESRace	* m_sourceRace;
+	RE::TESRace	* m_targetRace;
+	std::vector<RE::BSFixedString>	* m_partList;
 	bool	m_acceptDefault;
 };
 
 class RacePartFiles : public RacePartVisitor
 {
 public:
-	RacePartFiles(std::vector<BSFixedString> * parts) : m_parts(parts) {}
-	virtual bool Accept(BGSHeadPart * headPart)
+	RacePartFiles(std::vector<RE::BSFixedString> * parts) : m_parts(parts) {}
+	virtual bool Accept(RE::BGSHeadPart * headPart)
 	{
-		if (headPart->chargenMorph.name.data != BSFixedString("").data)
-			m_parts->push_back(headPart->chargenMorph.name);
-		if (headPart->raceMorph.name.data != BSFixedString("").data)
-			m_parts->push_back(headPart->raceMorph.name);
+		if (headPart->morphs[RE::BGSHeadPart::MorphIndices::kChargenMorph].model.c_str() != RE::BSFixedString("").c_str())
+			m_parts->push_back(headPart->morphs[RE::BGSHeadPart::MorphIndices::kChargenMorph].model);
+		if (headPart->morphs[RE::BGSHeadPart::MorphIndices::kRaceMorph].model.c_str() != RE::BSFixedString("").c_str())
+			m_parts->push_back(headPart->morphs[RE::BGSHeadPart::MorphIndices::kRaceMorph].model);
 		
 		return false;
 	}
 
-	std::vector<BSFixedString>		* m_parts;
+	std::vector<RE::BSFixedString>		* m_parts;
 };
 
-bool RaceMap::CreateDefaultMap(TESRace * race)
+bool RaceMap::CreateDefaultMap(RE::TESRace * race)
 {
-	TESRace * templateRace = GetRaceByName(g_raceTemplate);
+	RE::TESRace * templateRace = GetRaceByName(g_raceTemplate);
 	RaceMap::iterator rit = find(templateRace);
 	if(rit != end()) { // Found NordRace slider maps
 
-		std::vector<BSFixedString> templateFiles;
-		for (UInt32 gender = 0; gender <= 1; gender++) {
+		std::vector<RE::BSFixedString> templateFiles;
+		for (std::uint32_t gender = 0; gender <= 1; gender++) {
 			RacePartFiles parts(&templateFiles);
 			VisitRaceParts(templateRace, gender, parts);
 		}
 
 		bool acceptDefault = false;
-		for(UInt32 gender = 0; gender <= 1; gender++) { // Iterate genders
+		for(std::uint32_t gender = 0; gender <= 1; gender++) { // Iterate genders
 			RacePartDefaultGen defaultGen(race, templateRace, &templateFiles, gender);
 			VisitRaceParts(race, gender, defaultGen);
 			acceptDefault = defaultGen.m_acceptDefault;
@@ -382,13 +401,13 @@ bool RaceMap::CreateDefaultMap(TESRace * race)
 		if(acceptDefault) {
 			SliderSetPtr sliderMaps = rit->second;
 			if(sliderMaps->size() > 0) {
-				UInt32 addedMaps = 0;
+				std::uint32_t addedMaps = 0;
 				for(auto smit = sliderMaps->begin(); smit != sliderMaps->end(); ++smit) {
 					if(AddSliderMap(race, *smit))
 						addedMaps++;
 				}
 				if(addedMaps > 0) {
-					_DMESSAGE("%s - Added default slider maps for %s from %s", __FUNCTION__, race->editorId.data, rit->first->editorId.data);
+					SKSE::log::debug("{} - Added default slider maps for {} from {}", __FUNCTION__, race->GetName(), rit->first->GetName());
 					return true;
 				}
 			}
@@ -398,7 +417,7 @@ bool RaceMap::CreateDefaultMap(TESRace * race)
 	return false;
 }
 
-bool RaceMap::AddSliderMap(TESRace * race, SliderMapPtr sliderMap)
+bool RaceMap::AddSliderMap(RE::TESRace * race, SliderMapPtr sliderMap)
 {
 	RaceMap::iterator it = find(race);
 	if(it != end()) {
@@ -415,7 +434,7 @@ bool RaceMap::AddSliderMap(TESRace * race, SliderMapPtr sliderMap)
 	return false;
 }
 
-SliderInternalPtr FaceMorphInterface::GetSliderByIndex(TESRace * race, UInt32 index)
+SliderInternalPtr FaceMorphInterface::GetSliderByIndex(RE::TESRace * race, std::uint32_t index)
 {
 	RaceSliders::iterator it = m_internalMap.find(race);
 	if(it != m_internalMap.end()) {
@@ -425,7 +444,7 @@ SliderInternalPtr FaceMorphInterface::GetSliderByIndex(TESRace * race, UInt32 in
 	return NULL;
 }
 
-float ValueMap::GetMorphValueByName(TESNPC* npc, const SKEEFixedString & name)
+float ValueMap::GetMorphValueByName(RE::TESNPC* npc, const SKEEFixedString & name)
 {
 	ValueMap::iterator it = find(npc);
 	if(it != end()) {
@@ -435,7 +454,7 @@ float ValueMap::GetMorphValueByName(TESNPC* npc, const SKEEFixedString & name)
 	return 0.0;
 }
 
-void ValueMap::SetMorphValue(TESNPC* npc, const SKEEFixedString & name, float value)
+void ValueMap::SetMorphValue(RE::TESNPC* npc, const SKEEFixedString & name, float value)
 {
 	ValueMap::iterator it = find(npc);
 	if(it != end()) {
@@ -472,7 +491,7 @@ float ValueSet::GetValue(const SKEEFixedString & name)
 	return 0.0;
 }
 
-ValueSet * ValueMap::GetValueSet(TESNPC* npc)
+ValueSet * ValueMap::GetValueSet(RE::TESNPC* npc)
 {
 	ValueMap::iterator it = find(npc);
 	if(it != end()) {
@@ -482,19 +501,19 @@ ValueSet * ValueMap::GetValueSet(TESNPC* npc)
 	return NULL;
 }
 
-void ValueMap::EraseNPC(TESNPC * npc)
+void ValueMap::EraseNPC(RE::TESNPC * npc)
 {
 	auto it = find(npc);
 	if (it != end())
 		erase(it);
 }
 
-float FaceMorphInterface::GetMorphValueByName(TESNPC* npc, const SKEEFixedString & name)
+float FaceMorphInterface::GetMorphValueByName(RE::TESNPC* npc, const SKEEFixedString & name)
 {
 	return m_valueMap.GetMorphValueByName(npc, name);
 }
 
-void FaceMorphInterface::SetMorphValue(TESNPC* npc, const SKEEFixedString & name, float value)
+void FaceMorphInterface::SetMorphValue(RE::TESNPC* npc, const SKEEFixedString & name, float value)
 {
 	return m_valueMap.SetMorphValue(npc, name, value);
 }
@@ -516,14 +535,14 @@ public:
 
 void FaceMorphInterface::LoadMods()
 {
-	DataHandler * dataHandler = DataHandler::GetSingleton();
+	RE::TESDataHandler* dataHandler = RE::TESDataHandler::GetSingleton();
 	if (dataHandler)
 	{
-		ForEachMod([&](ModInfo * modInfo)
+		ForEachMod([&](RE::TESFile* modInfo)
 		{
 			std::string fixedPath = "Meshes\\";
 			fixedPath.append(SLIDER_MOD_DIRECTORY);
-			std::string modPath = modInfo->name;
+			std::string modPath = modInfo->fileName;
 			modPath.append("\\");
 
 			ReadRaces(fixedPath, modPath, "races.ini");
@@ -534,66 +553,74 @@ void FaceMorphInterface::LoadMods()
 		});
 
 		if (g_extendedMorphs) {
-			BGSHeadPart * part = NULL;
-			for (UInt32 i = 0; i < dataHandler->headParts.count; i++)
+			auto& headParts = dataHandler->GetFormArray<RE::BGSHeadPart>();
+			for (std::uint32_t i = 0; i < headParts.size(); i++)
 			{
-				if (dataHandler->headParts.GetNthItem(i, part)) {
-					if (CacheHeadPartModel(part)) {
+				RE::BGSHeadPart* part = headParts[i];
+				if (part && CacheHeadPartModel(part)) {
 
-						BSFixedString key = part->chargenMorph.GetModelName();
+					RE::BSFixedString key = part->morphs[RE::BGSHeadPart::MorphIndices::kChargenMorph].GetModel();
 
-						// Cache all of the extended morphs
-						ExtendedMorphCache extendedCache;
-						VisitMorphMap(key, extendedCache);
-					}
+					// Cache all of the extended morphs
+					ExtendedMorphCache extendedCache;
+					VisitMorphMap(key, extendedCache);
 				}
 			}
 		}
 
 		// Create default slider maps
-		TESRace * race = NULL;
-		for (UInt32 i = 0; i < dataHandler->races.count; i++)
+		auto& races = dataHandler->GetFormArray<RE::TESRace>();
+		for (std::uint32_t i = 0; i < races.size(); i++)
 		{
-			if (dataHandler->races.GetNthItem(i, race)) {
+			RE::TESRace* race = races[i];
+			if (race) {
 
 				if (g_allowAllMorphs) {
-					for (UInt32 i = 0; i <= 1; i++) {
-						if (race->chargenData[i]) {
-							for (UInt32 t = 0; t < FacePresetList::kNumPresets; t++) {
-								race->chargenData[i]->presetFlags[t][0] = 0xFFFFFFFF;
-								race->chargenData[i]->presetFlags[t][1] = 0xFFFFFFFF;
-								auto presetList = FacePresetList::GetSingleton();
-								auto gameSetting = presetList->presets[t].gameSetting;
-								race->chargenData[i]->totalPresets[t] = gameSetting->data.s32;
+					// GMST names mirror the legacy FacePresetList table order
+					static const char* kFacePresetSettings[4] = { "sRSMNoseTypes", "sRSMBrowTypes", "sRSMEyeTypes", "sRSMMouthTypes" };
+					auto* settingCollection = RE::GameSettingCollection::GetSingleton();
+					for (std::uint32_t i = 0; i <= 1; i++) {
+						auto* faceData = race->faceRelatedData[i];
+						if (faceData) {
+							for (std::uint32_t t = 0; t < 4; t++) {
+								faceData->availableMorphs[t].morphFlags = 0xFFFFFFFF;
+								faceData->availableMorphs[t].unk04 = 0xFFFFFFFF;
+								faceData->numFlagsSet[t] = 0;
+								if (settingCollection) {
+									auto* gameSetting = settingCollection->GetSetting(kFacePresetSettings[t]);
+									if (gameSetting) {
+										faceData->numFlagsSet[t] = gameSetting->data.i;
+									}
+								}
 							}
 						}
 					}
 				}
 
-				if ((race->data.raceFlags & TESRace::kRace_FaceGenHead) == TESRace::kRace_FaceGenHead)
+				if (race->data.flags.any(RE::RACE_DATA::Flag::kFaceGenHead))
 					m_raceMap.CreateDefaultMap(race);
 			}
 		}
 	}
 }
 
-bool FaceMorphInterface::CacheHeadPartModel(BGSHeadPart * headPart, bool cacheTRI)
+bool FaceMorphInterface::CacheHeadPartModel(RE::BGSHeadPart * headPart, bool cacheTRI)
 {
-	BSFixedString modelPath = headPart->chargenMorph.GetModelName();
-	if (modelPath == BSFixedString(""))
+	RE::BSFixedString modelPath = headPart->morphs[RE::BGSHeadPart::MorphIndices::kChargenMorph].GetModel();
+	if (modelPath == RE::BSFixedString(""))
 		return false;
 
 	ModelMap::iterator it = m_modelMap.find(modelPath);
 	if (it == m_modelMap.end()) {
 		TRIModelData data;
 
-		data.morphModel = &headPart->chargenMorph;
+		data.morphModel = &headPart->morphs[RE::BGSHeadPart::MorphIndices::kChargenMorph];
 		if (!cacheTRI) {
-			data.vertexCount = ReadTRIVertexCount(modelPath.data);
+			data.vertexCount = ReadTRIVertexCount(modelPath.c_str());
 		}
 		else {
 			data.triFile = std::make_shared<TRIFile>();
-			data.triFile->Load(modelPath.data);
+			data.triFile->Load(modelPath.c_str());
 			data.vertexCount = data.triFile->vertexCount;
 		}
 
@@ -601,7 +628,7 @@ bool FaceMorphInterface::CacheHeadPartModel(BGSHeadPart * headPart, bool cacheTR
 	}
 	else if (cacheTRI && !it->second.triFile) {
 		it->second.triFile = std::make_shared<TRIFile>();
-		it->second.triFile->Load(modelPath.data);
+		it->second.triFile->Load(modelPath.c_str());
 	}
 
 	return true;
@@ -622,14 +649,17 @@ TRIModelData & FaceMorphInterface::GetExtendedModelTri(const SKEEFixedString & m
 {
 	std::string filePath(SLIDER_DIRECTORY);
 	filePath.append(morphName.c_str());
-	BSFixedString morphFile(filePath.c_str());
+	RE::BSFixedString morphFile(filePath.c_str());
 	ModelMap::iterator it = m_modelMap.find(morphFile);
 	if(it == m_modelMap.end()) {
-		void* memory = Heap_Allocate(sizeof(TESModelTri));
-		memset(memory, 0, sizeof(TESModelTri));
-		((uintptr_t*)memory)[0] = TESModelTri_vtbl.GetUIntPtr();
-		TESModelTri* xData = (TESModelTri*)memory;
-		xData->SetModelName(morphFile.c_str());
+		// Raw-allocate on the game heap with the game vtable (CommonLib does not
+		// define TESModelTri's constructor); matches the legacy Heap_Allocate +
+		// vtable pattern. Set the model through the virtual SetModel (vtable slot 05,
+		// TESModelTri's override) exactly like the legacy SetModelName call.
+		RE::TESModelTri* xData = RE::malloc<RE::TESModelTri>();
+		std::memset(xData, 0, sizeof(RE::TESModelTri));
+		*reinterpret_cast<std::uintptr_t*>(xData) = RE::TESModelTri::VTABLE[0].address();
+		xData->SetModel(morphFile.c_str());
 
 		TRIModelData data;
 		data.morphModel = xData;
@@ -659,32 +689,28 @@ bool MorphMap::Visit(const SKEEFixedString & key, Visitor & visitor)
 	if(it != end())
 	{
 #ifdef _DEBUG_MORPHAPPLICATOR
-		_DMESSAGE("%s - Applying %d additional morphs to %s", __FUNCTION__, it->second.size(), key.data);
-		gLog.Indent();
+		SKSE::log::debug("{} - Applying {} additional morphs to {}", __FUNCTION__, it->second.size(), key.c_str());
 #endif
 		for(auto iter = it->second.begin(); iter != it->second.end(); ++iter)
 		{
 #ifdef _DEBUG_MORPHAPPLICATOR
-			_DMESSAGE("%s - Visting %s", __FUNCTION__, (*iter).data);
+			SKSE::log::debug("{} - Visting {}", __FUNCTION__, (*iter).c_str());
 #endif
 			if(visitor.Accept(*iter))
 				break;
 		}
 #ifdef _DEBUG_MORPHAPPLICATOR
-		gLog.Outdent();
 #endif
 		return true;
 	}
 #ifdef _DEBUG_MORPHAPPLICATOR
 	else {
-		_DMESSAGE("%s - No additional morphs for %s", __FUNCTION__, key.data);
+		SKSE::log::debug("{} - No additional morphs for {}", __FUNCTION__, key.c_str());
 	}
 #endif
 
 	return false;
 }
-
-
 
 bool FaceMorphInterface::VisitMorphMap(const SKEEFixedString & key, MorphMap::Visitor & visitor)
 {
@@ -709,14 +735,14 @@ void MorphMap::AddMorph(const SKEEFixedString & key, const SKEEFixedString & val
 void FaceMorphInterface::ReadMorphs(std::string fixedPath, std::string modName, std::string fileName)
 {
 	std::string fullPath = fixedPath + modName + fileName;
-	BSResourceNiBinaryStream file(fullPath.c_str());
-	if (!file.IsValid()) {
+	RE::BSResourceNiBinaryStream file(fullPath.c_str());
+	if (!file.good()) {
 		return;
 	}
 
-	UInt32 lineCount = 0;
+	std::uint32_t lineCount = 0;
 	std::string str = "";
-	while(BSFileUtil::ReadLine(&file, &str))
+	while(SKEE_ReadLine(&file, &str))
 	{
 		lineCount++;
 		str = std::trim(str);
@@ -727,7 +753,7 @@ void FaceMorphInterface::ReadMorphs(std::string fixedPath, std::string modName, 
 
 		std::vector<std::string> side = explode(str, '=');
 		if(side.size() < 2) {
-			_ERROR("ReadMorphs Error - Line (%d) loading a morph from %s has no left-hand side.", lineCount, fullPath.c_str());
+			SKSE::log::error("ReadMorphs Error - Line ({}) loading a morph from {} has no left-hand side.", lineCount, fullPath.c_str());
 			continue;
 		}
 
@@ -735,24 +761,24 @@ void FaceMorphInterface::ReadMorphs(std::string fixedPath, std::string modName, 
 		std::string rSide = std::trim(side[1]);
 
 		if(_strnicmp(lSide.c_str(), "extension", 9) != 0) {
-			_ERROR("ReadMorphs Error - Line (%d) loading a morph from %s invalid left-hand side.", lineCount, fullPath.c_str());
+			SKSE::log::error("ReadMorphs Error - Line ({}) loading a morph from {} invalid left-hand side.", lineCount, fullPath.c_str());
 			continue;
 		}
 
 		std::vector<std::string> params = explode(rSide, ',');
 		if(params.size() < 2) {
-			_ERROR("ReadMorphs Error - Line (%d) slider %s from %s has less than 2 parameters.", lineCount, lSide.c_str(), fullPath.c_str());
+			SKSE::log::error("ReadMorphs Error - Line ({}) slider {} from {} has less than 2 parameters.", lineCount, lSide.c_str(), fullPath.c_str());
 			continue;
 		}
 
 		// Trim all parameters
-		for(UInt32 i = 0; i < params.size(); i++)
+		for(std::uint32_t i = 0; i < params.size(); i++)
 			params[i] = std::trim(params[i]);
 
 		std::string key = params[0];
-		for(UInt32 i = 1; i < params.size(); i++) {
+		for(std::uint32_t i = 1; i < params.size(); i++) {
 #ifdef _DEBUG_DATAREADER
-			_DMESSAGE("ReadMorphs Info - Line (%d) added %s morph to %s from %s.", lineCount, params[i].c_str(), key.c_str(), fullPath.c_str());
+			SKSE::log::debug("ReadMorphs Info - Line ({}) added {} morph to {} from {}.", lineCount, params[i].c_str(), key.c_str(), fullPath.c_str());
 #endif
 			m_morphMap.AddMorph(key, params[i]);
 		}
@@ -762,16 +788,16 @@ void FaceMorphInterface::ReadMorphs(std::string fixedPath, std::string modName, 
 void FaceMorphInterface::ReadRaces(std::string fixedPath, std::string modPath, std::string fileName)
 {
 	std::string fullPath = fixedPath + modPath + fileName;
-	BSResourceNiBinaryStream file(fullPath.c_str());
-	if (!file.IsValid()) {
+	RE::BSResourceNiBinaryStream file(fullPath.c_str());
+	if (!file.good()) {
 		return;
 	}
 
 	std::map<std::string, SliderMapPtr> fileMap;
 
-	UInt32 lineCount = 0;
+	std::uint32_t lineCount = 0;
 	std::string str = "";
-	while(BSFileUtil::ReadLine(&file, &str))
+	while(SKEE_ReadLine(&file, &str))
 	{
 		lineCount++;
 		str = std::trim(str);
@@ -782,7 +808,7 @@ void FaceMorphInterface::ReadRaces(std::string fixedPath, std::string modPath, s
 
 		std::vector<std::string> side = explode(str, '=');
 		if(side.size() < 2) {
-			_ERROR("ReadRaces Error - Line (%d) loading a race from %s has insufficient parameters.", lineCount, fullPath.c_str());
+			SKSE::log::error("ReadRaces Error - Line ({}) loading a race from {} has insufficient parameters.", lineCount, fullPath.c_str());
 			continue;
 		}
 
@@ -790,10 +816,10 @@ void FaceMorphInterface::ReadRaces(std::string fixedPath, std::string modPath, s
 		std::string rSide = std::trim(side[1]);
 
 		std::vector<std::string> files = explode(rSide, ',');
-		for(UInt32 i = 0; i < files.size(); i++)
+		for(std::uint32_t i = 0; i < files.size(); i++)
 			files[i] = std::trim(files[i]);
 
-		for(UInt32 i = 0; i < files.size(); i++)
+		for(std::uint32_t i = 0; i < files.size(); i++)
 		{
 			std::string pathOverride = modPath;
 			if(files[i].at(0) == ':') {
@@ -810,16 +836,16 @@ void FaceMorphInterface::ReadRaces(std::string fixedPath, std::string modPath, s
 				if(sliderMap) {
 					fileMap.emplace(files[i], sliderMap);
 				} else {
-					_ERROR("ReadRaces Error - Line (%d) failed to load slider map for %s from %s.", lineCount, lSide.c_str(), fullPath.c_str());
+					SKSE::log::error("ReadRaces Error - Line ({}) failed to load slider map for {} from {}.", lineCount, lSide.c_str(), fullPath.c_str());
 				}
 			}
 
 			if(sliderMap) {
 #ifdef _DEBUG_DATAREADER
-				_DMESSAGE("ReadRaces Info - Line (%d) Loaded %s for Race %s from %s.", lineCount, files[i].c_str(), lSide.c_str(), fullPath.c_str());
+				SKSE::log::debug("ReadRaces Info - Line ({}) Loaded {} for Race {} from {}.", lineCount, files[i].c_str(), lSide.c_str(), fullPath.c_str());
 #endif
 
-				TESRace * race = GetRaceByName(lSide);
+				RE::TESRace * race = GetRaceByName(lSide);
 				if(race)
 					m_raceMap.AddSliderMap(race, sliderMap);
 			}
@@ -827,7 +853,7 @@ void FaceMorphInterface::ReadRaces(std::string fixedPath, std::string modPath, s
 	}
 }
 
-void SliderMap::AddSlider(const SKEEFixedString & key, UInt8 gender, SliderInternal & sliderInternal)
+void SliderMap::AddSlider(const SKEEFixedString & key, std::uint8_t gender, SliderInternal & sliderInternal)
 {
 	SliderMap::iterator it = find(key);
 	if(it != end()) {
@@ -845,17 +871,17 @@ SliderMapPtr FaceMorphInterface::ReadSliders(std::string fixedPath, std::string 
 {
 	SliderMapPtr sliderMap = NULL;
 	std::string fullPath = fixedPath + modPath + fileName;
-	BSResourceNiBinaryStream file(fullPath.c_str());
-	if (!file.IsValid()) {
+	RE::BSResourceNiBinaryStream file(fullPath.c_str());
+	if (!file.good()) {
 		return NULL;
 	}
 
 	sliderMap = std::make_shared<SliderMap>();
 
-	UInt8 gender = 0;
-	UInt32 lineCount = 0;
+	std::uint8_t gender = 0;
+	std::uint32_t lineCount = 0;
 	std::string str = "";
-	while(BSFileUtil::ReadLine(&file, &str))
+	while(SKEE_ReadLine(&file, &str))
 	{
 		lineCount++;
 		str = std::trim(str);
@@ -876,7 +902,7 @@ SliderMapPtr FaceMorphInterface::ReadSliders(std::string fixedPath, std::string 
 
 		std::vector<std::string> side = explode(str, '=');
 		if(side.size() < 2) {
-			_ERROR("ReadSliders Error - Line (%d) slider from %s has no left-hand side.", lineCount, fullPath.c_str());
+			SKSE::log::error("ReadSliders Error - Line ({}) slider from {} has no left-hand side.", lineCount, fullPath.c_str());
 			continue;
 		}
 		
@@ -885,17 +911,17 @@ SliderMapPtr FaceMorphInterface::ReadSliders(std::string fixedPath, std::string 
 
 		std::vector<std::string> params = explode(rSide, ',');
 		if(params.size() < 3) {
-			_ERROR("ReadSliders Error - Line (%d) slider %s from %s has less than 3 parameters.", lineCount, lSide.c_str(), fullPath.c_str());
+			SKSE::log::error("ReadSliders Error - Line ({}) slider {} from {} has less than 3 parameters.", lineCount, lSide.c_str(), fullPath.c_str());
 			continue;
 		}
 
 		// Trim all parameters
-		for(UInt32 i = 0; i < params.size(); i++)
+		for(std::uint32_t i = 0; i < params.size(); i++)
 			params[i] = std::trim(params[i]);
 
-		SKEEFixedString sliderName = SKEEFixedString(lSide.c_str());
 		SliderInternal sliderInternal;
-		sliderInternal.name = sliderName;
+		sliderInternal.name = lSide.c_str();
+		sliderInternal.displayName = (std::string("$") + lSide).c_str();
 		sliderInternal.category = atoi(params.at(0).c_str());
 		if(sliderInternal.category == -1)
 			sliderInternal.category = SliderInternal::kCategoryExtra;
@@ -912,7 +938,7 @@ SliderMapPtr FaceMorphInterface::ReadSliders(std::string fixedPath, std::string 
 			case SliderInternal::kCategoryHair:
 				break;
 			default:
-				_ERROR("ReadSliders Error - Line (%d) loading slider %s from %s has invalid category (%d).", lineCount, lSide.c_str(), fullPath.c_str(), sliderInternal.category);
+				SKSE::log::error("ReadSliders Error - Line ({}) loading slider {} from {} has invalid category ({}).", lineCount, lSide.c_str(), fullPath.c_str(), sliderInternal.category);
 				continue;
 				break;
 		}
@@ -923,7 +949,7 @@ SliderMapPtr FaceMorphInterface::ReadSliders(std::string fixedPath, std::string 
 		}  else if(_strnicmp(params[1].c_str(), "HeadPart", 8) == 0) {
 			sliderInternal.type = SliderInternal::kTypeHeadPart;
 		} else {
-			_ERROR("ReadSliders Error - Line (%d) loading slider %s from %s has invalid slider type (%s).", lineCount, lSide.c_str(), fullPath.c_str(), params[1].c_str());
+			SKSE::log::error("ReadSliders Error - Line ({}) loading slider {} from {} has invalid slider type ({}).", lineCount, lSide.c_str(), fullPath.c_str(), params[1].c_str());
 			continue;
 		}
 		switch(sliderInternal.type)
@@ -935,17 +961,17 @@ SliderMapPtr FaceMorphInterface::ReadSliders(std::string fixedPath, std::string 
 					continue;
 
 				if(params.size() < 4) {
-					_ERROR("ReadSliders Error - Line (%d) slider %s from %s has less than 4 parameters.", lineCount, lSide.c_str(), fullPath.c_str());
+					SKSE::log::error("ReadSliders Error - Line ({}) slider {} from {} has less than 4 parameters.", lineCount, lSide.c_str(), fullPath.c_str());
 					continue;
 				}
 
-				sliderInternal.lowerBound = SKEEFixedString(params[2].c_str());
-				sliderInternal.upperBound = SKEEFixedString(params[3].c_str());
+				sliderInternal.lowerBound = params[2].c_str();
+				sliderInternal.upperBound = params[3].c_str();
 
-				if(sliderInternal.lowerBound == SKEEFixedString("None"))
-					sliderInternal.lowerBound = SKEEFixedString("");
-				if(sliderInternal.upperBound == SKEEFixedString("None"))
-					sliderInternal.upperBound = SKEEFixedString("");
+				if(SKEEFixedString(sliderInternal.lowerBound) == SKEEFixedString("None"))
+					sliderInternal.lowerBound = "";
+				if(SKEEFixedString(sliderInternal.upperBound) == SKEEFixedString("None"))
+					sliderInternal.upperBound = "";
 			}
 			break;
 			case SliderInternal::kTypePreset:
@@ -955,15 +981,15 @@ SliderMapPtr FaceMorphInterface::ReadSliders(std::string fixedPath, std::string 
 					continue;
 
 				if (params.size() < 4) {
-					_ERROR("ReadSliders Error - Line (%d) slider %s from %s has less than 4 parameters.", lineCount, lSide.c_str(), fullPath.c_str());
+					SKSE::log::error("ReadSliders Error - Line ({}) slider {} from {} has less than 4 parameters.", lineCount, lSide.c_str(), fullPath.c_str());
 					continue;
 				}
 
-				sliderInternal.lowerBound = SKEEFixedString(params[2].c_str());
-				UInt32 presetCount = atoi(params[3].c_str());
+				sliderInternal.lowerBound = params[2].c_str();
+				std::uint32_t presetCount = atoi(params[3].c_str());
 				if (presetCount > 255) {
 					presetCount = 255;
-					_WARNING("ReadSliders Warning - Line (%d) loading slider %s from %s has exceeded a preset count of %d.", lineCount, lSide.c_str(), fullPath.c_str(), presetCount);
+					SKSE::log::warn("ReadSliders Warning - Line ({}) loading slider {} from {} has exceeded a preset count of {}.", lineCount, lSide.c_str(), fullPath.c_str(), presetCount);
 				}
 				sliderInternal.presetCount = presetCount;
 
@@ -976,9 +1002,9 @@ SliderMapPtr FaceMorphInterface::ReadSliders(std::string fixedPath, std::string 
 			break;
 		}
 #ifdef _DEBUG_DATAREADER
-		_DMESSAGE("ReadSliders Info - Line (%d) Added Slider (%s, %d, %d, %d, %s, %s) to Gender %d %s from %s.", lineCount, sliderInternal.name.data, sliderInternal.category, sliderInternal.type, sliderInternal.presetCount, sliderInternal.lowerBound.data, sliderInternal.upperBound.data, gender, lSide.c_str(), fullPath.c_str());
+		SKSE::log::debug("ReadSliders Info - Line ({}) Added Slider ({}, {}, {}, {}, {}, {}) to Gender {} {} from {}.", lineCount, sliderInternal.name.c_str(), sliderInternal.category, sliderInternal.type, sliderInternal.presetCount, sliderInternal.lowerBound.c_str(), sliderInternal.upperBound.c_str(), gender, lSide.c_str(), fullPath.c_str());
 #endif
-		sliderMap->AddSlider(sliderName, gender, sliderInternal);
+		sliderMap->AddSlider(sliderInternal.name, gender, sliderInternal);
 	}
 
 	return sliderMap;
@@ -991,9 +1017,9 @@ void SliderMap::DumpMap()
 	{
 		SliderGender * gender = it->second;
 		if(gender->slider[0])
-			_DMESSAGE("Slider - Name: %s Gender: Male Type: %d Cat: %d LowerBound: %s UpperBound: %s PresetCount: %d", it->first.data, gender->slider[0]->type, gender->slider[0]->category, gender->slider[0]->lowerBound.data, gender->slider[0]->upperBound.data, gender->slider[0]->presetCount);
+			SKSE::log::debug("Slider - Name: {} Gender: Male Type: {} Cat: {} LowerBound: {} UpperBound: {} PresetCount: {}", it->first.c_str(), gender->slider[0]->type, gender->slider[0]->category, gender->slider[0]->lowerBound.c_str(), gender->slider[0]->upperBound.c_str(), gender->slider[0]->presetCount);
 		if(gender->slider[1])
-			_DMESSAGE("Slider - Name: %s Gender: Female Type: %d Cat: %d LowerBound: %s UpperBound: %s PresetCount: %d", it->first.data, gender->slider[1]->type, gender->slider[1]->category, gender->slider[1]->lowerBound.data, gender->slider[1]->upperBound.data, gender->slider[1]->presetCount);
+			SKSE::log::debug("Slider - Name: {} Gender: Female Type: {} Cat: {} LowerBound: {} UpperBound: {} PresetCount: {}", it->first.c_str(), gender->slider[1]->type, gender->slider[1]->category, gender->slider[1]->lowerBound.c_str(), gender->slider[1]->upperBound.c_str(), gender->slider[1]->presetCount);
 	}
 }
 
@@ -1001,14 +1027,12 @@ void RaceMap::DumpMap()
 {
 	for(RaceMap::iterator it = begin(); it != end(); ++it)
 	{
-		_DMESSAGE("Race: %08X - %s", it->first->formID, it->first->editorId.data);
-		gLog.Indent();
+		SKSE::log::debug("Race: {:08X} - {}", it->first->formID, it->first->GetName());
 		for(SliderSet::iterator sit = it->second.begin(); sit != it->second.end(); ++sit)
 		{
-			_DMESSAGE("Map: %08X", (*sit));
+			SKSE::log::debug("Map: {:08X}", (*sit));
 			(*sit)->DumpMap();
 		}
-		gLog.Outdent();
 	}
 }
 
@@ -1016,11 +1040,9 @@ void MorphMap::DumpMap()
 {
 	for(MorphMap::iterator it = begin(); it != end(); ++it)
 	{
-		_DMESSAGE("Morph: %s", it->first.data);
+		SKSE::log::debug("Morph: {}", it->first.c_str());
 		DumpVisitor visitor;
-		gLog.Indent();
 		Visit(it->first, visitor);
-		gLog.Outdent();
 	}
 }
 
@@ -1031,7 +1053,7 @@ void MorphHandler::DumpAll()
 }
 #endif
 
-SliderInternalPtr FaceMorphInterface::GetSlider(TESRace * race, UInt8 gender, SKEEFixedString name)
+SliderInternalPtr FaceMorphInterface::GetSlider(RE::TESRace * race, std::uint8_t gender, SKEEFixedString name)
 {
 	SliderSetPtr sliderMaps = m_raceMap.GetSliderSet(race);
 	if(sliderMaps)
@@ -1039,7 +1061,7 @@ SliderInternalPtr FaceMorphInterface::GetSlider(TESRace * race, UInt8 gender, SK
 		SliderInternalPtr sliderInternal;
 		sliderMaps->for_each_slider([&](SliderGenderPtr genders) {
 			sliderInternal = genders->slider[gender];
-			if (sliderInternal && sliderInternal->name == name)
+			if (sliderInternal && SKEEFixedString(sliderInternal->name) == name)
 				return true;
 			return false;
 		});
@@ -1050,13 +1072,12 @@ SliderInternalPtr FaceMorphInterface::GetSlider(TESRace * race, UInt8 gender, SK
 	return NULL;
 }
 
-
 bool sortFixedStrings(SliderInternalPtr s1, SliderInternalPtr s2)
 {
-	return s1->name < s2->name;
+	return SKEEFixedString(s1->name) < SKEEFixedString(s2->name);
 }
 
-SliderList * FaceMorphInterface::CreateSliderList(TESRace * race, UInt8 gender)
+SliderList * FaceMorphInterface::CreateSliderList(RE::TESRace * race, std::uint8_t gender)
 {
 	// Clear the old map before building the new
 	RaceSliders::iterator it = m_internalMap.find(race);
@@ -1086,7 +1107,7 @@ SliderList * FaceMorphInterface::CreateSliderList(TESRace * race, UInt8 gender)
 	return NULL;
 }
 
-void FaceMorphInterface::AddSlider(TESRace * race, SliderInternalPtr & slider)
+void FaceMorphInterface::AddSlider(RE::TESRace * race, SliderInternalPtr & slider)
 {
 	RaceSliders::iterator it = m_internalMap.find(race);
 	if(it != m_internalMap.end()) {
@@ -1098,21 +1119,21 @@ void FaceMorphInterface::AddSlider(TESRace * race, SliderInternalPtr & slider)
 	}
 }
 
-void FaceMorphInterface::ApplyMorph(TESNPC * npc, BGSHeadPart * headPart, BSFaceGenNiNode * faceNode)
+void FaceMorphInterface::ApplyMorph(RE::TESNPC * npc, RE::BGSHeadPart * headPart, RE::BSFaceGenNiNode * faceNode)
 {
-	char buffer[MAX_PATH];
+	char buffer[REX::W32::MAX_PATH];
 	
 	auto sculptTarget = GetSculptTarget(npc, false);
 	if (sculptTarget) {
 		if (headPart) {
 
-			NiAVObject * object = faceNode->GetObjectByName(&headPart->partName.data);
+			RE::NiAVObject * object = faceNode->GetObjectByName(RE::BSFixedString(headPart->GetName()));
 			if (object) {
-				BSGeometry * geometry = object->GetAsBSGeometry();
+				RE::BSGeometry * geometry = object ? object->AsGeometry() : nullptr;
 				if (geometry) {
 					auto sculptHost = sculptTarget->GetSculptHost(SculptData::GetHostByPart(headPart), false);
 					if (sculptHost) {
-						BSFaceGenBaseMorphExtraData * extraData = (BSFaceGenBaseMorphExtraData *)NifUtils::GetExtraData(geometry, "FOD");
+						RE::BSFaceGenBaseMorphExtraData * extraData = (RE::BSFaceGenBaseMorphExtraData *)geometry->GetExtraData("FOD");
 						if (extraData) {
 							for (auto data : *sculptHost)
 								extraData->vertexData[data.first] += data.second;
@@ -1130,24 +1151,24 @@ void FaceMorphInterface::ApplyMorph(TESNPC * npc, BGSHeadPart * headPart, BSFace
 	if(!valueSet)
 		return;
 
-	UInt8 gender = CALL_MEMBER_FN(npc, GetSex)();
+	std::uint8_t gender = npc->GetSex();
 	
 	for(auto it = valueSet->begin(); it != valueSet->end(); ++it)
 	{
-		SliderInternalPtr slider = GetSlider(npc->race.race, gender, *it->first);
+		SliderInternalPtr slider = GetSlider(npc->GetRace(), gender, *it->first);
 		if(slider) {
 			if(slider->type == SliderInternal::kTypePreset) {
 				if(it->second != 0) { // There should be no zero morph for presets
-					memset(buffer, 0, MAX_PATH);
-					sprintf_s(buffer, MAX_PATH, "%s%d", slider->lowerBound.c_str(), (UInt32)it->second);
-					BSFixedString morphName(buffer);
+					memset(buffer, 0, REX::W32::MAX_PATH);
+					sprintf_s(buffer, REX::W32::MAX_PATH, "%s%d", slider->lowerBound.c_str(), (std::uint32_t)it->second);
+					RE::BSFixedString morphName(buffer);
 #ifdef _DEBUG_MORPH
-					_DMESSAGE("Applying Single Preset %s value %f to %s", morphName.data, it->second, headPart->partName.data);
+					SKSE::log::debug("Applying Single Preset {} value {} to {}", morphName.c_str(), it->second, headPart->GetName());
 #endif
-					CALL_MEMBER_FN(FaceGen::GetSingleton(), ApplyMorph)(faceNode, headPart, &morphName, 1.0);
+					SKEE::FaceGen_ApplyMorphByPart(RE::BSFaceGenManager::GetSingleton(), faceNode, headPart, morphName, 1.0);
 				}
 			} else {
-				BSFixedString morphName = slider->lowerBound;
+				RE::BSFixedString morphName = slider->lowerBound;
 				if(it->second < 0)
 					morphName = slider->lowerBound;
 				if(it->second > 0)
@@ -1155,40 +1176,40 @@ void FaceMorphInterface::ApplyMorph(TESNPC * npc, BGSHeadPart * headPart, BSFace
 
 				float relative = abs(it->second);
 				if(relative > 1.0) {
-					UInt32 count = (UInt32)relative;
+					std::uint32_t count = (std::uint32_t)relative;
 					float difference = relative - count;
-					for(UInt32 i = 0; i < count; i++)
-						CALL_MEMBER_FN(FaceGen::GetSingleton(), ApplyMorph)(faceNode, headPart, &morphName, 1.0);
+					for(std::uint32_t i = 0; i < count; i++)
+						SKEE::FaceGen_ApplyMorphByPart(RE::BSFaceGenManager::GetSingleton(), faceNode, headPart, morphName, 1.0);
 					relative = difference;
 				}
 #ifdef _DEBUG_MORPH
-				_DMESSAGE("Applying Single Slider %s value %f to %s", morphName.data, it->second, headPart->partName.data);
+				SKSE::log::debug("Applying Single Slider {} value {} to {}", morphName.c_str(), it->second, headPart->GetName());
 #endif
-				CALL_MEMBER_FN(FaceGen::GetSingleton(), ApplyMorph)(faceNode, headPart, &morphName, relative);
+				SKEE::FaceGen_ApplyMorphByPart(RE::BSFaceGenManager::GetSingleton(), faceNode, headPart, morphName, relative);
 			}
 		}
 	}
 
 	if (g_enableFaceNormalRecalculate)
 	{
-		g_task->AddTask(new SKSETaskApplyMorphNormals(faceNode));
+		SKEE_AddTask(SKSE::GetTaskInterface(), new SKSETaskApplyMorphNormals(RE::NiPointer<RE::NiAVObject>(faceNode)));
 	}
 }
 
-void FaceMorphInterface::ApplyMorphs(TESNPC * npc, BSFaceGenNiNode * faceNode)
+void FaceMorphInterface::ApplyMorphs(RE::TESNPC * npc, RE::BSFaceGenNiNode * faceNode)
 {
-	char buffer[MAX_PATH];
+	char buffer[REX::W32::MAX_PATH];
 	auto sculptTarget = GetSculptTarget(npc, false);
 	if (sculptTarget) {
-		VisitObjects(faceNode, [&](NiAVObject* object)
+		VisitObjects(faceNode, [&](RE::NiAVObject* object)
 		{
-			if (BSGeometry * geometry = object->GetAsBSGeometry()) {
-				std::string headPartName = object->m_name;
-				BGSHeadPart * headPart = GetHeadPartByName(headPartName);
+			if (RE::BSGeometry * geometry = object ? object->AsGeometry() : nullptr) {
+				std::string headPartName = object->name.c_str();
+				RE::BGSHeadPart * headPart = GetHeadPartByName(headPartName);
 				if (headPart) {
 					auto sculptHost = sculptTarget->GetSculptHost(SculptData::GetHostByPart(headPart), false);
 					if (sculptHost) {
-						BSFaceGenBaseMorphExtraData * extraData = (BSFaceGenBaseMorphExtraData *)NifUtils::GetExtraData(geometry, "FOD");
+						RE::BSFaceGenBaseMorphExtraData * extraData = (RE::BSFaceGenBaseMorphExtraData *)geometry->GetExtraData("FOD");
 						if (extraData) {
 							for (auto data : *sculptHost)
 								extraData->vertexData[data.first] += data.second;
@@ -1208,20 +1229,20 @@ void FaceMorphInterface::ApplyMorphs(TESNPC * npc, BSFaceGenNiNode * faceNode)
 	if(!valueSet)
 		return;
 
-	UInt8 gender = CALL_MEMBER_FN(npc, GetSex)();
+	std::uint8_t gender = npc->GetSex();
 
 	
 	for(auto it = valueSet->begin(); it != valueSet->end(); ++it)
 	{
-		SliderInternalPtr slider = GetSlider(npc->race.race, gender, *it->first);
+		SliderInternalPtr slider = GetSlider(npc->GetRace(), gender, *it->first);
 		if(slider) {
 			if(slider->type == SliderInternal::kTypePreset) {
 				if(it->second != 0) { // There should be no zero morph for presets
-					memset(buffer, 0, MAX_PATH);
-					sprintf_s(buffer, MAX_PATH, "%s%d", slider->lowerBound.c_str(), (UInt32)it->second);
+					memset(buffer, 0, REX::W32::MAX_PATH);
+					sprintf_s(buffer, REX::W32::MAX_PATH, "%s%d", slider->lowerBound.c_str(), (std::uint32_t)it->second);
 					SKEEFixedString morphName(buffer);
 #ifdef _DEBUG_MORPH
-					_DMESSAGE("Applying Full Preset %s value %f to all parts", morphName.c_str(), it->second);
+					SKSE::log::debug("Applying Full Preset {} value {} to all parts", morphName.c_str(), it->second);
 #endif
 					SetMorph(npc, faceNode, morphName, 1.0);
 				}
@@ -1234,15 +1255,15 @@ void FaceMorphInterface::ApplyMorphs(TESNPC * npc, BSFaceGenNiNode * faceNode)
 
 				float relative = abs(it->second);
 				if(relative > 1.0) {
-					UInt32 count = (UInt32)relative;
+					std::uint32_t count = (std::uint32_t)relative;
 					float difference = relative - count;
-					for(UInt32 i = 0; i < count; i++)
+					for(std::uint32_t i = 0; i < count; i++)
 						SetMorph(npc, faceNode, morphName, 1.0);
 					relative = difference;
 				}
 
 #ifdef _DEBUG_MORPH
-				_DMESSAGE("Applying Full Slider %s value %f to all parts", morphName.c_str(), it->second);
+				SKSE::log::debug("Applying Full Slider {} value {} to all parts", morphName.c_str(), it->second);
 #endif
 				SetMorph(npc, faceNode, morphName, relative);
 			}
@@ -1251,33 +1272,33 @@ void FaceMorphInterface::ApplyMorphs(TESNPC * npc, BSFaceGenNiNode * faceNode)
 
 	if (g_enableFaceNormalRecalculate)
 	{
-		g_task->AddTask(new SKSETaskApplyMorphNormals(faceNode));
+		SKEE_AddTask(SKSE::GetTaskInterface(), new SKSETaskApplyMorphNormals(RE::NiPointer<RE::NiAVObject>(faceNode)));
 	}
 }
 
-void FaceMorphInterface::SetMorph(TESNPC * npc, BSFaceGenNiNode * faceNode, const SKEEFixedString & name, float relative)
+void FaceMorphInterface::SetMorph(RE::TESNPC * npc, RE::BSFaceGenNiNode * faceNode, const SKEEFixedString& name, float relative)
 {
 #ifdef _DEBUG_MORPH
-	_DMESSAGE("Applying Morph %s to all parts", name);
+	SKSE::log::debug("Applying Morph {} to all parts", name);
 #endif
-	BSFixedString morphName(name.c_str());
-	FaceGenApplyMorph(FaceGen::GetSingleton(), faceNode, npc, &morphName, relative);
+	RE::BSFixedString morphName(name.c_str());
+	SKEE::FaceGen_ApplyMorph(RE::BSFaceGenManager::GetSingleton(), faceNode, npc, morphName, relative);
 
 	if (g_enableFaceNormalRecalculate)
 	{
-		g_task->AddTask(new SKSETaskApplyMorphNormals(faceNode, false));
+		SKEE_AddTask(SKSE::GetTaskInterface(), new SKSETaskApplyMorphNormals(RE::NiPointer<RE::NiAVObject>(faceNode), false));
 	}
 }
 
-SInt32 FaceMorphInterface::LoadSliders(tArray<RaceMenuSlider> * sliderArray, RaceMenuSlider * slider)
+std::int32_t FaceMorphInterface::LoadSliders(RE::RaceMenuSliderArray * sliderArray, RE::RaceMenuSlider * slider)
 {
-	PlayerCharacter * player = (*g_thePlayer);
-	TESNPC * npc = DYNAMIC_CAST(player->baseForm, TESForm, TESNPC);
+	RE::PlayerCharacter * player = RE::PlayerCharacter::GetSingleton();
+	RE::TESNPC * npc = player->GetActorBase();
 
-	UInt32 sliderId = sliderArray->count;
-	UInt32 morphIndex = SLIDER_OFFSET;
+	std::uint32_t sliderId = sliderArray->size();
+	std::uint32_t morphIndex = SLIDER_OFFSET;
 
-	currentList = CreateSliderList(player->race, CALL_MEMBER_FN(npc, GetSex)());
+	currentList = CreateSliderList(player->GetRace(), npc->GetSex());
 	if(!currentList)
 		return sliderId;
 
@@ -1290,14 +1311,14 @@ SInt32 FaceMorphInterface::LoadSliders(tArray<RaceMenuSlider> * sliderArray, Rac
 			bool foundMorph = false;
 			for(auto mit = currentList->begin(); mit != currentList->end(); ++mit) {
 				SliderInternalPtr slider = (*mit);
-				if(slider->name == *it->first) {
+				if(SKEEFixedString(slider->name) == *it->first) {
 					foundMorph = true;
 					break;
 				}
 			}
 
 			if (!foundMorph) {
-				_DMESSAGE("Erasing %s", it->first->c_str());
+				SKSE::log::debug("Erasing {}", it->first->c_str());
 				valueSet->erase(it++);
 			}
 			else
@@ -1305,18 +1326,16 @@ SInt32 FaceMorphInterface::LoadSliders(tArray<RaceMenuSlider> * sliderArray, Rac
 		}
 	}
 
-	UInt32 i = 0;
+	std::uint32_t i = 0;
 	for(auto it = currentList->begin(); it != currentList->end(); ++it)
 	{
 		SliderInternalPtr slider = (*it);
-		std::string sliderName = "$";
-		sliderName.append(slider->name.c_str());
 
 		float value = valueSet ? valueSet->GetValue(slider->name) : 0.0;
 
-		UInt32 sliderIndex = morphIndex + i;
-		float lowerBound = slider->lowerBound == SKEEFixedString("") ? 0.0 : -1.0;
-		float upperBound = slider->upperBound == SKEEFixedString("") ? 0.0 : 1.0;
+		std::uint32_t sliderIndex = morphIndex + i;
+		float lowerBound = SKEEFixedString(slider->lowerBound) == SKEEFixedString("") ? 0.0 : -1.0;
+		float upperBound = SKEEFixedString(slider->upperBound) == SKEEFixedString("") ? 0.0 : 1.0;
 		float interval = g_sliderInterval;
 		float lowerMultiplier = g_sliderMultiplier;
 		float upperMultiplier = g_sliderMultiplier;
@@ -1333,8 +1352,8 @@ SInt32 FaceMorphInterface::LoadSliders(tArray<RaceMenuSlider> * sliderArray, Rac
 			lowerMultiplier = 1.0;
 			upperMultiplier = 1.0;
 			HeadPartList * headPartList = g_partSet.GetPartList(slider->presetCount);
-			BGSHeadPart * headPart = npc->GetHeadPartByType(slider->presetCount);
-			SInt32 partIndex = -1;
+			RE::BGSHeadPart * headPart = npc->GetHeadPartByType(static_cast<RE::TESNPC::HeadPartType>(slider->presetCount));
+			std::int32_t partIndex = -1;
 			if(headPart && headPartList)
 				partIndex = g_partSet.GetPartIndex(headPartList, headPart);
 			if(partIndex != -1)
@@ -1345,31 +1364,31 @@ SInt32 FaceMorphInterface::LoadSliders(tArray<RaceMenuSlider> * sliderArray, Rac
 				upperBound = 0;
 		}
 
-		BSFixedString morphName(sliderName.c_str());
-
 #ifdef _DEBUG_SLIDER
-		_DMESSAGE("Adding slider: %s Morph: %s Value: %f SliderID: %d Index: %d", morphName.data, slider->name.data, value, sliderId, sliderIndex);
+		SKSE::log::debug("Adding slider: {} Morph: {} Value: {} SliderID: {} Index: {}", slider->displayName.c_str(), slider->name.c_str(), value, sliderId, sliderIndex);
 #endif
 
-		RaceMenuSlider newSlider(slider->category, morphName.c_str(), "ChangeDoubleMorph", sliderId++, sliderIndex, 2, 1, lowerBound * lowerMultiplier, upperBound * upperMultiplier, value, interval, 0);
-		AddRaceMenuSlider(sliderArray, &newSlider);
+		RE::RaceMenuSlider newSlider = skee::MakeRaceMenuSlider(slider->category, slider->displayName.c_str(), "ChangeDoubleMorph", sliderId++, sliderIndex, 2, 1, lowerBound * lowerMultiplier, upperBound * upperMultiplier, value, interval);
+		SKEE::AddRaceMenuSlider(sliderArray, &newSlider);
 		i++;
 	}
 
 	return sliderId;
 }
 
-void FaceMorphInterface::Save(SKSESerializationInterface * intfc, UInt32 kVersion)
+void FaceMorphInterface::Save(SKSE::SerializationInterface * intfc, std::uint32_t kVersion)
 {
-	PlayerCharacter * player = (*g_thePlayer);
-	TESNPC * npc = DYNAMIC_CAST(player->baseForm, TESForm, TESNPC);
+	RE::PlayerCharacter * player = RE::PlayerCharacter::GetSingleton();
+	RE::TESNPC * npc = player->GetActorBase();
 
 	auto sculptData = m_sculptStorage.GetSculptTarget(npc, false);
 	if (sculptData) {
 		if (sculptData->size() > 0) {
-			intfc->OpenRecord('SCDT', kVersion);
+			if (!intfc->OpenRecord('SCDT', kVersion)) {
+				SKSE::log::error("{} - Failed to open record", __FUNCTION__);
+			}
 
-			UInt16 numValidParts = 0;
+			std::uint16_t numValidParts = 0;
 			for (auto part : *sculptData) {
 				if (part.first->length() != 0 && part.second->size() > 0) {
 					numValidParts++;
@@ -1378,23 +1397,25 @@ void FaceMorphInterface::Save(SKSESerializationInterface * intfc, UInt32 kVersio
 
 			intfc->WriteRecordData(&numValidParts, sizeof(numValidParts));
 #ifdef _DEBUG
-			_DMESSAGE("%s - Saving %d sculpts", __FUNCTION__, numValidParts);
+			SKSE::log::debug("{} - Saving {} sculpts", __FUNCTION__, numValidParts);
 #endif
 			if (numValidParts > 0) {
 				for (auto part : *sculptData) {
-					UInt16 diffCount = part.second->size();
+					std::uint16_t diffCount = part.second->size();
 					if (diffCount > 0) {
-						intfc->OpenRecord('SCPT', kVersion);
+						if (!intfc->OpenRecord('SCPT', kVersion)) {
+							SKSE::log::error("{} - Failed to open record", __FUNCTION__);
+						}
 						g_stringTable.WriteString(intfc, part.first);
 						intfc->WriteRecordData(&diffCount, sizeof(diffCount));
 
 #ifdef _DEBUG
-						_DMESSAGE("%s - Saving sculpt to %s with %d diffs", __FUNCTION__, part.first->c_str(), diffCount);
+						SKSE::log::debug("{} - Saving sculpt to {} with {} diffs", __FUNCTION__, part.first->c_str(), diffCount);
 #endif
 
 						for (auto diff : *part.second) {
 							intfc->WriteRecordData(&diff.first, sizeof(diff.first));
-							intfc->WriteRecordData(&diff.second, sizeof(NiPoint3));
+							intfc->WriteRecordData(&diff.second, sizeof(RE::NiPoint3));
 						}
 					}
 				}
@@ -1405,25 +1426,29 @@ void FaceMorphInterface::Save(SKSESerializationInterface * intfc, UInt32 kVersio
 	ValueSet * valueSet = m_valueMap.GetValueSet(npc);
 	if (valueSet) {
 		// Count only non-zero morphs
-		UInt32 numMorphs = 0;
+		std::uint32_t numMorphs = 0;
 		for (auto it = valueSet->begin(); it != valueSet->end(); ++it) {
 			if (it->second != 0.0)
 				numMorphs++;
 		}
 
 		if (numMorphs > 0) {
-			intfc->OpenRecord('MRST', kVersion);
+			if (!intfc->OpenRecord('MRST', kVersion)) {
+				SKSE::log::error("{} - Failed to open record", __FUNCTION__);
+			}
 			intfc->WriteRecordData(&numMorphs, sizeof(numMorphs));
 #ifdef _DEBUG
-			_DMESSAGE("%s - Saving %d morphs", __FUNCTION__, numMorphs);
+			SKSE::log::debug("{} - Saving {} morphs", __FUNCTION__, numMorphs);
 #endif
 			for (auto it = valueSet->begin(); it != valueSet->end(); ++it) {
 				if (it->second != 0.0) {
-					intfc->OpenRecord('MRPH', kVersion);
+					if (!intfc->OpenRecord('MRPH', kVersion)) {
+						SKSE::log::error("{} - Failed to open record", __FUNCTION__);
+					}
 					g_stringTable.WriteString(intfc, it->first);
 					intfc->WriteRecordData(&it->second, sizeof(it->second));
 #ifdef _DEBUG
-					_DMESSAGE("%s - Saving %s with %f", __FUNCTION__, it->first->c_str(), it->second);
+					SKSE::log::debug("{} - Saving {} with {}", __FUNCTION__, it->first->c_str(), it->second);
 #endif
 				}
 			}
@@ -1431,36 +1456,36 @@ void FaceMorphInterface::Save(SKSESerializationInterface * intfc, UInt32 kVersio
 	}
 }
 
-bool FaceMorphInterface::LoadMorphData(SKSESerializationInterface * intfc, UInt32 kVersion, const StringIdMap & stringTable)
+bool FaceMorphInterface::LoadMorphData(SKSE::SerializationInterface * intfc, std::uint32_t kVersion, const StringIdMap & stringTable)
 {
-	UInt32	type;
-	UInt32	length;
+	std::uint32_t	type;
+	std::uint32_t	length;
 
 	bool error = false;
 
-	PlayerCharacter * player = (*g_thePlayer);
-	TESNPC * playerBase = DYNAMIC_CAST(player->baseForm, TESForm, TESNPC);
+	RE::PlayerCharacter * player = RE::PlayerCharacter::GetSingleton();
+	RE::TESNPC * playerBase = player->GetActorBase();
 
-	UInt32 numMorphs = 0;
+	std::uint32_t numMorphs = 0;
 	if (!intfc->ReadRecordData(&numMorphs, sizeof(numMorphs)))
 	{
-		_MESSAGE("Error loading morph count");
+		SKSE::log::info("Error loading morph count");
 		error = true;
 		return true;
 	}
 
 #ifdef _DEBUG
-	_DMESSAGE("%s - Loading %d morphs", __FUNCTION__, numMorphs);
+	SKSE::log::debug("{} - Loading {} morphs", __FUNCTION__, numMorphs);
 #endif
 
-	for (UInt32 i = 0; i < numMorphs; i++)
+	for (std::uint32_t i = 0; i < numMorphs; i++)
 	{
 		StringTableItem sculptName;
-		UInt32 index = 0;
+		std::uint32_t index = 0;
 		float value = 0.0;
-		UInt32 subVersion = 0;
+		std::uint32_t subVersion = 0;
 
-		if (intfc->GetNextRecordInfo(&type, &subVersion, &length))
+		if (intfc->GetNextRecordInfo(type, subVersion, length))
 		{
 			switch (type)
 			{
@@ -1471,23 +1496,23 @@ bool FaceMorphInterface::LoadMorphData(SKSESerializationInterface * intfc, UInt3
 					sculptName = StringTable::ReadString(intfc, stringTable);
 					if (!sculptName)
 					{
-						_MESSAGE("Error loading sculpt name");
+						SKSE::log::info("Error loading sculpt name");
 						error = true;
 						return true;
 					}
 				}
 				else if (kVersion >= FaceMorphInterface::kSerializationVersion1)
 				{
-					UInt16 nameLength = 0;
+					std::uint16_t nameLength = 0;
 					if (!intfc->ReadRecordData(&nameLength, sizeof(nameLength))) {
-						_MESSAGE("Error loading morph name length");
+						SKSE::log::info("Error loading morph name length");
 						error = true;
 						return true;
 					}
 
 					std::unique_ptr<char[]> name(new char[nameLength + 1]);
 					if (!intfc->ReadRecordData(name.get(), nameLength)) {
-						_MESSAGE("Error loading morph name");
+						SKSE::log::info("Error loading morph name");
 						error = true;
 						return true;
 					}
@@ -1496,21 +1521,21 @@ bool FaceMorphInterface::LoadMorphData(SKSESerializationInterface * intfc, UInt3
 				}
 
 				if (!intfc->ReadRecordData(&value, sizeof(value))) {
-					_MESSAGE("Error loading morph value");
+					SKSE::log::info("Error loading morph value");
 					error = true;
 					return true;
 				}
 			}
 			break;
 			default:
-				_MESSAGE("%s - unhandled type %08X", __FUNCTION__, type);
+				SKSE::log::info("{} - unhandled type {:08X}", __FUNCTION__, type);
 				error = true;
 				break;
 			}
 		}
 
 		if (value != 0.0) {
-			_MESSAGE("Loaded Morph: %s - Value: %f", sculptName->c_str(), value);
+			SKSE::log::info("Loaded Morph: {} - Value: {}", sculptName->c_str(), value);
 			m_valueMap.SetMorphValue(playerBase, *sculptName, value);
 		}
 	}
@@ -1518,27 +1543,27 @@ bool FaceMorphInterface::LoadMorphData(SKSESerializationInterface * intfc, UInt3
 	return error;
 }
 
-bool FaceMorphInterface::LoadSculptData(SKSESerializationInterface * intfc, UInt32 kVersion, const StringIdMap & stringTable)
+bool FaceMorphInterface::LoadSculptData(SKSE::SerializationInterface * intfc, std::uint32_t kVersion, const StringIdMap & stringTable)
 {
-	UInt32	type;
-	UInt32	length;
+	std::uint32_t	type;
+	std::uint32_t	length;
 	bool	error = false;
 
-	PlayerCharacter * player = (*g_thePlayer);
-	TESNPC * playerBase = DYNAMIC_CAST(player->baseForm, TESForm, TESNPC);
+	RE::PlayerCharacter * player = RE::PlayerCharacter::GetSingleton();
+	RE::TESNPC * playerBase = player->GetActorBase();
 
-	UInt16 numParts = 0;
+	std::uint16_t numParts = 0;
 	if (!intfc->ReadRecordData(&numParts, sizeof(numParts)))
 	{
-		_MESSAGE("Error loading sculpt part count");
+		SKSE::log::info("Error loading sculpt part count");
 		error = true;
 		return true;
 	}
 
-	for (UInt32 i = 0; i < numParts; i++)
+	for (std::uint32_t i = 0; i < numParts; i++)
 	{
-		UInt32 subVersion = 0;
-		if (intfc->GetNextRecordInfo(&type, &subVersion, &length))
+		std::uint32_t subVersion = 0;
+		if (intfc->GetNextRecordInfo(type, subVersion, length))
 		{
 			switch (type)
 			{
@@ -1550,23 +1575,23 @@ bool FaceMorphInterface::LoadSculptData(SKSESerializationInterface * intfc, UInt
 					sculptName = StringTable::ReadString(intfc, stringTable);
 					if (!sculptName)
 					{
-						_MESSAGE("Error loading sculpt name");
+						SKSE::log::info("Error loading sculpt name");
 						error = true;
 						return true;
 					}
 				}
 				else if (kVersion >= FaceMorphInterface::kSerializationVersion1)
 				{
-					UInt16 nameLength = 0;
+					std::uint16_t nameLength = 0;
 					if (!intfc->ReadRecordData(&nameLength, sizeof(nameLength))) {
-						_MESSAGE("Error loading sculpt part name length");
+						SKSE::log::info("Error loading sculpt part name length");
 						error = true;
 						return true;
 					}
 
 					std::unique_ptr<char[]> name(new char[nameLength + 1]);
 					if (!intfc->ReadRecordData(name.get(), nameLength)) {
-						_MESSAGE("Error loading sculpt part name");
+						SKSE::log::info("Error loading sculpt part name");
 						error = true;
 						return true;
 					}
@@ -1574,9 +1599,9 @@ bool FaceMorphInterface::LoadSculptData(SKSESerializationInterface * intfc, UInt
 					sculptName = g_stringTable.GetString(name.get());
 				}
 
-				UInt16 totalDifferences = 0;
+				std::uint16_t totalDifferences = 0;
 				if (!intfc->ReadRecordData(&totalDifferences, sizeof(totalDifferences))) {
-					_MESSAGE("Error loading sculpt difference count");
+					SKSE::log::info("Error loading sculpt difference count");
 					error = true;
 					return true;
 				}
@@ -1588,18 +1613,18 @@ bool FaceMorphInterface::LoadSculptData(SKSESerializationInterface * intfc, UInt
 				if (sculptTarget && totalDifferences > 0)
 					sculptHost = sculptTarget->GetSculptHost(*sculptName, true);
 
-				UInt16 index = 0;
-				NiPoint3 value;
-				for (UInt16 i = 0; i < totalDifferences; i++)
+				std::uint16_t index = 0;
+				RE::NiPoint3 value;
+				for (std::uint16_t i = 0; i < totalDifferences; i++)
 				{
 					if (!intfc->ReadRecordData(&index, sizeof(index))) {
-						_MESSAGE("Error loading sculpt index");
+						SKSE::log::info("Error loading sculpt index");
 						error = true;
 						return true;
 					}
 
 					if (!intfc->ReadRecordData(&value, sizeof(value))) {
-						_MESSAGE("Error loading sculpt index");
+						SKSE::log::info("Error loading sculpt index");
 						error = true;
 						return true;
 					}
@@ -1610,7 +1635,7 @@ bool FaceMorphInterface::LoadSculptData(SKSESerializationInterface * intfc, UInt
 			}
 			break;
 			default:
-				_MESSAGE("unhandled type %08X", type);
+				SKSE::log::info("unhandled type {:08X}", type);
 				error = true;
 				break;
 			}
@@ -1620,17 +1645,17 @@ bool FaceMorphInterface::LoadSculptData(SKSESerializationInterface * intfc, UInt
 	return error;
 }
 
-SKEEFixedString SculptData::GetHostByPart(BGSHeadPart * headPart)
+SKEEFixedString SculptData::GetHostByPart(RE::BGSHeadPart * headPart)
 {
-	const char * morphPath = headPart->chargenMorph.GetModelName();
+	const char * morphPath = headPart->morphs[RE::BGSHeadPart::MorphIndices::kChargenMorph].GetModel();
 	if (morphPath != NULL && morphPath[0] != NULL)
 		return morphPath;
 
-	morphPath = headPart->morph.GetModelName();
+	morphPath = headPart->morphs[RE::BGSHeadPart::MorphIndices::kDefaultMorph].GetModel();
 	if (morphPath != NULL && morphPath[0] != NULL)
 		return morphPath;
 
-	morphPath = headPart->raceMorph.GetModelName();
+	morphPath = headPart->morphs[RE::BGSHeadPart::MorphIndices::kRaceMorph].GetModel();
 	if (morphPath != NULL && morphPath[0] != NULL)
 		return morphPath;
 
@@ -1652,7 +1677,7 @@ MappedSculptDataPtr SculptData::GetSculptHost(SKEEFixedString host, bool create)
 	return nullptr;
 }
 
-SculptDataPtr SculptStorage::GetSculptTarget(TESNPC * target, bool create)
+SculptDataPtr SculptStorage::GetSculptTarget(RE::TESNPC * target, bool create)
 {
 	auto it = find(target);
 	if (it != end())
@@ -1666,7 +1691,7 @@ SculptDataPtr SculptStorage::GetSculptTarget(TESNPC * target, bool create)
 	return nullptr;
 }
 
-void SculptStorage::SetSculptTarget(TESNPC * target, SculptDataPtr sculptData)
+void SculptStorage::SetSculptTarget(RE::TESNPC * target, SculptDataPtr sculptData)
 {
 	auto it = find(target);
 	if (it != end())
@@ -1676,7 +1701,7 @@ void SculptStorage::SetSculptTarget(TESNPC * target, SculptDataPtr sculptData)
 	}
 }
 
-void SculptStorage::EraseNPC(TESNPC * npc)
+void SculptStorage::EraseNPC(RE::TESNPC * npc)
 {
 	auto sculptTarget = find(npc);
 	if (sculptTarget != end()) {
@@ -1684,7 +1709,7 @@ void SculptStorage::EraseNPC(TESNPC * npc)
 	}
 }
 
-SKSETaskApplyMorphs::SKSETaskApplyMorphs(Actor * actor)
+SKSETaskApplyMorphs::SKSETaskApplyMorphs(RE::Actor * actor)
 {
 	m_formId = actor->formID;
 }
@@ -1694,96 +1719,98 @@ void SKSETaskApplyMorphs::Run()
 	if (!m_formId)
 		return;
 
-	TESForm * form = LookupFormByID(m_formId);
-	Actor * actor = DYNAMIC_CAST(form, TESForm, Actor);
+	RE::TESForm * form = RE::TESForm::LookupByID(m_formId);
+	RE::Actor * actor = form ? form->As<RE::Actor>() : nullptr;
 	if (!actor)
 		return;
 
-	TESNPC * actorBase = DYNAMIC_CAST(actor->baseForm, TESForm, TESNPC);
+	RE::TESNPC * actorBase = actor->GetActorBase();
 	if (!actorBase)
 		return;
 
-	BSFaceGenNiNode * faceNode = actor->GetFaceGenNiNode();
+	RE::BSFaceGenNiNode * faceNode = actor->GetFaceNode();
 	if (faceNode) {
 		g_morphInterface.ApplyMorphs(actorBase, faceNode);
 	}
 }
 
-SKSETaskApplyMorphNormals::SKSETaskApplyMorphNormals(NiPointer<NiAVObject> faceNode, bool updateModel)
+SKSETaskApplyMorphNormals::SKSETaskApplyMorphNormals(RE::NiPointer<RE::NiAVObject> faceNode, bool updateModel)
 	: m_faceNode(faceNode)
 	, m_updateModel(updateModel)
 {
 
 }
 
-
 void SKSETaskApplyMorphNormals::Run()
 {
 	// Copies from the FOD into the Dynamic Geometry
 	if (m_updateModel)
 	{
-		UpdateModelFace(m_faceNode);
+		SKEE::UpdateModelFace(m_faceNode.get());
 	}
 	
-	VisitGeometry(m_faceNode, [](BSGeometry* geometry)
+	VisitGeometry(m_faceNode.get(), [](RE::BSGeometry* geometry)
 	{
-		UInt64 vertexDesc = geometry->vertexDesc;
+		auto vertexDesc = geometry->vertexDesc;
 
-		bool hasNormals = (NiSkinPartition::GetVertexFlags(vertexDesc) & VertexFlags::VF_NORMAL) == VertexFlags::VF_NORMAL;
-		bool hasTangents = (NiSkinPartition::GetVertexFlags(vertexDesc) & VertexFlags::VF_TANGENT) == VertexFlags::VF_TANGENT;
+		bool hasNormals = ((vertexDesc).GetFlags() & RE::BSGraphics::Vertex::VF_NORMAL) == RE::BSGraphics::Vertex::VF_NORMAL;
+		bool hasTangents = ((vertexDesc).GetFlags() & RE::BSGraphics::Vertex::VF_TANGENT) == RE::BSGraphics::Vertex::VF_TANGENT;
 
 		if (!hasNormals && !hasTangents)
 		{
 			return false;
 		}
 
-		BSShaderProperty* shaderProperty = niptr_cast<BSShaderProperty>(geometry->m_spEffectState);
-		if (!shaderProperty || !ni_is_type(shaderProperty->GetRTTI(), BSLightingShaderProperty))
+		RE::BSShaderProperty* shaderProperty = static_cast<RE::BSShaderProperty*>(geometry->shaderProperty.get());
+		if (!shaderProperty || !netimmerse_isKind<RE::BSLightingShaderProperty>(shaderProperty))
 		{
 			return false;
 		}
 
-		BSLightingShaderMaterial* material = (BSLightingShaderMaterial*)shaderProperty->material;
-		if (!material || material->GetShaderType() != BSLightingShaderMaterial::kShaderType_FaceGen)
+		RE::BSLightingShaderMaterial* material = (RE::BSLightingShaderMaterial*)shaderProperty->material;
+		if (!material || material->GetFeature() != RE::BSShaderMaterial::Feature::kFaceGen)
 		{
 			return false;
 		}
 
-		NiSkinInstance* skinInstance = niptr_cast<NiSkinInstance>(geometry->m_spSkinInstance);
+		RE::NiSkinInstance* skinInstance = static_cast<RE::NiSkinInstance*>(geometry->skinInstance.get());
 		if (!skinInstance) {
 			return false;
 		}
 
-		NiSkinPartition* skinPartition = niptr_cast<NiSkinPartition>(skinInstance->m_spSkinPartition);
+		RE::NiSkinPartition* skinPartition = static_cast<RE::NiSkinPartition*>(skinInstance->skinPartition.get());
 		if (!skinPartition) {
 			return false;
 		}
 
-		NiSkinPartition* newSkinPartition = nullptr;
-		CALL_MEMBER_FN(skinPartition, DeepCopy)((NiObject**)&newSkinPartition);
+		// Deep copy starts at refcount 1, held by skinPartitionCopy. The task takes its own
+		// reference and transfers the partition into the skin instance when it runs; both
+		// owners then release, leaving the skin instance as sole owner (no manual DecRef).
+		RE::NiPointer<RE::NiObject> skinPartitionCopy;
+		skinPartition->CreateDeepCopy(skinPartitionCopy);
+		auto* newSkinPartition = netimmerse_cast<RE::NiSkinPartition*>(skinPartitionCopy.get());
 
 		if (!newSkinPartition) {
 			return false;
 		}
 
-		auto& partition = newSkinPartition->m_pkPartitions[0];
-		UInt32 vertexSize = newSkinPartition->GetVertexSize(partition.vertexDesc);
+		auto& partition = newSkinPartition->partitions[0];
+		std::uint32_t vertexSize = partition.vertexDesc.GetSize();
 
 		{
-			NormalApplicator applicator(geometry, newSkinPartition);
+			NormalApplicator applicator{ RE::NiPointer<RE::BSGeometry>(geometry), RE::NiPointer<RE::NiSkinPartition>(newSkinPartition) };
 			applicator.Apply();
 		}
 
 		// Propagate the data to the other partitions
-		for (UInt32 p = 1; p < newSkinPartition->m_uiPartitions; ++p)
+		for (std::uint32_t p = 1; p < newSkinPartition->numPartitions; ++p)
 		{
-			auto& pPartition = newSkinPartition->m_pkPartitions[p];
-			memcpy(pPartition.shapeData->m_RawVertexData, partition.shapeData->m_RawVertexData, newSkinPartition->vertexCount * vertexSize);
+			auto& pPartition = newSkinPartition->partitions[p];
+			memcpy(pPartition.buffData->rawVertexData, partition.buffData->rawVertexData, newSkinPartition->vertexCount * vertexSize);
 		}
 
 		NIOVTaskUpdateSkinPartition update(skinInstance, newSkinPartition);
-		newSkinPartition->DecRef(); // DeepCopy started refcount at 1, passed ownership to the task
-		update.Run();
+		update.Run(); // transfers m_partition into skinInstance->skinPartition; refs release on scope exit
 		return false;
 	});
 }

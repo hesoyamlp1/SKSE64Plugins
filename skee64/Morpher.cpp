@@ -9,15 +9,16 @@
 #endif
 #include "half.hpp"
 #include <DirectXMath.h>
-#include "skse64/NiGeometry.h"
-#include "skse64/NiExtraData.h"
+#include "RE/N/NiGeometry.h"
+#include "RE/N/NiExtraData.h"
+#include <cstdint>
 
 float round_v(float num)
 {
 	return (num > 0.0) ? floor(num + 0.5) : ceil(num - 0.5);
 }
 
-NormalApplicator::NormalApplicator(NiPointer<BSGeometry> _geometry, NiPointer<NiSkinPartition> _skinPartition) 
+NormalApplicator::NormalApplicator(RE::NiPointer<RE::BSGeometry> _geometry, RE::NiPointer<RE::NiSkinPartition> _skinPartition) 
 	: geometry(_geometry)
 	, skinPartition(_skinPartition)
 {
@@ -26,27 +27,27 @@ NormalApplicator::NormalApplicator(NiPointer<BSGeometry> _geometry, NiPointer<Ni
 
 void NormalApplicator::Apply()
 {
-	BSDynamicTriShape* dynamicTriShape = ni_cast(geometry, BSDynamicTriShape);
-	BSTriShape* triShape = ni_cast(geometry, BSTriShape);
+	RE::BSDynamicTriShape* dynamicTriShape = geometry.get() ? geometry.get()->AsDynamicTriShape() : nullptr;
+	RE::BSTriShape* triShape = geometry.get() ? geometry.get()->AsTriShape() : nullptr;
 
 	if (dynamicTriShape) dynamicTriShape->lock.Lock();
 
-	NiIntegersExtraData* extraData = static_cast<NiIntegersExtraData*>(NifUtils::GetExtraData(geometry, "LOCKEDNORM"));
+	RE::NiIntegersExtraData* extraData = static_cast<RE::NiIntegersExtraData*>(geometry->GetExtraData("LOCKEDNORM"));
 	if (extraData)
 	{
-		for (UInt32 i = 0; i < extraData->m_size; ++i)
+		for (std::uint32_t i = 0; i < extraData->size; ++i)
 		{
-			lockedVertices.insert(static_cast<UInt16>(extraData->m_data[i]));
+			lockedVertices.insert(static_cast<std::uint16_t>(extraData->value[i]));
 		}
 	}
 
-	UInt64 vertexDesc = geometry->vertexDesc;
-	UInt32 numVertices = triShape ? triShape->numVertices : 0;
+	auto& vertexDesc = geometry->vertexDesc;
+	std::uint32_t numVertices = triShape ? triShape->vertexCount : 0;
 
-	bool hasVertices = (NiSkinPartition::GetVertexFlags(vertexDesc) & VertexFlags::VF_VERTEX) == VertexFlags::VF_VERTEX;
-	bool hasNormals = (NiSkinPartition::GetVertexFlags(vertexDesc) & VertexFlags::VF_NORMAL) == VertexFlags::VF_NORMAL;
-	bool hasTangents = (NiSkinPartition::GetVertexFlags(vertexDesc) & VertexFlags::VF_TANGENT) == VertexFlags::VF_TANGENT;
-	bool hasUV = (NiSkinPartition::GetVertexFlags(vertexDesc) & VertexFlags::VF_UV) == VertexFlags::VF_UV;
+	bool hasVertices = vertexDesc.HasFlag(RE::BSGraphics::Vertex::VF_VERTEX);
+	bool hasNormals = vertexDesc.HasFlag(RE::BSGraphics::Vertex::VF_NORMAL);
+	bool hasTangents = vertexDesc.HasFlag(RE::BSGraphics::Vertex::VF_TANGENT);
+	bool hasUV = vertexDesc.HasFlag(RE::BSGraphics::Vertex::VF_UV);
 
 	if (skinPartition && (hasNormals || hasTangents)) {
 
@@ -57,7 +58,6 @@ void NormalApplicator::Apply()
 		if (hasUV)
 			rawUV.resize(numVertices);
 
-
 		if (hasNormals) {
 			rawNormals.resize(numVertices);
 			if (hasTangents) {
@@ -66,21 +66,21 @@ void NormalApplicator::Apply()
 			}
 		}
 
-		UInt32 vertexSize = NiSkinPartition::GetVertexSize(vertexDesc);
-		UInt8* vertexBlock = reinterpret_cast<UInt8*>(skinPartition->m_pkPartitions[0].shapeData->m_RawVertexData);
+		std::uint32_t vertexSize = vertexDesc.GetSize();
+		std::uint8_t* vertexBlock = skinPartition->partitions[0].buffData->rawVertexData;
 
 		if (dynamicTriShape)
 		{
-			for (UInt32 i = 0; i < numVertices; i++)
+			for (std::uint32_t i = 0; i < numVertices; i++)
 			{
-				DirectX::XMVECTOR* vertex = static_cast<DirectX::XMVECTOR*>(dynamicTriShape->pDynamicData);
+				DirectX::XMVECTOR* vertex = static_cast<DirectX::XMVECTOR*>(dynamicTriShape->dynamicData);
 				DirectX::XMStoreFloat3(reinterpret_cast<DirectX::XMFLOAT3*>(&rawVertices[i]), vertex[i]);
 			}
 		}
 
-		for (UInt32 i = 0; i < numVertices; i++)
+		for (std::uint32_t i = 0; i < numVertices; i++)
 		{
-			UInt8* vBegin = &vertexBlock[i * vertexSize];
+			std::uint8_t* vBegin = &vertexBlock[i * vertexSize];
 
 			if (hasVertices)
 			{
@@ -98,21 +98,21 @@ void NormalApplicator::Apply()
 			}
 		}
 
-		std::vector<UInt16> indices;
-		for (UInt32 p = 0; p < skinPartition->m_uiPartitions; ++p)
+		std::vector<std::uint16_t> indices;
+		for (std::uint32_t p = 0; p < skinPartition->numPartitions; ++p)
 		{
-			for (UInt32 t = 0; t < skinPartition->m_pkPartitions[p].m_usTriangles * 3; ++t)
+			for (std::uint32_t t = 0; t < skinPartition->partitions[p].triangles * 3; ++t)
 			{
-				indices.push_back(skinPartition->m_pkPartitions[p].m_pusTriList[t]);
+				indices.push_back(skinPartition->partitions[p].triList[t]);
 			}
 		}
 
 		RecalcNormals(indices.size() / 3, reinterpret_cast<Morpher::Triangle*>(&indices.at(0)));
 		CalcTangentSpace(indices.size() / 3, reinterpret_cast<Morpher::Triangle*>(&indices.at(0)));
 
-		for (UInt32 i = 0; i < numVertices; i++)
+		for (std::uint32_t i = 0; i < numVertices; i++)
 		{
-			UInt8* vBegin = &vertexBlock[i * vertexSize];
+			std::uint8_t* vBegin = &vertexBlock[i * vertexSize];
 
 			bool skipVertex = lockedVertices.count(i);
 
@@ -140,36 +140,36 @@ void NormalApplicator::Apply()
 			if (hasNormals && !skipVertex)
 			{
 
-				*(SInt8*)vBegin = (UInt8)round_v((((rawNormals[i].x + 1.0f) / 2.0f) * 255.0f)); vBegin += 1;
-				*(SInt8*)vBegin = (UInt8)round_v((((rawNormals[i].y + 1.0f) / 2.0f) * 255.0f)); vBegin += 1;
-				*(SInt8*)vBegin = (UInt8)round_v((((rawNormals[i].z + 1.0f) / 2.0f) * 255.0f)); vBegin += 1;
+				*(std::int8_t*)vBegin = (std::uint8_t)round_v((((rawNormals[i].x + 1.0f) / 2.0f) * 255.0f)); vBegin += 1;
+				*(std::int8_t*)vBegin = (std::uint8_t)round_v((((rawNormals[i].y + 1.0f) / 2.0f) * 255.0f)); vBegin += 1;
+				*(std::int8_t*)vBegin = (std::uint8_t)round_v((((rawNormals[i].z + 1.0f) / 2.0f) * 255.0f)); vBegin += 1;
 
-				*(SInt8*)vBegin = (UInt8)round_v((((rawBitangents[i].y + 1.0f) / 2.0f) * 255.0f)); vBegin += 1;
+				*(std::int8_t*)vBegin = (std::uint8_t)round_v((((rawBitangents[i].y + 1.0f) / 2.0f) * 255.0f)); vBegin += 1;
 
 				if (hasTangents)
 				{
 
-					*(SInt8*)vBegin = (UInt8)round_v((((rawTangents[i].x + 1.0f) / 2.0f) * 255.0f)); vBegin += 1;
-					*(SInt8*)vBegin = (UInt8)round_v((((rawTangents[i].y + 1.0f) / 2.0f) * 255.0f)); vBegin += 1;
-					*(SInt8*)vBegin = (UInt8)round_v((((rawTangents[i].z + 1.0f) / 2.0f) * 255.0f)); vBegin += 1;
+					*(std::int8_t*)vBegin = (std::uint8_t)round_v((((rawTangents[i].x + 1.0f) / 2.0f) * 255.0f)); vBegin += 1;
+					*(std::int8_t*)vBegin = (std::uint8_t)round_v((((rawTangents[i].y + 1.0f) / 2.0f) * 255.0f)); vBegin += 1;
+					*(std::int8_t*)vBegin = (std::uint8_t)round_v((((rawTangents[i].z + 1.0f) / 2.0f) * 255.0f)); vBegin += 1;
 
-					*(SInt8*)vBegin = (UInt8)round_v((((rawBitangents[i].z + 1.0f) / 2.0f) * 255.0f)); vBegin += 1;
+					*(std::int8_t*)vBegin = (std::uint8_t)round_v((((rawBitangents[i].z + 1.0f) / 2.0f) * 255.0f)); vBegin += 1;
 				}
 			}
 		}
 	}
 
-	if (dynamicTriShape) dynamicTriShape->lock.Release();
+	if (dynamicTriShape) dynamicTriShape->lock.Unlock();
 }
 
-void NormalApplicator::RecalcNormals(UInt32 numTriangles, Morpher::Triangle* triangles, const bool smooth, const float smoothThresh)
+void NormalApplicator::RecalcNormals(std::uint32_t numTriangles, Morpher::Triangle* triangles, const bool smooth, const float smoothThresh)
 {
-	UInt32 numVertices = rawVertices.size();
+	std::uint32_t numVertices = rawVertices.size();
 
 	std::vector<Morpher::Vector3> verts(numVertices);
 	std::vector<Morpher::Vector3> norms(numVertices);
 
-	for (UInt32 i = 0; i < numVertices; i++)
+	for (std::uint32_t i = 0; i < numVertices; i++)
 	{
 		verts[i].x = rawVertices[i].x * -0.1f;
 		verts[i].z = rawVertices[i].y * 0.1f;
@@ -178,7 +178,7 @@ void NormalApplicator::RecalcNormals(UInt32 numTriangles, Morpher::Triangle* tri
 
 	// Face normals
 	Morpher::Vector3 tn;
-	for (UInt32 t = 0; t < numTriangles; t++)
+	for (std::uint32_t t = 0; t < numTriangles; t++)
 	{
 		triangles[t].trinormal(verts, &tn);
 		norms[triangles[t].p1] += tn;
@@ -210,7 +210,7 @@ void NormalApplicator::RecalcNormals(UInt32 numTriangles, Morpher::Triangle* tri
 			n.Normalize();
 	}
 
-	for (UInt32 i = 0; i < numVertices; i++)
+	for (std::uint32_t i = 0; i < numVertices; i++)
 	{
 		rawNormals[i].x = -norms[i].x;
 		rawNormals[i].y = norms[i].z;
@@ -218,16 +218,16 @@ void NormalApplicator::RecalcNormals(UInt32 numTriangles, Morpher::Triangle* tri
 	}
 }
 
-void NormalApplicator::CalcTangentSpace(UInt32 numTriangles, Morpher::Triangle * triangles)
+void NormalApplicator::CalcTangentSpace(std::uint32_t numTriangles, Morpher::Triangle * triangles)
 {
-	UInt32 numVertices = rawVertices.size();
+	std::uint32_t numVertices = rawVertices.size();
 
 	std::vector<Morpher::Vector3> tan1;
 	std::vector<Morpher::Vector3> tan2;
 	tan1.resize(numVertices);
 	tan2.resize(numVertices);
 
-	for (UInt32 i = 0; i < numTriangles; i++)
+	for (std::uint32_t i = 0; i < numTriangles; i++)
 	{
 		int i1 = triangles[i].p1;
 		int i2 = triangles[i].p2;
@@ -271,7 +271,7 @@ void NormalApplicator::CalcTangentSpace(UInt32 numTriangles, Morpher::Triangle *
 		tan2[i3] += sdir;
 	}
 
-	for (UInt32 i = 0; i < numVertices; i++)
+	for (std::uint32_t i = 0; i < numVertices; i++)
 	{
 		rawTangents[i] = tan1[i];
 		rawBitangents[i] = tan2[i];

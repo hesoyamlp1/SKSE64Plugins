@@ -1,13 +1,15 @@
 #pragma once
 
 #include "IPluginInterface.h"
+#include "SafeDataHolder.h"
 #include "StringTable.h"
 #include "CDXTextureRenderer.h"
 #include <unordered_map>
-
-struct SKSESerializationInterface;
-class TESObjectREFR;
-
+#include <cstdint>
+namespace RE
+{
+	class RE::TESObjectREFR;
+}
 namespace SkinLayerData
 {
 
@@ -16,7 +18,7 @@ struct Data
 	StringTableItem texturePath;
 	StringTableItem blendMode;
 	CDXTextureRenderer::TextureType textureType;
-	UInt32 color;
+	std::uint32_t color;
 };
 
 namespace ChangeFlags
@@ -27,7 +29,7 @@ namespace ChangeFlags
 	static const int COLOR				= (1 << 3);
 };
 
-enum class Target : UInt8
+enum class Target : std::uint8_t
 {
 	Face = 0,
 	Body,
@@ -36,39 +38,39 @@ enum class Target : UInt8
 	Hair
 };
 
-class LayerMap : public std::map<SInt32, Data>
+class LayerMap : public std::map<std::int32_t, Data>
 {
 public:
-	void Save(SKSESerializationInterface* intfc, UInt32 kVersion);
-	bool Load(SKSESerializationInterface* intfc, UInt32 kVersion, const StringIdMap& stringTable);
+	void Save(SKSE::SerializationInterface* intfc, std::uint32_t kVersion);
+	bool Load(SKSE::SerializationInterface* intfc, std::uint32_t kVersion, const StringIdMap& stringTable);
 };
 
 class TargetToLayer : public std::unordered_map<Target, LayerMap>
 {
 public:
-	void Save(SKSESerializationInterface* intfc, UInt32 kVersion);
-	bool Load(SKSESerializationInterface* intfc, UInt32 kVersion, const StringIdMap& stringTable);
+	void Save(SKSE::SerializationInterface* intfc, std::uint32_t kVersion);
+	bool Load(SKSE::SerializationInterface* intfc, std::uint32_t kVersion, const StringIdMap& stringTable);
 };
 
 class PerspectiveToTarget : public std::unordered_map<bool, TargetToLayer>
 {
 public:
-	void Save(SKSESerializationInterface* intfc, UInt32 kVersion);
-	bool Load(SKSESerializationInterface* intfc, UInt32 kVersion, const StringIdMap& stringTable);
+	void Save(SKSE::SerializationInterface* intfc, std::uint32_t kVersion);
+	bool Load(SKSE::SerializationInterface* intfc, std::uint32_t kVersion, const StringIdMap& stringTable);
 };
 
 class GenderToPersepective : public std::unordered_map<bool, PerspectiveToTarget>
 {
 public:
-	void Save(SKSESerializationInterface* intfc, UInt32 kVersion);
-	bool Load(SKSESerializationInterface* intfc, UInt32 kVersion, const StringIdMap& stringTable);
+	void Save(SKSE::SerializationInterface* intfc, std::uint32_t kVersion);
+	bool Load(SKSE::SerializationInterface* intfc, std::uint32_t kVersion, const StringIdMap& stringTable);
 };
 
-class ActorToGender : public std::unordered_map<UInt32, GenderToPersepective>
+class ActorToGender : public std::unordered_map<std::uint32_t, GenderToPersepective>
 {
 public:
-	void Save(SKSESerializationInterface* intfc, UInt32 kVersion);
-	bool Load(SKSESerializationInterface* intfc, UInt32 kVersion, const StringIdMap& stringTable);
+	void Save(SKSE::SerializationInterface* intfc, std::uint32_t kVersion);
+	bool Load(SKSE::SerializationInterface* intfc, std::uint32_t kVersion, const StringIdMap& stringTable);
 };
 };
 
@@ -86,14 +88,14 @@ public:
 	virtual skee_u32 GetVersion();
 
 	// Serialization
-	void Save(SKSESerializationInterface* intfc, UInt32 kVersion);
-	bool Load(SKSESerializationInterface* intfc, UInt32 kVersion, const StringIdMap& stringTable);
+	void Save(SKSE::SerializationInterface* intfc, std::uint32_t kVersion);
+	bool Load(SKSE::SerializationInterface* intfc, std::uint32_t kVersion, const StringIdMap& stringTable);
 	virtual void Revert() override;
 
-	virtual void SetSkinLayerTexture(TESObjectREFR* refr, bool isFemale, bool isFirstPerson, SkinLayerData::Target target, SInt32 layer, const char* texturePath);
-	virtual void SetSkinLayerBlendMode(TESObjectREFR* refr, bool isFemale, bool isFirstPerson, SkinLayerData::Target target, SInt32 layer, const char* blendMode);
-	virtual void SetSkinLayerTextureType(TESObjectREFR* refr, bool isFemale, bool isFirstPerson, SkinLayerData::Target target, SInt32 layer, const UInt8 textureType);
-	virtual void SetSkinLayerColor(TESObjectREFR* refr, bool isFemale, bool isFirstPerson, SkinLayerData::Target target, SInt32 layer, const UInt32 color);
+	virtual void SetSkinLayerTexture(RE::TESObjectREFR* refr, bool isFemale, bool isFirstPerson, SkinLayerData::Target target, std::int32_t layer, const char* texturePath);
+	virtual void SetSkinLayerBlendMode(RE::TESObjectREFR* refr, bool isFemale, bool isFirstPerson, SkinLayerData::Target target, std::int32_t layer, const char* blendMode);
+	virtual void SetSkinLayerTextureType(RE::TESObjectREFR* refr, bool isFemale, bool isFirstPerson, SkinLayerData::Target target, std::int32_t layer, const std::uint8_t textureType);
+	virtual void SetSkinLayerColor(RE::TESObjectREFR* refr, bool isFemale, bool isFirstPerson, SkinLayerData::Target target, std::int32_t layer, const std::uint32_t color);
 private:
 	SafeDataHolder<SkinLayerData::ActorToGender> data;
 };

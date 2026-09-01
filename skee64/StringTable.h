@@ -1,16 +1,13 @@
 #pragma once
 
-#include "ILogger.h"
-
-#include "skse64/GameTypes.h"
-#include "skse64/PluginAPI.h"
-#include "common/ICriticalSection.h"
+#include "RE/B/BSFixedString.h"
+#include "SKSE/Interfaces.h"
 #include "Utilities.h"
 #include <unordered_map>
 #include <memory>
 #include <vector>
-
-struct SKSESerializationInterface;
+#include <cstdint>
+#include <mutex>
 
 class SKEEFixedString
 {
@@ -18,7 +15,7 @@ public:
 	SKEEFixedString() : m_internal() { m_hash = utils::hash_lower(m_internal.c_str(), m_internal.size()); }
 	SKEEFixedString(const char * str) : m_internal(str) { m_hash = utils::hash_lower(m_internal.c_str(), m_internal.size()); }
 	SKEEFixedString(const std::string & str) : m_internal(str) { m_hash = utils::hash_lower(m_internal.c_str(), m_internal.size()); }
-	SKEEFixedString(const BSFixedString & str) : m_internal(str.c_str()) { m_hash = utils::hash_lower(m_internal.c_str(), m_internal.size()); }
+	SKEEFixedString(const RE::BSFixedString & str) : m_internal(str.c_str()) { m_hash = utils::hash_lower(m_internal.c_str(), m_internal.size()); }
 
 	bool operator<(const SKEEFixedString& x) const
 	{
@@ -39,8 +36,8 @@ public:
 	size_t length() const { return m_internal.size(); }
 
 	std::string AsString() const { return m_internal; }
-	operator BSFixedString() const { return BSFixedString(m_internal.c_str()); }
-	BSFixedString AsBSFixedString() const { return operator BSFixedString(); }
+	operator RE::BSFixedString() const { return RE::BSFixedString(m_internal.c_str()); }
+	RE::BSFixedString AsBSFixedString() const { return operator RE::BSFixedString(); }
 
 	const char * c_str() const { return m_internal.c_str(); }
 
@@ -49,7 +46,7 @@ public:
 		return m_hash;
 	}
 
-protected:
+private:
 	std::string		m_internal;
 	size_t			m_hash;
 };
@@ -74,20 +71,19 @@ namespace std {
 	};
 }
 
-
 namespace Serialization
 {
 	template <typename T>
-	bool WriteData(const SKSESerializationInterface * intfc, const T * data);
+	bool WriteData(const SKSE::SerializationInterface* intfc, const T* data);
 
 	template <typename T>
-	bool ReadData(const SKSESerializationInterface * intfc, T * data);
+	bool ReadData(const SKSE::SerializationInterface* intfc, T* data);
 
-	template<> bool WriteData<SKEEFixedString>(const SKSESerializationInterface * intfc, const SKEEFixedString * str);
-	template<> bool ReadData<SKEEFixedString>(const SKSESerializationInterface * intfc, SKEEFixedString * str);
+	template<> bool WriteData<SKEEFixedString>(const SKSE::SerializationInterface* intfc, const SKEEFixedString* str);
+	template<> bool ReadData<SKEEFixedString>(const SKSE::SerializationInterface* intfc, SKEEFixedString* str);
 }
 
-typedef std::unordered_map<UInt32, StringTableItem> StringIdMap;
+typedef std::unordered_map<std::uint32_t, StringTableItem> StringIdMap;
 
 class StringTable
 {
@@ -100,39 +96,39 @@ public:
 		kSerializationVersion = kSerializationVersion3
 	};
 
-	void Save(const SKSESerializationInterface * intfc, UInt32 kVersion);
-	bool Load(const SKSESerializationInterface * intfc, UInt32 kVersion, StringIdMap & stringTable);
+	void Save(const SKSE::SerializationInterface * intfc, std::uint32_t kVersion);
+	bool Load(const SKSE::SerializationInterface * intfc, std::uint32_t kVersion, StringIdMap & stringTable);
 	void Revert();
 
 	StringTableItem GetString(const SKEEFixedString & str);
 
-	UInt32 GetStringID(const StringTableItem & str);
+	std::uint32_t GetStringID(const StringTableItem & str);
 
 	void RemoveString(const SKEEFixedString & str);
 
-	static StringTableItem ReadString(const SKSESerializationInterface * intfc, const StringIdMap & stringTable)
+	static StringTableItem ReadString(const SKSE::SerializationInterface * intfc, const StringIdMap & stringTable)
 	{
-		UInt32 stringId;
-		if (!Serialization::ReadData<UInt32>(intfc, &stringId))
+		std::uint32_t stringId;
+		if (!Serialization::ReadData<std::uint32_t>(intfc, &stringId))
 		{
-			_ERROR("%s - Error loading string id", __FUNCTION__);
+			SKSE::log::error("{} - Error loading string id", __FUNCTION__);
 			return nullptr;
 		}
 
 		auto it = stringTable.find(stringId);
 		if (it == stringTable.end())
 		{
-			_ERROR("%s - Error loading string from table", __FUNCTION__);
+			SKSE::log::error("{} - Error loading string from table", __FUNCTION__);
 			return nullptr;
 		}
 
 		return it->second;
 	}
 
-	void WriteString(const SKSESerializationInterface * intfc, const StringTableItem & str)
+	void WriteString(const SKSE::SerializationInterface * intfc, const StringTableItem & str)
 	{
-		UInt32 stringId = GetStringID(str);
-		Serialization::WriteData<UInt32>(intfc, &stringId);
+		std::uint32_t stringId = GetStringID(str);
+		Serialization::WriteData<std::uint32_t>(intfc, &stringId);
 	}
 
 	void PrintDiagnostics();
@@ -140,5 +136,8 @@ public:
 private:
 	std::unordered_map<SKEEFixedString, WeakTableItem>	m_table;
 	std::vector<WeakTableItem>							m_tableVector;
-	mutable ICriticalSection							m_lock;
+	mutable std::recursive_mutex									m_lock;
 };
+
+extern StringTable g_stringTable;
+

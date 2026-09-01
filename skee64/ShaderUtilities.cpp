@@ -1,59 +1,77 @@
 #include "ShaderUtilities.h"
+#include "SKEETasks.h"
 #include "OverrideVariant.h"
 #include "NifUtils.h"
 
-#include "skse64/GameObjects.h"
-
-#include "skse64/NiNodes.h"
-#include "skse64/NiGeometry.h"
-#include "skse64/NiProperties.h"
-#include "skse64/NiControllers.h"
-#include "skse64/NiExtraData.h"
+#include "RE/N/NiRTTI.h"
+#include "RE/B/BSGeometry.h"
+#include "RE/B/BSLightingShaderProperty.h"
+#include "RE/B/BSLightingShaderMaterial.h"
+#include "RE/B/BSLightingShaderMaterialFacegen.h"
+#include "RE/B/BSLightingShaderMaterialFacegenTint.h"
+#include "RE/B/BSLightingShaderMaterialGlowmap.h"
+#include "RE/B/BSLightingShaderMaterialParallax.h"
+#include "RE/B/BSLightingShaderMaterialParallaxOcc.h"
+#include "RE/B/BSLightingShaderMaterialEye.h"
+#include "RE/B/BSLightingShaderMaterialEnvmap.h"
+#include "RE/B/BSLightingShaderMaterialMultiLayerParallax.h"
+#include "RE/B/BSEffectShaderProperty.h"
+#include "RE/B/BSEffectShaderMaterial.h"
+#include "RE/B/BSShaderTextureSet.h"
+#include "RE/B/BGSTextureSet.h"
+#include "RE/N/NiNode.h"
+#include "RE/N/NiTimeController.h"
+#include "RE/N/NiExtraData.h"
+#include "RE/N/NiTexture.h"
+#include "RE/T/TESForm.h"
 
 #include <regex>
 #include <algorithm>
+#include <cstdint>
+#include "NiRTTIUtils.h"
+#include "SKEEHooks.h"
 
-extern SKSETaskInterface				* g_task;
+extern const SKSE::TaskInterface* g_task;
 
-void GetShaderProperty(NiAVObject * node, OverrideVariant * value)
+void GetShaderProperty(RE::NiAVObject* node, OverrideVariant* value)
 {
 	bool shaderError = false;
-	BSGeometry * geometry = node->GetAsBSGeometry();
-	if(geometry)
+	auto * geometry = node ? node->AsGeometry() : nullptr;
+	if (geometry)
 	{
-		BSShaderProperty * shaderProperty = niptr_cast<BSShaderProperty>(geometry->m_spEffectState);
-		if(!shaderProperty) {		
-			_MESSAGE("Shader does not exist for %s", node->m_name);
+		RE::BSShaderProperty* shaderProperty = static_cast<RE::BSShaderProperty*>(geometry->GetGeometryRuntimeData().shaderProperty.get());
+		if (!shaderProperty) {
+			SKSE::log::info("Shader does not exist for {}", node->name);
 			shaderError = true;
 			return;
 		}
-		if(value->key >= OverrideVariant::kParam_ControllersStart && value->key <= OverrideVariant::kParam_ControllersEnd)
+		if (value->key >= OverrideVariant::kParam_ControllersStart && value->key <= OverrideVariant::kParam_ControllersEnd)
 		{
-			SInt8 currentIndex = 0;
-			SInt8 controllerIndex = value->index;
-			if(controllerIndex != -1)
+			std::int8_t currentIndex = 0;
+			std::int8_t controllerIndex = value->index;
+			if (controllerIndex != -1)
 			{
-				NiTimeController * foundController = NULL;
-				NiTimeController * controller = ni_cast(shaderProperty->m_controller, NiTimeController);
-				while(controller)
+				RE::NiTimeController* foundController = nullptr;
+				RE::NiTimeController* controller = shaderProperty->controllers.get(); // legacy m_controller (NiObjectNET, offset 0x18)
+				while (controller)
 				{
-					if(currentIndex == controllerIndex) {
+					if (currentIndex == controllerIndex) {
 						foundController = controller;
 						break;
 					}
 
-					controller = ni_cast(controller->next, NiTimeController);
+					controller = controller->next.get();
 					currentIndex++;
 				}
 
-				if(foundController)
+				if (foundController)
 				{
-					switch(value->key)
-					{
-					case OverrideVariant::kParam_ControllerFrequency:	PackValue<float>(value, value->key, value->index, &foundController->m_fFrequency);	break;
-					case OverrideVariant::kParam_ControllerPhase:		PackValue<float>(value, value->key, value->index, &foundController->m_fPhase);		break;
-					case OverrideVariant::kParam_ControllerStartTime:	PackValue<float>(value, value->key, value->index, &foundController->m_fLoKeyTime);	break;
-					case OverrideVariant::kParam_ControllerStopTime:	PackValue<float>(value, value->key, value->index, &foundController->m_fHiKeyTime);	break;
+					switch (value->key)
+				{
+					case OverrideVariant::kParam_ControllerFrequency:	PackValue<float>(value, value->key, value->index, &foundController->frequency);	break;
+					case OverrideVariant::kParam_ControllerPhase:		PackValue<float>(value, value->key, value->index, &foundController->phase);		break;
+					case OverrideVariant::kParam_ControllerStartTime:	PackValue<float>(value, value->key, value->index, &foundController->loKeyTime);	break;
+					case OverrideVariant::kParam_ControllerStopTime:	PackValue<float>(value, value->key, value->index, &foundController->hiKeyTime);	break;
 
 						// Special cases
 					case OverrideVariant::kParam_ControllerStartStop:
@@ -63,7 +81,7 @@ void GetShaderProperty(NiAVObject * node, OverrideVariant * value)
 						}
 						break;
 					default:
-						_MESSAGE("Unknown controller key %d %s", value->key, node->m_name);
+						SKSE::log::info("Unknown controller key {} {}", value->key, node->name);
 						shaderError = true;
 						break;
 					}
@@ -72,175 +90,163 @@ void GetShaderProperty(NiAVObject * node, OverrideVariant * value)
 
 			return; // Only working on controller properties
 		}
-		if(ni_is_type(shaderProperty->GetRTTI(), BSEffectShaderProperty))
+		if (netimmerse_isKind<RE::BSEffectShaderProperty>(shaderProperty))
 		{
-			BSEffectShaderMaterial * material = (BSEffectShaderMaterial*)shaderProperty->material;
-			switch(value->key)
+			RE::BSEffectShaderMaterial* material = static_cast<RE::BSEffectShaderMaterial*>(shaderProperty->material);
+			switch (value->key)
 			{
-			case OverrideVariant::kParam_ShaderEmissiveColor:		PackValue<NiColorA>(value, value->key, value->index, &material->emissiveColor);		break;
-			case OverrideVariant::kParam_ShaderEmissiveMultiple:	PackValue<float>(value, value->key, value->index, &material->emissiveMultiple);		break;
+			case OverrideVariant::kParam_ShaderEmissiveColor:		PackValue<RE::NiColorA>(value, value->key, value->index, &material->baseColor);		break;
+			case OverrideVariant::kParam_ShaderEmissiveMultiple:	PackValue<float>(value, value->key, value->index, &material->baseColorScale);		break;
 			default:
-				_MESSAGE("Unknown shader key %d %s", value->key, node->m_name);
+				SKSE::log::info("Unknown shader key {} {}", value->key, node->name);
 				break;
 			}
 #ifdef _DEBUG
-			_MESSAGE("Applied EffectShader property %d %X to %s", value->key, value->data.u, node->m_name);
+			SKSE::log::info("Applied EffectShader property {} {:X} to {}", value->key, value->data.u, node->name);
 #endif
 		}
-		else if(ni_is_type(shaderProperty->GetRTTI(), BSLightingShaderProperty))
+		else if (netimmerse_cast<RE::BSLightingShaderProperty*>(shaderProperty))
 		{
-			BSLightingShaderProperty * lightingShader = (BSLightingShaderProperty *)shaderProperty;
-			BSLightingShaderMaterial * material = (BSLightingShaderMaterial *)shaderProperty->material;
-			switch(value->key)
+			RE::BSLightingShaderProperty* lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(shaderProperty);
+			RE::BSLightingShaderMaterial* material = static_cast<RE::BSLightingShaderMaterial*>(shaderProperty->material);
+			switch (value->key)
 			{
-			case OverrideVariant::kParam_ShaderEmissiveColor:		PackValue<NiColor>(value, value->key, value->index, lightingShader->emissiveColor);		break;
-			case OverrideVariant::kParam_ShaderEmissiveMultiple:	PackValue<float>(value, value->key, value->index, &lightingShader->emissiveMultiple);	break;
-			case OverrideVariant::kParam_ShaderAlpha:				PackValue<float>(value, value->key, value->index, &material->alpha);					break;
-			case OverrideVariant::kParam_ShaderGlossiness:			PackValue<float>(value, value->key, value->index, &material->glossiness);				break;
-			case OverrideVariant::kParam_ShaderSpecularStrength:	PackValue<float>(value, value->key, value->index, &material->specularStrength);			break;
-			case OverrideVariant::kParam_ShaderLightingEffect1:		PackValue<float>(value, value->key, value->index, &material->lightingEffect1);			break;
-			case OverrideVariant::kParam_ShaderLightingEffect2:		PackValue<float>(value, value->key, value->index, &material->lightingEffect2);			break;
+			case OverrideVariant::kParam_ShaderEmissiveColor:		{ auto* em = static_cast<RE::BSEffectShaderMaterial*>(lightingShader->material); PackValue<RE::NiColorA>(value, value->key, value->index, &em->baseColor); } break;
+			case OverrideVariant::kParam_ShaderEmissiveMultiple:	{ auto* em = static_cast<RE::BSEffectShaderMaterial*>(lightingShader->material); PackValue<float>(value, value->key, value->index, &em->baseColorScale); } break;
+			case OverrideVariant::kParam_ShaderAlpha:				PackValue<float>(value, value->key, value->index, &material->materialAlpha);					break;
+			case OverrideVariant::kParam_ShaderGlossiness:			PackValue<float>(value, value->key, value->index, &material->specularPower);				break;
+			case OverrideVariant::kParam_ShaderSpecularStrength:	PackValue<float>(value, value->key, value->index, &material->specularColorScale);			break;
+			case OverrideVariant::kParam_ShaderLightingEffect1:		PackValue<float>(value, value->key, value->index, &material->subSurfaceLightRolloff);			break;
+			case OverrideVariant::kParam_ShaderLightingEffect2:		PackValue<float>(value, value->key, value->index, &material->rimLightPower);			break;
 
 				// Special cases
 			case OverrideVariant::kParam_ShaderTexture:
 				{
-					if(value->index < BSTextureSet::kNumTextures)
+					if (value->index < RE::BSTextureSet::Texture::kTotal)
 					{
-						BSFixedString texture = material->textureSet->GetTexturePath(value->index);
-						PackValue<BSFixedString>(value, value->key, value->index, &texture);
+						RE::BSFixedString texture = material->textureSet->GetTexturePath(static_cast<RE::BSTextureSet::Texture>(value->index));
+						PackValue<RE::BSFixedString>(value, value->key, value->index, &texture);
 					}
 				}
 				break;
 			case OverrideVariant::kParam_ShaderTextureSet:
 				{
-					PackValue<BGSTextureSet*>(value, value->key, value->index, NULL);
+					PackValue<RE::BGSTextureSet*>(value, value->key, value->index, nullptr);
 				}
 				break;
 			case OverrideVariant::kParam_ShaderTintColor:
 				{
-					if(material->GetShaderType() == BSShaderMaterial::kShaderType_FaceGenRGBTint || material->GetShaderType() == BSShaderMaterial::kShaderType_HairTint) {
-						BSLightingShaderMaterialFacegenTint * tintedMaterial = (BSLightingShaderMaterialFacegenTint *)material;
-						PackValue<NiColor>(value, value->key, value->index, &tintedMaterial->tintColor);
+					if (material->GetFeature() == RE::BSShaderMaterial::Feature::kFaceGenRGBTint || material->GetFeature() == RE::BSShaderMaterial::Feature::kHairTint) {
+						RE::BSLightingShaderMaterialFacegenTint* tintedMaterial = static_cast<RE::BSLightingShaderMaterialFacegenTint*>(static_cast<RE::BSLightingShaderMaterialBase*>(material));
+						PackValue<RE::NiColor>(value, value->key, value->index, &tintedMaterial->tintColor);
 					}
 				}
 				break;
 			default:
-				_MESSAGE("Unknown lighting shader key %d %s", value->key, node->m_name);
+				SKSE::log::info("Unknown lighting shader key {} {}", value->key, node->name);
 				shaderError = true;
 				break;
 			}
 #ifdef _DEBUG
-			_MESSAGE("Applied LightingShader property %d %X to %s", value->key, value->data.u, node->m_name);
+			SKSE::log::info("Applied LightingShader property {} {:X} to {}", value->key, value->data.u, node->name);
 #endif
 		}
-	} else {
-		_MESSAGE("%s - Failed to cast %s to geometry", __FUNCTION__, node->m_name);
+	}
+	else {
+		SKSE::log::info("{} - Failed to cast {} to geometry", __FUNCTION__, node->name);
 		shaderError = true;
 	}
 
-	if(shaderError) {
-		UInt32 def = 0;
-		PackValue<UInt32>(value, value->key, -1, &def);
+	if (shaderError) {
+		std::uint32_t def = 0;
+		PackValue<std::uint32_t>(value, value->key, -1, &def);
 	}
 }
 
 void NIOVTaskUpdateTexture::Run()
 {
-	if(m_geometry)
+	if (m_geometry)
 	{
-		BSShaderProperty * shaderProperty = niptr_cast<BSShaderProperty>(m_geometry->m_spEffectState);
-		if(!shaderProperty) {
-			_MESSAGE("Shader does not exist for %s", m_geometry->m_name);
+		RE::BSShaderProperty* shaderProperty = static_cast<RE::BSShaderProperty*>(m_geometry->GetGeometryRuntimeData().shaderProperty.get());
+		if (!shaderProperty) {
+			SKSE::log::info("Shader does not exist for {}", m_geometry->name);
 			return;
 		}
 
-		BSLightingShaderProperty * lightingShader = ni_cast(shaderProperty, BSLightingShaderProperty);
-		if(lightingShader)
+		RE::BSLightingShaderProperty* lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(shaderProperty);
+		if (lightingShader)
 		{
-			BSLightingShaderMaterial * material = (BSLightingShaderMaterial *)shaderProperty->material;
-			if(m_index < BSTextureSet::kNumTextures) {
+			RE::BSLightingShaderMaterial* material = static_cast<RE::BSLightingShaderMaterial*>(shaderProperty->material);
+			if (m_index < RE::BSTextureSet::Texture::kTotal) {
 				// Need to update the texture path of the BSTextureSet
-				BSShaderTextureSet * newTextureSet = BSShaderTextureSet::Create();
-				for (UInt32 i = 0; i < BSTextureSet::kNumTextures; i++)
+				auto* newTextureSetRaw = RE::BSShaderTextureSet::Create();
+				for (std::uint32_t i = 0; i < RE::BSTextureSet::Texture::kTotal; i++)
 				{
-					newTextureSet->SetTexturePath(i, material->textureSet->GetTexturePath(i));
+					newTextureSetRaw->SetTexturePath(static_cast<RE::BSTextureSet::Texture>(i), material->textureSet->GetTexturePath(static_cast<RE::BSTextureSet::Texture>(i)));
 				}
-				newTextureSet->SetTexturePath(m_index, m_texture->AsBSFixedString().c_str());
-				material->SetTextureSet(newTextureSet);
+				newTextureSetRaw->SetTexturePath(static_cast<RE::BSTextureSet::Texture>(m_index), m_texture->AsBSFixedString().c_str());
+				material->SetTextureSet(RE::NiPointer<RE::BSTextureSet>(newTextureSetRaw));
 
 				// Load the texture requested and then assign it to the material
-				NiPointer<NiTexture> newTexture;
-				LoadTexture(m_texture->c_str(), 1, newTexture, false);
+				RE::NiPointer<RE::NiTexture> newTexture;
+				RE::BSShaderManager::GetTexture(m_texture->c_str(), 1, newTexture, false);
 
-				NiTexturePtr * targetTexture = GetTextureFromIndex(material, m_index);
+				auto targetTexture = GetTextureFromIndex(material, m_index);
 				if (targetTexture) {
-					*targetTexture = newTexture;
+					targetTexture->reset(static_cast<RE::NiSourceTexture*>(newTexture.get()));
 				}
 
-				CALL_MEMBER_FN(lightingShader, InitializeShader)(m_geometry);
-#if 0
-				BSShaderTextureSet * newTextureSet = BSShaderTextureSet::Create();
-				for(UInt32 i = 0; i < BSTextureSet::kNumTextures; i++)
-				{
-					const char * texturePath = material->textureSet->GetTexturePath(i);
-					newTextureSet->SetTexturePath(i, texturePath);
-				}
-				newTextureSet->SetTexturePath(m_index, m_texture->AsBSFixedString().c_str());
-				material->ReleaseTextures();
-				material->SetTextureSet(newTextureSet);
-				CALL_MEMBER_FN(lightingShader, InvalidateTextures)(0);
-				CALL_MEMBER_FN(lightingShader, InitializeShader)(m_geometry);
-#endif
+				SKEE::InitializeShader(lightingShader, m_geometry.get());
 			}
 		}
 	}
 }
 
-void SetShaderProperty(NiAVObject * node, OverrideVariant * value, bool immediate)
+void SetShaderProperty(RE::NiAVObject* node, OverrideVariant* value, bool immediate)
 {
-	BSGeometry * geometry = node->GetAsBSGeometry();
-	if(geometry)
+	auto * geometry = node ? node->AsGeometry() : nullptr;
+	if (geometry)
 	{
-		BSShaderProperty * shaderProperty = niptr_cast<BSShaderProperty>(geometry->m_spEffectState);
-		if(!shaderProperty) {
-			_MESSAGE("Shader does not exist for %s", geometry->m_name);
+		RE::BSShaderProperty* shaderProperty = static_cast<RE::BSShaderProperty*>(geometry->GetGeometryRuntimeData().shaderProperty.get());
+		if (!shaderProperty) {
+			SKSE::log::info("Shader does not exist for {}", geometry->name);
 			return;
 		}
 
-		if(value->key >= OverrideVariant::kParam_ControllersStart && value->key <= OverrideVariant::kParam_ControllersEnd)
+		if (value->key >= OverrideVariant::kParam_ControllersStart && value->key <= OverrideVariant::kParam_ControllersEnd)
 		{
-			SInt8 currentIndex = 0;
-			SInt8 controllerIndex = value->index;
-			if(controllerIndex != -1)
+			std::int8_t currentIndex = 0;
+			std::int8_t controllerIndex = value->index;
+			if (controllerIndex != -1)
 			{
-				NiTimeController * foundController = NULL;
-				NiTimeController * controller = ni_cast(shaderProperty->m_controller, NiTimeController);
-				while(controller)
+				RE::NiTimeController* foundController = nullptr;
+				RE::NiTimeController* controller = shaderProperty->controllers.get(); // legacy m_controller (NiObjectNET, offset 0x18)
+				while (controller)
 				{
-					if(currentIndex == controllerIndex) {
+					if (currentIndex == controllerIndex) {
 						foundController = controller;
 						break;
 					}
 
-					controller = ni_cast(controller->next, NiTimeController);
+					controller = controller->next.get();
 					currentIndex++;
 				}
 
-				if(foundController)
+				if (foundController)
 				{
-					switch(value->key)
-					{
-					case OverrideVariant::kParam_ControllerFrequency:	UnpackValue(&foundController->m_fFrequency, value);	return;	break;
-					case OverrideVariant::kParam_ControllerPhase:		UnpackValue(&foundController->m_fPhase, value);		return;	break;
-					case OverrideVariant::kParam_ControllerStartTime:	UnpackValue(&foundController->m_fLoKeyTime, value);	return;	break;
-					case OverrideVariant::kParam_ControllerStopTime:	UnpackValue(&foundController->m_fHiKeyTime, value);	return;	break;
+					switch (value->key)
+				{
+					case OverrideVariant::kParam_ControllerFrequency:	UnpackValue(&foundController->frequency, value);	return;	break;
+					case OverrideVariant::kParam_ControllerPhase:		UnpackValue(&foundController->phase, value);		return;	break;
+					case OverrideVariant::kParam_ControllerStartTime:	UnpackValue(&foundController->loKeyTime, value);	return;	break;
+					case OverrideVariant::kParam_ControllerStopTime:	UnpackValue(&foundController->hiKeyTime, value);	return;	break;
 
 						// Special cases
 					case OverrideVariant::kParam_ControllerStartStop:
 						{
 							float fValue;
 							UnpackValue(&fValue, value);
-							if(fValue < 0.0)
+							if (fValue < 0.0)
 							{
 								foundController->Start(0);
 								foundController->Stop();
@@ -252,7 +258,7 @@ void SetShaderProperty(NiAVObject * node, OverrideVariant * value, bool immediat
 						}
 						break;
 					default:
-						_MESSAGE("Unknown controller key %d %s", value->key, node->m_name);
+						SKSE::log::info("Unknown controller key {} {}", value->key, node->name);
 						return;
 						break;
 					}
@@ -262,37 +268,37 @@ void SetShaderProperty(NiAVObject * node, OverrideVariant * value, bool immediat
 			return; // Only working on controller properties
 		}
 
-		BSEffectShaderProperty * effectShader = ni_cast(shaderProperty, BSEffectShaderProperty);
-		if(effectShader)
+		RE::BSEffectShaderProperty* effectShader = netimmerse_cast<RE::BSEffectShaderProperty*>(shaderProperty);
+		if (effectShader)
 		{
-			BSEffectShaderMaterial * material = (BSEffectShaderMaterial*)shaderProperty->material;
-			switch(value->key)
+			RE::BSEffectShaderMaterial* material = static_cast<RE::BSEffectShaderMaterial*>(shaderProperty->material);
+			switch (value->key)
 			{
-			case OverrideVariant::kParam_ShaderEmissiveColor:		UnpackValue(&material->emissiveColor, value);		return;	break;
-			case OverrideVariant::kParam_ShaderEmissiveMultiple:	UnpackValue(&material->emissiveMultiple, value);	return;	break;
+			case OverrideVariant::kParam_ShaderEmissiveColor:		UnpackValue(&material->baseColor, value);		return;	break;
+			case OverrideVariant::kParam_ShaderEmissiveMultiple:	UnpackValue(&material->baseColorScale, value);	return;	break;
 			default:
-				_MESSAGE("Unknown shader key %d %s", value->key, node->m_name);
+				SKSE::log::info("Unknown shader key {} {}", value->key, node->name);
 				return;
 				break;
 			}
 #ifdef _DEBUG
-			_MESSAGE("Applied EffectShader property %d %X to %s", value->key, value->data.u, node->m_name);
+			SKSE::log::info("Applied EffectShader property {} {:X} to {}", value->key, value->data.u, node->name);
 #endif
 		}
 
-		BSLightingShaderProperty * lightingShader = ni_cast(shaderProperty, BSLightingShaderProperty);
-		if(lightingShader)
+		RE::BSLightingShaderProperty* lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(shaderProperty);
+		if (lightingShader)
 		{
-			BSLightingShaderMaterial * material = (BSLightingShaderMaterial *)lightingShader->material;
-			switch(value->key)
+			RE::BSLightingShaderMaterial* material = static_cast<RE::BSLightingShaderMaterial*>(shaderProperty->material);
+			switch (value->key)
 			{
-			case OverrideVariant::kParam_ShaderEmissiveColor:		UnpackValue(lightingShader->emissiveColor, value);		return;	break;
-			case OverrideVariant::kParam_ShaderEmissiveMultiple:	UnpackValue(&lightingShader->emissiveMultiple, value);	return;	break;
-			case OverrideVariant::kParam_ShaderAlpha:				UnpackValue(&material->alpha, value);					return;	break;
-			case OverrideVariant::kParam_ShaderGlossiness:			UnpackValue(&material->glossiness, value);				return;	break;
-			case OverrideVariant::kParam_ShaderSpecularStrength:	UnpackValue(&material->specularStrength, value);		return;	break;
-			case OverrideVariant::kParam_ShaderLightingEffect1:	UnpackValue(&material->lightingEffect1, value);			return;	break;
-			case OverrideVariant::kParam_ShaderLightingEffect2:	UnpackValue(&material->lightingEffect2, value);			return;	break;
+			case OverrideVariant::kParam_ShaderEmissiveColor:		{ auto* em = static_cast<RE::BSEffectShaderMaterial*>(lightingShader->material); UnpackValue(&em->baseColor, value); } return;	break;
+			case OverrideVariant::kParam_ShaderEmissiveMultiple:	{ auto* em = static_cast<RE::BSEffectShaderMaterial*>(lightingShader->material); UnpackValue(&em->baseColorScale, value); } return;	break;
+			case OverrideVariant::kParam_ShaderAlpha:				UnpackValue(&material->materialAlpha, value);					return;	break;
+			case OverrideVariant::kParam_ShaderGlossiness:			UnpackValue(&material->specularPower, value);				return;	break;
+			case OverrideVariant::kParam_ShaderSpecularStrength:	UnpackValue(&material->specularColorScale, value);		return;	break;
+			case OverrideVariant::kParam_ShaderLightingEffect1:		UnpackValue(&material->subSurfaceLightRolloff, value);			return;	break;
+			case OverrideVariant::kParam_ShaderLightingEffect2:		UnpackValue(&material->rimLightPower, value);			return;	break;
 
 				// Special cases
 			case OverrideVariant::kParam_ShaderTexture:
@@ -300,12 +306,12 @@ void SetShaderProperty(NiAVObject * node, OverrideVariant * value, bool immediat
 					SKEEFixedString texture;
 					UnpackValue(&texture, value);
 
-					if(value->index >= 0 && value->index < BSTextureSet::kNumTextures) {
+					if (value->index >= 0 && value->index < RE::BSTextureSet::Texture::kTotal) {
 						if (immediate) {
-							NIOVTaskUpdateTexture(geometry, value->index, g_stringTable.GetString(texture)).Run();
+							NIOVTaskUpdateTexture(RE::NiPointer<RE::BSGeometry>(geometry), static_cast<std::uint32_t>(value->index), g_stringTable.GetString(texture)).Run();
 						}
 						else {
-							g_task->AddTask(new NIOVTaskUpdateTexture(geometry, value->index, g_stringTable.GetString(texture)));
+							SKEE_AddTask(g_task, new NIOVTaskUpdateTexture(RE::NiPointer<RE::BSGeometry>(geometry), static_cast<std::uint32_t>(value->index), g_stringTable.GetString(texture)));
 						}
 
 					}
@@ -314,25 +320,25 @@ void SetShaderProperty(NiAVObject * node, OverrideVariant * value, bool immediat
 				break;
 			case OverrideVariant::kParam_ShaderTextureSet:
 				{
-					BGSTextureSet * textureSet = NULL;
+					RE::BGSTextureSet* textureSet = nullptr;
 					UnpackValue(&textureSet, value);
-					if(textureSet)
+					if (textureSet)
 					{
-						if(immediate)
+						if (immediate)
 						{
-							BSShaderTextureSet * newTextureSet = BSShaderTextureSet::Create();
-							for(UInt32 i = 0; i < BSTextureSet::kNumTextures; i++)
+							auto* newTextureSetRaw = RE::BSShaderTextureSet::Create();
+							for (std::uint32_t i = 0; i < RE::BSTextureSet::Texture::kTotal; i++)
 							{
-								const char * texturePath = textureSet->textureSet.GetTexturePath(i);
-								newTextureSet->SetTexturePath(i, texturePath);
+								const char* texturePath = textureSet->GetTexturePath(static_cast<RE::BSTextureSet::Texture>(i));
+								newTextureSetRaw->SetTexturePath(static_cast<RE::BSTextureSet::Texture>(i), texturePath);
 							}
-							material->ReleaseTextures();
-							material->SetTextureSet(newTextureSet);
-							CALL_MEMBER_FN(lightingShader, InvalidateTextures)(0);
-							CALL_MEMBER_FN(lightingShader, InitializeShader)(geometry);
+							material->ClearTextures();
+							material->SetTextureSet(RE::NiPointer<RE::BSTextureSet>(newTextureSetRaw));
+							SKEE::InvalidateTextures(lightingShader, 0);
+							SKEE::InitializeShader(lightingShader, geometry);
 						}
 						else
-							CALL_MEMBER_FN(BSTaskPool::GetSingleton(), SetNiGeometryTexture)(geometry, textureSet);
+							SKEE::SetNiGeometryTexture(RE::TaskQueueInterface::GetSingleton(), geometry, textureSet);
 					}
 					return;
 				}
@@ -340,41 +346,43 @@ void SetShaderProperty(NiAVObject * node, OverrideVariant * value, bool immediat
 			case OverrideVariant::kParam_ShaderTintColor:
 				{
 					// Convert the shaderType to support tints
-					if(material->GetShaderType() != BSShaderMaterial::kShaderType_FaceGenRGBTint && material->GetShaderType() != BSShaderMaterial::kShaderType_HairTint)//if(CALL_MEMBER_FN(lightingShader, HasFlags)(0x0A))
+					if (material->GetFeature() != RE::BSShaderMaterial::Feature::kFaceGenRGBTint && material->GetFeature() != RE::BSShaderMaterial::Feature::kHairTint)
 					{
-						BSLightingShaderMaterialFacegenTint * tintedMaterial = CreateFacegenTintMaterial();
-						CALL_MEMBER_FN(tintedMaterial, CopyFrom)(material);
-						CALL_MEMBER_FN(lightingShader, SetFlags)(0x0A, false);
-						CALL_MEMBER_FN(lightingShader, SetFlags)(0x15, true);
-						CALL_MEMBER_FN(lightingShader, SetMaterial)(tintedMaterial, 1);
-						CALL_MEMBER_FN(lightingShader, InitializeShader)(geometry);
+						auto* tintedMaterial = static_cast<RE::BSLightingShaderMaterialFacegenTint*>(RE::malloc(sizeof(RE::BSLightingShaderMaterialFacegenTint)));
+						new (tintedMaterial) RE::BSLightingShaderMaterialFacegenTint();
+						SKEE::CopyFrom(static_cast<RE::BSLightingShaderMaterial*>(static_cast<RE::BSLightingShaderMaterialBase*>(tintedMaterial)), material);
+						lightingShader->SetFlags(static_cast<RE::BSShaderProperty::EShaderPropertyFlag8>(0x0A), false);
+						lightingShader->SetFlags(static_cast<RE::BSShaderProperty::EShaderPropertyFlag8>(0x15), true);
+						lightingShader->SetMaterial(tintedMaterial, 1);
+						SKEE::InitializeShader(lightingShader, geometry);
 						tintedMaterial->~BSLightingShaderMaterialFacegenTint();
-						Heap_Free(tintedMaterial);
+						RE::free(tintedMaterial);
 					}
 
-					material = (BSLightingShaderMaterial *)shaderProperty->material;
-					if(material->GetShaderType() == BSShaderMaterial::kShaderType_FaceGenRGBTint || material->GetShaderType() == BSShaderMaterial::kShaderType_HairTint) {
-						BSLightingShaderMaterialFacegenTint * tintedMaterial = (BSLightingShaderMaterialFacegenTint *)material;
+					material = static_cast<RE::BSLightingShaderMaterial*>(shaderProperty->material);
+					if (material->GetFeature() == RE::BSShaderMaterial::Feature::kFaceGenRGBTint || material->GetFeature() == RE::BSShaderMaterial::Feature::kHairTint) {
+						RE::BSLightingShaderMaterialFacegenTint* tintedMaterial = static_cast<RE::BSLightingShaderMaterialFacegenTint*>(static_cast<RE::BSLightingShaderMaterialBase*>(material));
 						UnpackValue(&tintedMaterial->tintColor, value);
 					}
 					return;
 				}
 				break;
 			default:
-				_ERROR("Unknown lighting shader key %d %s", value->key, node->m_name);
+				SKSE::log::error("Unknown lighting shader key {} {}", value->key, node->name);
 				return;
 				break;
 			}
 #ifdef _DEBUG
-			_DMESSAGE("Applied LightingShader property %d %X to %s", value->key, value->data.u, node->m_name);
+			SKSE::log::debug("Applied LightingShader property {} {:X} to {}", value->key, value->data.u, node->name);
 #endif
 		}
-	} else {
-		_ERROR("Failed to cast %s to geometry", node->m_name);
+	}
+	else {
+		SKSE::log::error("Failed to cast {} to geometry", node->name);
 	}
 }
 
-SKEEFixedString GetSanitizedPath(const SKEEFixedString & path)
+SKEEFixedString GetSanitizedPath(const SKEEFixedString& path)
 {
 	std::string fullPath = path.AsString();
 
@@ -385,147 +393,136 @@ SKEEFixedString GetSanitizedPath(const SKEEFixedString & path)
 	return fullPath;
 }
 
-NiTexturePtr * GetTextureFromIndex(BSLightingShaderMaterial * material, UInt32 index)
+RE::NiPointer<RE::NiSourceTexture>* GetTextureFromIndex(RE::BSLightingShaderMaterial* material, std::uint32_t index)
 {
 	switch (index)
 	{
 	case 0:
-		return &material->texture1;
-		break;
+		return &static_cast<RE::BSLightingShaderMaterialBase*>(material)->diffuseTexture;
 	case 1:
-		return &material->texture2;
-		break;
+		return &static_cast<RE::BSLightingShaderMaterialBase*>(material)->normalTexture;
 	case 2:
 	{
-		if (material->GetShaderType() == BSShaderMaterial::kShaderType_FaceGen)
+		if (material->GetFeature() == RE::BSShaderMaterial::Feature::kFaceGen)
 		{
-			return &static_cast<BSLightingShaderMaterialFacegen*>(material)->unkB0;
+			return &static_cast<RE::BSLightingShaderMaterialFacegen*>(static_cast<RE::BSLightingShaderMaterialBase*>(material))->subsurfaceTexture;
 		}
-		else if (material->GetShaderType() == BSShaderMaterial::kShaderType_GlowMap)
+		else if (material->GetFeature() == RE::BSShaderMaterial::Feature::kGlowMap)
 		{
-			return &static_cast<BSLightingShaderMaterialGlowmap*>(material)->glowMap;
+			return &static_cast<RE::BSLightingShaderMaterialGlowmap*>(static_cast<RE::BSLightingShaderMaterialBase*>(material))->glowTexture;
 		}
 		else
 		{
-			return &material->texture3;
+			return &static_cast<RE::BSLightingShaderMaterialBase*>(material)->rimSoftLightingTexture;
 		}
 	}
-	break;
 	case 3:
 	{
-		if (material->GetShaderType() == BSShaderMaterial::kShaderType_FaceGen)
+		if (material->GetFeature() == RE::BSShaderMaterial::Feature::kFaceGen)
 		{
-			return &static_cast<BSLightingShaderMaterialFacegen*>(material)->unkA8;
+			return &static_cast<RE::BSLightingShaderMaterialFacegen*>(static_cast<RE::BSLightingShaderMaterialBase*>(material))->detailTexture;
 		}
-		else if (material->GetShaderType() == BSShaderMaterial::kShaderType_Parallax)
+		else if (material->GetFeature() == RE::BSShaderMaterial::Feature::kParallax)
 		{
-			return &static_cast<BSLightingShaderMaterialParallax*>(material)->unkA0;
+			return &static_cast<RE::BSLightingShaderMaterialParallax*>(static_cast<RE::BSLightingShaderMaterialBase*>(material))->heightTexture;
 		}
-		else if (material->GetShaderType() == BSShaderMaterial::kShaderType_ParallaxOcc)
+		else if (material->GetFeature() == RE::BSShaderMaterial::Feature::kParallaxOcc)
 		{
-			return &static_cast<BSLightingShaderMaterialParallaxOcc*>(material)->unkA0;
+			return &static_cast<RE::BSLightingShaderMaterialParallaxOcc*>(static_cast<RE::BSLightingShaderMaterialBase*>(material))->heightTexture;
 		}
 	}
-	break;
 	case 4:
 	{
-		if (material->GetShaderType() == BSShaderMaterial::kShaderType_Eye)
+		if (material->GetFeature() == RE::BSShaderMaterial::Feature::kEye)
 		{
-			return &static_cast<BSLightingShaderMaterialEye*>(material)->unkA0;
+			return &static_cast<RE::BSLightingShaderMaterialEye*>(static_cast<RE::BSLightingShaderMaterialBase*>(material))->envTexture;
 		}
-		else if (material->GetShaderType() == BSShaderMaterial::kShaderType_EnvironmentMap)
+		else if (material->GetFeature() == RE::BSShaderMaterial::Feature::kEnvironmentMap)
 		{
-			return &static_cast<BSLightingShaderMaterialEnvmap*>(material)->unkA0;
+			return &static_cast<RE::BSLightingShaderMaterialEnvmap*>(static_cast<RE::BSLightingShaderMaterialBase*>(material))->envTexture;
 		}
-		else if (material->GetShaderType() == BSShaderMaterial::kShaderType_MultilayerParallax)
+		else if (material->GetFeature() == RE::BSShaderMaterial::Feature::kMultilayerParallax)
 		{
-			return &static_cast<BSLightingShaderMaterialMultiLayerParallax*>(material)->unkA8;
+			return &static_cast<RE::BSLightingShaderMaterialMultiLayerParallax*>(static_cast<RE::BSLightingShaderMaterialBase*>(material))->envTexture;
 		}
 	}
-	break;
 	case 5:
 	{
-		if (material->GetShaderType() == BSShaderMaterial::kShaderType_Eye)
+		if (material->GetFeature() == RE::BSShaderMaterial::Feature::kEye)
 		{
-			return &static_cast<BSLightingShaderMaterialEye*>(material)->unkA8;
+			return &static_cast<RE::BSLightingShaderMaterialEye*>(static_cast<RE::BSLightingShaderMaterialBase*>(material))->envMaskTexture;
 		}
-		else if (material->GetShaderType() == BSShaderMaterial::kShaderType_EnvironmentMap)
+		else if (material->GetFeature() == RE::BSShaderMaterial::Feature::kEnvironmentMap)
 		{
-			return &static_cast<BSLightingShaderMaterialEnvmap*>(material)->unkA0;
+			return &static_cast<RE::BSLightingShaderMaterialEnvmap*>(static_cast<RE::BSLightingShaderMaterialBase*>(material))->envTexture;
 		}
-		else if (material->GetShaderType() == BSShaderMaterial::kShaderType_MultilayerParallax)
+		else if (material->GetFeature() == RE::BSShaderMaterial::Feature::kMultilayerParallax)
 		{
-			return &static_cast<BSLightingShaderMaterialMultiLayerParallax*>(material)->unkB0;
+			return &static_cast<RE::BSLightingShaderMaterialMultiLayerParallax*>(static_cast<RE::BSLightingShaderMaterialBase*>(material))->envMaskTexture;
 		}
 	}
-	break;
 	case 6:
 	{
-		if (material->GetShaderType() == BSShaderMaterial::kShaderType_FaceGen)
+		if (material->GetFeature() == RE::BSShaderMaterial::Feature::kFaceGen)
 		{
-			return &static_cast<BSLightingShaderMaterialFacegen*>(material)->renderedTexture;
+			return &static_cast<RE::BSLightingShaderMaterialFacegen*>(static_cast<RE::BSLightingShaderMaterialBase*>(material))->tintTexture;
 		}
-		else if (material->GetShaderType() == BSShaderMaterial::kShaderType_MultilayerParallax)
+		else if (material->GetFeature() == RE::BSShaderMaterial::Feature::kMultilayerParallax)
 		{
-			return &static_cast<BSLightingShaderMaterialMultiLayerParallax*>(material)->unkA0;
+			return &static_cast<RE::BSLightingShaderMaterialMultiLayerParallax*>(static_cast<RE::BSLightingShaderMaterialBase*>(material))->layerTexture;
 		}
 	}
-	break;
 	case 7:
-		return &material->texture4;
-		break;
+		return &static_cast<RE::BSLightingShaderMaterialBase*>(material)->specularBackLightingTexture;
 	}
 
 	return nullptr;
 }
 
-void DumpNodeChildren(NiAVObject * node)
+void DumpNodeChildren(RE::NiAVObject* node)
 {
-	_MESSAGE("{%s} {%s} {%p}", node->GetRTTI()->name, node->m_name, (void*)node);
-	if (node->m_extraDataLen > 0) {
-		gLog.Indent();
-		for (UInt16 i = 0; i < node->m_extraDataLen; i++) {
-			_MESSAGE("{%s} {%s} {%p}", node->m_extraData[i]->GetRTTI()->name, node->m_extraData[i]->m_pcName, (void*)node);
+	SKSE::log::info("{} {} {:x}", std::string(node->GetRTTI()->name), std::string(node->name.c_str()), (std::uintptr_t)node);
+	if (node->extraDataSize > 0) {
+		for (std::uint16_t i = 0; i < node->extraDataSize; i++) {
+			RE::NiExtraData* extraData = node->extra[i];
+			if (extraData) {
+				SKSE::log::info("{} {} {:x}", std::string(extraData->GetRTTI()->name), std::string(extraData->name.c_str()), (std::uintptr_t)extraData);
+			}
 		}
-		gLog.Outdent();
 	}
 
-	NiNode * niNode = node->GetAsNiNode();
-	if (niNode && niNode->m_children.m_emptyRunStart > 0)
+	RE::NiNode* niNode = node ? node->AsNode() : nullptr;
+	if (niNode && niNode->children.size() > 0)
 	{
-		gLog.Indent();
-		for (int i = 0; i < niNode->m_children.m_emptyRunStart; i++)
+		for (int i = 0; i < niNode->children.size(); i++)
 		{
-			NiAVObject * object = niNode->m_children.m_data[i];
+			RE::NiAVObject* object = niNode->children[i].get();
 			if (object) {
-				NiNode * childNode = object->GetAsNiNode();
-				BSGeometry * geometry = object->GetAsBSGeometry();
+				RE::NiNode* childNode = object ? object->AsNode() : nullptr;
+				RE::BSGeometry* geometry = object ? object->AsGeometry() : nullptr;
 				if (geometry) {
-					_MESSAGE("{%s} {%s} {%p} - Geometry", object->GetRTTI()->name, object->m_name, (void*)object);
-					NiPointer<BSShaderProperty> shaderProperty = niptr_cast<BSShaderProperty>(geometry->m_spEffectState);
+					SKSE::log::info("{} {} {:x} - Geometry", std::string(object->GetRTTI()->name), std::string(object->name.c_str()), (std::uintptr_t)object);
+					auto* shaderProperty = static_cast<RE::BSShaderProperty*>(geometry->GetGeometryRuntimeData().shaderProperty.get());
 					if (shaderProperty) {
-						BSLightingShaderProperty * lightingShader = ni_cast(shaderProperty, BSLightingShaderProperty);
+						RE::BSLightingShaderProperty* lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(shaderProperty);
 						if (lightingShader) {
-							BSLightingShaderMaterial * material = (BSLightingShaderMaterial *)lightingShader->material;
+							RE::BSLightingShaderMaterial* material = static_cast<RE::BSLightingShaderMaterial*>(lightingShader->material);
 
-							gLog.Indent();
-							for (int i = 0; i < BSTextureSet::kNumTextures; ++i)
+							for (int i = 0; i < RE::BSTextureSet::Texture::kTotal; ++i)
 							{
-								const char * texturePath = material->textureSet->GetTexturePath(i);
+								const char* texturePath = material->textureSet->GetTexturePath(static_cast<RE::BSTextureSet::Texture>(i));
 								if (!texturePath) {
 									continue;
 								}
 
-								const char * textureName = "";
-								NiTexturePtr * texture = GetTextureFromIndex(material, i);
+								const char* textureName = "";
+								auto texture = GetTextureFromIndex(material, i);
 								if (texture) {
-									textureName = texture->get()->name;
+									textureName = (*texture)->name.c_str();
 								}
 
-								_MESSAGE("Texture %d - %s (%s)", i, texturePath, textureName);
+								SKSE::log::info("Texture {} - {} ({})", i, texturePath, textureName);
 							}
-							
-							gLog.Outdent();
 						}
 					}
 				}
@@ -533,27 +530,24 @@ void DumpNodeChildren(NiAVObject * node)
 					DumpNodeChildren(childNode);
 				}
 				else {
-					_MESSAGE("{%s} {%s} {%p}", object->GetRTTI()->name, object->m_name, (void*)object);
+					SKSE::log::info("{} {} {:x}", std::string(object->GetRTTI()->name), std::string(object->name.c_str()), (std::uintptr_t)object);
 				}
 			}
 		}
-		gLog.Outdent();
 	}
 }
 
 void NIOVTaskUpdateWorldData::Run()
 {
-	NiAVObject::ControllerUpdateContext ctx;
-	ctx.flags = 0;
-	ctx.delta = 0;
+	RE::NiUpdateData ctx{};
 	m_object->UpdateWorldData(&ctx);
 }
 
 void NIOVTaskMoveNode::Run()
 {
-	NiPointer<NiNode> currentParent = m_object->m_parent;
+	auto* currentParent = m_object->parent;
 	if (currentParent)
-		currentParent->RemoveChild(m_object);
+		currentParent->DetachChild(m_object.get());
 	if (m_destination)
-		m_destination->AttachChild(m_object, true);
+		m_destination->AttachChild(m_object.get(), true);
 }

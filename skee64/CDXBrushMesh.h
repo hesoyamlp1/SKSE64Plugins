@@ -3,6 +3,8 @@
 #include "CDXMesh.h"
 #include "CDXPicker.h"
 
+
+
 class CDXBrush;
 class CDXShaderFile;
 
@@ -25,20 +27,20 @@ protected:
 	struct Sphere
 	{
 		std::vector<CDXMesh::ColoredPrimitive> m_vertices;
-		Microsoft::WRL::ComPtr<ID3D11Buffer> m_vertexBuffer;
+		REX::W32::ComPtr<REX::W32::ID3D11Buffer> m_vertexBuffer;
 		std::vector<CDXMeshIndex> m_indices;
-		Microsoft::WRL::ComPtr<ID3D11Buffer> m_indexBuffer;
+		REX::W32::ComPtr<REX::W32::ID3D11Buffer> m_indexBuffer;
 		CDXMatrix m_transform;
 	};
 
 	void ComputeSphere(std::vector<CDXMesh::ColoredPrimitive>& vertices, std::vector<CDXMeshIndex> & indices, float radius, int sliceCount, int stackCount, DirectX::XMVECTOR color);
 
 private:
-	Microsoft::WRL::ComPtr<ID3D11VertexShader> m_vertexShader;
-	Microsoft::WRL::ComPtr<ID3D11PixelShader> m_pixelShader;
-	Microsoft::WRL::ComPtr<ID3D11RasterizerState> m_solidState;
-	Microsoft::WRL::ComPtr<ID3D11Buffer> m_matrixBuffer;
-	Microsoft::WRL::ComPtr<ID3D11InputLayout> m_layout;
+	REX::W32::ComPtr<REX::W32::ID3D11VertexShader> m_vertexShader;
+	REX::W32::ComPtr<REX::W32::ID3D11PixelShader> m_pixelShader;
+	REX::W32::ComPtr<REX::W32::ID3D11RasterizerState> m_solidState;
+	REX::W32::ComPtr<REX::W32::ID3D11Buffer> m_matrixBuffer;
+	REX::W32::ComPtr<REX::W32::ID3D11InputLayout> m_layout;
 	Sphere m_sphere;
 	bool m_dashed;
 	bool m_drawPoint;

@@ -5,6 +5,8 @@
 #include "CDXBrush.h"
 #include "CDXShaderFactory.h"
 
+
+
 using namespace DirectX;
 
 bool CDXBrushMesh::Create(CDXD3DDevice * device, bool dashed, XMVECTOR ringColor, XMVECTOR dotColor, CDXShaderFactory* factory, CDXShaderFile* vertexShader, CDXShaderFile* precompiledVertexShader, CDXShaderFile* pixelShader, CDXShaderFile* precompiledPixelShader)
@@ -13,15 +15,15 @@ bool CDXBrushMesh::Create(CDXD3DDevice * device, bool dashed, XMVECTOR ringColor
 	static const float RADIUS = 1.0f;
 	static const float RADIUS_STEP = 5.0f * (XM_PI / 180.0f);
 
-	Microsoft::WRL::ComPtr<ID3DBlob> vertexShaderBuffer;
-	Microsoft::WRL::ComPtr<ID3DBlob> pixelShaderBuffer;
-	D3D11_BUFFER_DESC vertexBufferDesc, indexBufferDesc;
-	D3D11_SUBRESOURCE_DATA vertexData, indexData;
+	REX::W32::ComPtr<REX::W32::ID3DBlob> vertexShaderBuffer;
+	REX::W32::ComPtr<REX::W32::ID3DBlob> pixelShaderBuffer;
+	REX::W32::D3D11_BUFFER_DESC vertexBufferDesc, indexBufferDesc;
+	REX::W32::D3D11_SUBRESOURCE_DATA vertexData, indexData;
 	HRESULT result;
 
 	m_pDevice = device;
 	if (!device) {
-		_ERROR("%s - No device found to create brushes", __FUNCTION__);
+		SKSE::log::error("{} - No device found to create brushes", __FUNCTION__);
 		return false;
 	}
 
@@ -31,14 +33,14 @@ bool CDXBrushMesh::Create(CDXD3DDevice * device, bool dashed, XMVECTOR ringColor
 	m_dashed = dashed;
 
 	auto pDevice = device->GetDevice();
-	if (!pDevice) {
-		_ERROR("%s - No device3 found", __FUNCTION__);
+	if (!pDevice.Get()) {
+		SKSE::log::error("{} - No device3 found", __FUNCTION__);
 		return false;
 	}
 
 	auto pDeviceContext = device->GetDeviceContext();
-	if (!pDevice) {
-		_ERROR("%s - No device deviceContext4 found", __FUNCTION__);
+	if (!pDevice.Get()) {
+		SKSE::log::error("{} - No device deviceContext4 found", __FUNCTION__);
 		return false;
 	}
 
@@ -46,7 +48,7 @@ bool CDXBrushMesh::Create(CDXD3DDevice * device, bool dashed, XMVECTOR ringColor
 	m_primitive = std::make_unique<ColoredPrimitive[]>(m_vertCount);
 	if (!m_primitive)
 	{
-		_ERROR("%s - Failed to initialize colored primitive with %d vertices", __FUNCTION__, m_vertCount);
+		SKSE::log::error("{} - Failed to initialize colored primitive with {} vertices", __FUNCTION__, m_vertCount);
 		return false;
 	}
 
@@ -54,12 +56,11 @@ bool CDXBrushMesh::Create(CDXD3DDevice * device, bool dashed, XMVECTOR ringColor
 	m_indices = std::make_unique<CDXMeshIndex[]>(m_indexCount);
 	if (!m_indices)
 	{
-		_ERROR("%s - Failed to initialize %d indices", __FUNCTION__, m_indexCount);
+		SKSE::log::error("{} - Failed to initialize {} indices", __FUNCTION__, m_indexCount);
 		return false;
 	}
 
 	ComputeSphere(m_sphere.m_vertices, m_sphere.m_indices, 1.0f, 10, 10, dotColor);
-
 
 	float i = 0;
 	for (unsigned int j = 0; j < m_vertCount; j++)
@@ -76,85 +77,85 @@ bool CDXBrushMesh::Create(CDXD3DDevice * device, bool dashed, XMVECTOR ringColor
 	}
 
 	// Set up the description of the static vertex buffer.
-	vertexBufferDesc.Usage = D3D11_USAGE_DYNAMIC;
-	vertexBufferDesc.ByteWidth = sizeof(ColoredPrimitive) * m_vertCount;
-	vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-	vertexBufferDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-	vertexBufferDesc.MiscFlags = 0;
-	vertexBufferDesc.StructureByteStride = 0;
+	vertexBufferDesc.usage = REX::W32::D3D11_USAGE_DYNAMIC;
+	vertexBufferDesc.byteWidth = sizeof(ColoredPrimitive) * m_vertCount;
+	vertexBufferDesc.bindFlags = REX::W32::D3D11_BIND_VERTEX_BUFFER;
+	vertexBufferDesc.cpuAccessFlags = REX::W32::D3D11_CPU_ACCESS_WRITE;
+	vertexBufferDesc.miscFlags = 0;
+	vertexBufferDesc.structureByteStride = 0;
 
 	// Give the subresource structure a pointer to the vertex data.
-	vertexData.pSysMem = m_primitive.get();
-	vertexData.SysMemPitch = 0;
-	vertexData.SysMemSlicePitch = 0;
+	vertexData.sysMem = m_primitive.get();
+	vertexData.sysMemPitch = 0;
+	vertexData.sysMemSlicePitch = 0;
 
 	// Now create the vertex buffer.
 	result = pDevice->CreateBuffer(&vertexBufferDesc, &vertexData, m_vertexBuffer.ReleaseAndGetAddressOf());
 	if (FAILED(result))
 	{
-		_ERROR("%s - Failed to create vertex buffer 1", __FUNCTION__);
+		SKSE::log::error("{} - Failed to create vertex buffer 1", __FUNCTION__);
 		return false;
 	}
 
-	vertexData.pSysMem = &m_sphere.m_vertices.at(0);
-	vertexBufferDesc.ByteWidth = sizeof(ColoredPrimitive) * m_sphere.m_vertices.size();
+	vertexData.sysMem = &m_sphere.m_vertices.at(0);
+	vertexBufferDesc.byteWidth = sizeof(ColoredPrimitive) * m_sphere.m_vertices.size();
 
 	// Now create the vertex buffer.
 	result = pDevice->CreateBuffer(&vertexBufferDesc, &vertexData, m_sphere.m_vertexBuffer.ReleaseAndGetAddressOf());
 	if (FAILED(result))
 	{
-		_ERROR("%s - Failed to create vertex buffer 2", __FUNCTION__);
+		SKSE::log::error("{} - Failed to create vertex buffer 2", __FUNCTION__);
 		return false;
 	}
 
 	// Set up the description of the static index buffer.
-	indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-	indexBufferDesc.ByteWidth = sizeof(CDXMeshIndex) * m_indexCount;
-	indexBufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
-	indexBufferDesc.CPUAccessFlags = 0;
-	indexBufferDesc.MiscFlags = 0;
-	indexBufferDesc.StructureByteStride = 0;
+	indexBufferDesc.usage = REX::W32::D3D11_USAGE_DEFAULT;
+	indexBufferDesc.byteWidth = sizeof(CDXMeshIndex) * m_indexCount;
+	indexBufferDesc.bindFlags = REX::W32::D3D11_BIND_INDEX_BUFFER;
+	indexBufferDesc.cpuAccessFlags = 0;
+	indexBufferDesc.miscFlags = 0;
+	indexBufferDesc.structureByteStride = 0;
 
 	// Give the subresource structure a pointer to the index data.
-	indexData.pSysMem = m_indices.get();
-	indexData.SysMemPitch = 0;
-	indexData.SysMemSlicePitch = 0;
+	indexData.sysMem = m_indices.get();
+	indexData.sysMemPitch = 0;
+	indexData.sysMemSlicePitch = 0;
 
 	// Create the index buffer.
 	result = pDevice->CreateBuffer(&indexBufferDesc, &indexData, m_indexBuffer.ReleaseAndGetAddressOf());
 	if (FAILED(result))
 	{
-		_ERROR("%s - Failed to create index buffer 1", __FUNCTION__);
+		SKSE::log::error("{} - Failed to create index buffer 1", __FUNCTION__);
 		return false;
 	}
 
-	indexData.pSysMem = &m_sphere.m_indices.at(0);
-	indexBufferDesc.ByteWidth = sizeof(CDXMeshIndex) * m_sphere.m_indices.size();
+	indexData.sysMem = &m_sphere.m_indices.at(0);
+	indexBufferDesc.byteWidth = sizeof(CDXMeshIndex) * m_sphere.m_indices.size();
 
 	// Create the index buffer.
 	result = pDevice->CreateBuffer(&indexBufferDesc, &indexData, m_sphere.m_indexBuffer.ReleaseAndGetAddressOf());
 	if (FAILED(result))
 	{
-		_ERROR("%s - Failed to create index buffer 2", __FUNCTION__);
+		SKSE::log::error("{} - Failed to create index buffer 2", __FUNCTION__);
 		return false;
 	}
 
-	D3D11_INPUT_ELEMENT_DESC polygonLayout[2];
-	polygonLayout[0].SemanticName = "POSITION";
-	polygonLayout[0].SemanticIndex = 0;
-	polygonLayout[0].Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-	polygonLayout[0].InputSlot = 0;
-	polygonLayout[0].AlignedByteOffset = 0;
-	polygonLayout[0].InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA;
-	polygonLayout[0].InstanceDataStepRate = 0;
+	REX::W32::D3D11_INPUT_ELEMENT_DESC polygonLayout[2];
+	polygonLayout[0].semanticName = "POSITION";
+	polygonLayout[0].semanticIndex = 0;
+	polygonLayout[0].format = REX::W32::DXGI_FORMAT_R32G32B32A32_FLOAT;
+	polygonLayout[0].inputSlot = 0;
+	polygonLayout[0].alignedByteOffset = 0;
+	polygonLayout[0].inputSlotClass = REX::W32::D3D11_INPUT_PER_VERTEX_DATA;
+	polygonLayout[0].instanceDataStepRate = 0;
 
-	polygonLayout[1].SemanticName = "COLOR";
-	polygonLayout[1].SemanticIndex = 0;
-	polygonLayout[1].Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-	polygonLayout[1].InputSlot = 0;
-	polygonLayout[1].AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT;
-	polygonLayout[1].InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA;
-	polygonLayout[1].InstanceDataStepRate = 0;
+	polygonLayout[1].semanticName = "COLOR";
+	polygonLayout[1].semanticIndex = 0;
+	polygonLayout[1].format = REX::W32::DXGI_FORMAT_R32G32B32A32_FLOAT;
+	polygonLayout[1].inputSlot = 0;
+	polygonLayout[1].alignedByteOffset = 0xFFFFFFFF;
+	polygonLayout[1].inputSlotClass = REX::W32::D3D11_INPUT_PER_VERTEX_DATA;
+	polygonLayout[1].instanceDataStepRate = 0;
 
 	// Get a count of the elements in the layout.
 	unsigned int numElements = sizeof(polygonLayout) / sizeof(polygonLayout[0]);
@@ -171,23 +172,23 @@ bool CDXBrushMesh::Create(CDXD3DDevice * device, bool dashed, XMVECTOR ringColor
 	}
 
 	// Setup the raster description which will determine how and what polygons will be drawn.
-	D3D11_RASTERIZER_DESC rasterDesc;
-	rasterDesc.AntialiasedLineEnable = true;
-	rasterDesc.CullMode = D3D11_CULL_BACK;
-	rasterDesc.DepthBias = -2000;
-	rasterDesc.DepthBiasClamp = 0.0f;
-	rasterDesc.DepthClipEnable = true;
-	rasterDesc.FillMode = D3D11_FILL_SOLID;
-	rasterDesc.FrontCounterClockwise = false;
-	rasterDesc.MultisampleEnable = true;
-	rasterDesc.ScissorEnable = false;
-	rasterDesc.SlopeScaledDepthBias = 0.0f;
+	REX::W32::D3D11_RASTERIZER_DESC rasterDesc;
+	rasterDesc.antialiasedLineEnable = true;
+	rasterDesc.cullMode = REX::W32::D3D11_CULL_BACK;
+	rasterDesc.depthBias = -2000;
+	rasterDesc.depthBiasClamp = 0.0f;
+	rasterDesc.depthClipEnable = true;
+	rasterDesc.fillMode = REX::W32::D3D11_FILL_SOLID;
+	rasterDesc.frontCounterClockwise = false;
+	rasterDesc.multisampleEnable = true;
+	rasterDesc.scissorEnable = false;
+	rasterDesc.slopeScaledDepthBias = 0.0f;
 
 	// Create the rasterizer state from the description we just filled out.
 	result = pDevice->CreateRasterizerState(&rasterDesc, m_solidState.ReleaseAndGetAddressOf());
 	if (FAILED(result))
 	{
-		_ERROR("%s - Failed to create rasterizer state", __FUNCTION__);
+		SKSE::log::error("{} - Failed to create rasterizer state", __FUNCTION__);
 		return false;
 	}
 
@@ -333,7 +334,7 @@ void CDXBrushMesh::Render(CDXD3DDevice * pDevice, CDXShader * shader)
 
 	CDXShader::TransformBuffer xform;
 
-	ID3D11Buffer* vertexBuffer[] = { nullptr };
+	REX::W32::ID3D11Buffer* vertexBuffer[] = { nullptr };
 	if (m_drawRadius)
 	{
 		xform.transform = XMMatrixTranspose(GetTransform());
@@ -341,8 +342,8 @@ void CDXBrushMesh::Render(CDXD3DDevice * pDevice, CDXShader * shader)
 
 		vertexBuffer[0] = m_vertexBuffer.Get();
 		pDeviceContext->IASetVertexBuffers(0, 1, vertexBuffer, &stride, &offset);
-		pDeviceContext->IASetIndexBuffer(m_indexBuffer.Get(), DXGI_FORMAT_R16_UINT, 0);
-		pDeviceContext->IASetPrimitiveTopology(m_dashed ? D3D11_PRIMITIVE_TOPOLOGY_LINELIST : D3D11_PRIMITIVE_TOPOLOGY_LINESTRIP);
+		pDeviceContext->IASetIndexBuffer(m_indexBuffer.Get(), REX::W32::DXGI_FORMAT_R16_UINT, 0);
+		pDeviceContext->IASetPrimitiveTopology(m_dashed ? REX::W32::D3D11_PRIMITIVE_TOPOLOGY_LINELIST : REX::W32::D3D11_PRIMITIVE_TOPOLOGY_LINESTRIP);
 		pDeviceContext->DrawIndexed(m_indexCount, 0, 0);
 	}
 
@@ -353,8 +354,8 @@ void CDXBrushMesh::Render(CDXD3DDevice * pDevice, CDXShader * shader)
 
 		vertexBuffer[0] = m_sphere.m_vertexBuffer.Get();
 		pDeviceContext->IASetVertexBuffers(0, 1, vertexBuffer, &stride, &offset);
-		pDeviceContext->IASetIndexBuffer(m_sphere.m_indexBuffer.Get(), DXGI_FORMAT_R16_UINT, 0);
-		pDeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		pDeviceContext->IASetIndexBuffer(m_sphere.m_indexBuffer.Get(), REX::W32::DXGI_FORMAT_R16_UINT, 0);
+		pDeviceContext->IASetPrimitiveTopology(REX::W32::D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 		pDeviceContext->DrawIndexed(m_sphere.m_indices.size(), 0, 0);
 	}

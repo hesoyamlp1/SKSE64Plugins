@@ -1,7 +1,14 @@
 #pragma once
 
-#include "skse64/GameTypes.h"
+#include "RaceMenuTypes.h"
 #include "StringTable.h"
+#include <cstdint>
+
+#include <RE/B/BSGeometry.h>
+#include <RE/N/NiAVObject.h>
+#include <RE/N/NiPoint3.h>
+#include <RE/N/NiSmartPointer.h>
+#include <SKSE/Interfaces.h>
 
 #ifdef _DEBUG
 //#define _DEBUG_HOOK
@@ -11,15 +18,27 @@
 //#define _DEBUG_MORPH
 #endif
 
-class BSFaceGenNiNode;
-class TESNPC;
-class SliderArray;
-class RaceMenuSlider;
-struct SKSESerializationInterface;
-class TESRace;
-class BGSHeadPart;
-class TESForm;
-class TESModelTri;
+#pragma once
+
+#include "RaceMenuTypes.h"
+#include "StringTable.h"
+#include <cstdint>
+
+#include <RE/B/BSGeometry.h>
+#include <RE/N/NiAVObject.h>
+#include <RE/N/NiPoint3.h>
+#include <RE/N/NiSmartPointer.h>
+#include <SKSE/Interfaces.h>
+
+#ifdef _DEBUG
+//#define _DEBUG_HOOK
+//#define _DEBUG_MORPHAPPLICATOR
+//#define _DEBUG_DATADUMP
+//#define _DEBUG_DATAREADER
+//#define _DEBUG_MORPH
+#endif
+
+
 
 #define SLIDER_OFFSET 200
 #define SLIDER_CATEGORY_EXTRA 512
@@ -32,6 +51,7 @@ class TESModelTri;
 #define MORPH_CACHE_DIR "cache\\"
 #define MORPH_CACHE_PATH "actors\\character\\FaceGenMorphs\\morphs\\cache\\"
 
+#include <map>
 #include <set>
 #include <vector>
 #include <unordered_map>
@@ -42,9 +62,6 @@ class TESModelTri;
 #include "OverrideVariant.h"
 #include "IPluginInterface.h"
 
-#include "skse64/GameResources.h"
-#include "skse64/GameThreads.h"
-
 class SliderInternal
 {
 public:
@@ -52,6 +69,7 @@ public:
 	{
 		category = -1;
 		name = "";
+		displayName = "";
 		lowerBound = "";
 		upperBound = "";
 		type = 0;
@@ -62,6 +80,7 @@ public:
 	{
 		category = slider->category;
 		name = slider->name;
+		displayName = slider->displayName;
 		lowerBound = slider->lowerBound;
 		upperBound = slider->upperBound;
 		type = slider->type;
@@ -88,12 +107,13 @@ public:
 		kTypeHeadPart = 2
 	};
 
-	SInt32			category;
-	SKEEFixedString	name;
-	SKEEFixedString	lowerBound;
-	SKEEFixedString	upperBound;
-	UInt8			type;
-	UInt8			presetCount;
+	std::int32_t			category;
+	SKEEFixedString			name;
+	SKEEFixedString			displayName;
+	SKEEFixedString			lowerBound;
+	SKEEFixedString			upperBound;
+	std::uint8_t			type;
+	std::uint8_t			presetCount;
 };
 
 typedef std::shared_ptr<SliderInternal> SliderInternalPtr;
@@ -103,15 +123,15 @@ class SliderGender
 public:
 	SliderGender()
 	{
-		slider[0] = NULL;
-		slider[1] = NULL;
+		slider[0] = nullptr;
+		slider[1] = nullptr;
 	}
 
 	SliderInternalPtr slider[2];
 };
 typedef std::shared_ptr<SliderGender> SliderGenderPtr;
 typedef std::vector<SliderInternalPtr> SliderList;
-typedef std::unordered_map<TESRace*, SliderList> RaceSliders;
+using RaceSliders = std::unordered_map<RE::TESRace*, SliderList>;
 typedef std::vector<SKEEFixedString> MorphSet;
 
 class MorphMap : public std::map<SKEEFixedString, MorphSet>
@@ -132,9 +152,9 @@ public:
 	class DumpVisitor : public Visitor
 	{
 	public:
-		virtual bool Accept(BSFixedString morphName)
+		virtual bool Accept(RE::BSFixedString morphName)
 		{
-			_MESSAGE("Extra Morph: %s", morphName.data);
+			SKSE::log::info("Extra Morph: {}", morphName.data);
 			return false;
 		};
 	};
@@ -146,7 +166,7 @@ class SliderMap : public std::unordered_map<SKEEFixedString, SliderGenderPtr>
 public:
 	SliderMap() : std::unordered_map<SKEEFixedString, SliderGenderPtr>(){ }
 
-	void AddSlider(const SKEEFixedString & key, UInt8 gender, SliderInternal & slider);
+	void AddSlider(const SKEEFixedString & key, std::uint8_t gender, SliderInternal & slider);
 
 #ifdef _DEBUG_DATADUMP
 	void DumpMap();
@@ -154,7 +174,6 @@ public:
 };
 
 typedef std::shared_ptr<SliderMap>	SliderMapPtr;
-
 
 class SliderSet : public std::set<SliderMapPtr>
 {
@@ -164,12 +183,12 @@ public:
 
 typedef std::shared_ptr<SliderSet> SliderSetPtr;
 
-class RaceMap : public std::unordered_map<TESRace*, SliderSetPtr>
+class RaceMap : public std::unordered_map<RE::TESRace*, SliderSetPtr>
 {
 public:
-	SliderSetPtr GetSliderSet(TESRace * race);
-	bool AddSliderMap(TESRace * race, SliderMapPtr sliderMap);
-	bool CreateDefaultMap(TESRace * race);
+	SliderSetPtr GetSliderSet(RE::TESRace* race);
+	bool AddSliderMap(RE::TESRace* race, SliderMapPtr sliderMap);
+	bool CreateDefaultMap(RE::TESRace* race);
 
 	void Revert();
 
@@ -186,20 +205,20 @@ public:
 	float GetValue(const SKEEFixedString & name);
 };
 
-class ValueMap : public std::unordered_map<TESNPC*, ValueSet>
+class ValueMap : public std::unordered_map<RE::TESNPC*, ValueSet>
 {
 public:
-	ValueSet * GetValueSet(TESNPC* npc);
-	void EraseNPC(TESNPC * npc);
+	ValueSet* GetValueSet(RE::TESNPC* npc);
+	void EraseNPC(RE::TESNPC* npc);
 
-	float GetMorphValueByName(TESNPC* npc, const SKEEFixedString & name);
-	void SetMorphValue(TESNPC* npc, const SKEEFixedString & name, float value);
+	float GetMorphValueByName(RE::TESNPC* npc, const SKEEFixedString& name);
+	void SetMorphValue(RE::TESNPC* npc, const SKEEFixedString& name, float value);
 };
 
 #define VERTEX_THRESHOLD 0.00001
 #define VERTEX_MULTIPLIER 10000
 
-class MappedSculptData : public std::unordered_map<UInt16, NiPoint3>
+class MappedSculptData : public std::unordered_map<std::uint16_t, RE::NiPoint3>
 {
 public:
 	void force_insert(value_type const & v)
@@ -229,16 +248,16 @@ class SculptData : public std::unordered_map<StringTableItem, MappedSculptDataPt
 public:
 	MappedSculptDataPtr GetSculptHost(SKEEFixedString, bool create = true);
 
-	static SKEEFixedString GetHostByPart(BGSHeadPart * headPart);
+	static SKEEFixedString GetHostByPart(RE::BGSHeadPart* headPart);
 };
 using SculptDataPtr = std::shared_ptr<SculptData>;
 
-class SculptStorage : public std::unordered_map < TESNPC*, SculptDataPtr >
+class SculptStorage : public std::unordered_map<RE::TESNPC*, SculptDataPtr>
 {
 public:
-	void SetSculptTarget(TESNPC * npc, SculptDataPtr sculptData);
-	SculptDataPtr GetSculptTarget(TESNPC* npc, bool create = true);
-	void EraseNPC(TESNPC * npc);
+	void SetSculptTarget(RE::TESNPC* npc, SculptDataPtr sculptData);
+	SculptDataPtr GetSculptTarget(RE::TESNPC* npc, bool create = true);
+	void EraseNPC(RE::TESNPC* npc);
 };
 
 class TRIFile
@@ -249,8 +268,8 @@ public:
 		vertexCount = -1;
 	}
 
-	bool Load(const char * triPath);
-	bool Apply(BSGeometry * geometry, SKEEFixedString morph, float relative);
+	bool Load(const char* triPath);
+	bool Apply(RE::BSGeometry* geometry, SKEEFixedString morph, float relative);
 
 	struct Morph
 	{
@@ -259,13 +278,13 @@ public:
 		
 		struct Vertex
 		{
-			SInt16 x, y, z;
+			std::int16_t x, y, z;
 		};
 
 		std::vector<Vertex> vertices;
 	};
 
-	SInt32 vertexCount;
+	std::int32_t vertexCount;
 	std::unordered_map<SKEEFixedString, Morph> morphs;
 };
 
@@ -277,9 +296,9 @@ public:
 		vertexCount = -1;
 		morphModel = NULL;
 	}
-	SInt32 vertexCount;
+	std::int32_t vertexCount;
 	std::shared_ptr<TRIFile> triFile;
-	TESModelTri * morphModel;
+	RE::TESModelTri* morphModel;
 };
 
 typedef std::unordered_map<SKEEFixedString, TRIModelData> ModelMap;
@@ -296,55 +315,55 @@ public:
 	};
 	virtual skee_u32 GetVersion();
 
-	bool Load(SKSESerializationInterface * intfc, UInt32 version) { return false; } // Unused due to separate dblock name for morph and sculpt
-	void Save(SKSESerializationInterface * intfc, UInt32 kVersion);
+	bool Load(SKSE::SerializationInterface* intfc, std::uint32_t version) { return false; } // Unused due to separate dblock name for morph and sculpt
+	void Save(SKSE::SerializationInterface* intfc, std::uint32_t kVersion);
 	virtual void Revert();
 	void RevertInternals();
 
-	bool LoadMorphData(SKSESerializationInterface * intfc, UInt32 version, const StringIdMap & stringTable);
-	bool LoadSculptData(SKSESerializationInterface * intfc, UInt32 version, const StringIdMap & stringTable);
+	bool LoadMorphData(SKSE::SerializationInterface* intfc, std::uint32_t version, const StringIdMap& stringTable);
+	bool LoadSculptData(SKSE::SerializationInterface* intfc, std::uint32_t version, const StringIdMap& stringTable);
 
 	void LoadMods();
 
-	virtual float GetMorphValueByName(TESNPC* npc, const SKEEFixedString & name);
-	virtual void SetMorphValue(TESNPC* npc, const SKEEFixedString & name, float value);
+	virtual float GetMorphValueByName(RE::TESNPC* npc, const SKEEFixedString& name);
+	virtual void SetMorphValue(RE::TESNPC* npc, const SKEEFixedString& name, float value);
 
-	void SetMorph(TESNPC * npc, BSFaceGenNiNode * faceNode, const SKEEFixedString & name, float relative);
+	void SetMorph(RE::TESNPC* npc, RE::BSFaceGenNiNode* faceNode, const SKEEFixedString& name, float relative);
 
-	void ApplyMorph(TESNPC * npc, BGSHeadPart * headPart, BSFaceGenNiNode * faceNode);
-	void ApplyMorphs(TESNPC * npc, BSFaceGenNiNode * faceNode);
+	void ApplyMorph(RE::TESNPC* npc, RE::BGSHeadPart* headPart, RE::BSFaceGenNiNode* faceNode);
+	void ApplyMorphs(RE::TESNPC* npc, RE::BSFaceGenNiNode* faceNode);
 
-	SInt32 LoadSliders(tArray<RaceMenuSlider> * sliderArray, RaceMenuSlider * slider);
+	std::int32_t LoadSliders(RE::RaceMenuSliderArray* sliderArray, RE::RaceMenuSlider* slider);
 
 	void ReadMorphs(std::string fixedPath, std::string modName, std::string fileName);
 	void ReadRaces(std::string fixedPath, std::string modName, std::string fileName);
 	SliderMapPtr ReadSliders(std::string fixedPath, std::string modName, std::string fileName);
 
-	SliderInternalPtr GetSlider(TESRace * race, UInt8 gender, SKEEFixedString name);
-	SliderInternalPtr GetSliderByIndex(TESRace * race, UInt32 index);
+	SliderInternalPtr GetSlider(RE::TESRace* race, std::uint8_t gender, SKEEFixedString name);
+	SliderInternalPtr GetSliderByIndex(RE::TESRace* race, std::uint32_t index);
 
-	SliderList * CreateSliderList(TESRace * race, UInt8 gender);
-	void AddSlider(TESRace * race, SliderInternalPtr & slider);
+	SliderList* CreateSliderList(RE::TESRace* race, std::uint8_t gender);
+	void AddSlider(RE::TESRace* race, SliderInternalPtr& slider);
 
 	bool VisitMorphMap(const SKEEFixedString & key, MorphMap::Visitor & visitor);
 
-	bool CacheHeadPartModel(BGSHeadPart * headPart, bool cacheTRI = false);
-	bool GetModelTri(const SKEEFixedString & filePath, TRIModelData & modelData);
-	TRIModelData & GetExtendedModelTri(const SKEEFixedString & morphName, bool cacheTRI = false);
+	bool CacheHeadPartModel(RE::BGSHeadPart* headPart, bool cacheTRI = false);
+	bool GetModelTri(const SKEEFixedString& filePath, TRIModelData& modelData);
+	TRIModelData& GetExtendedModelTri(const SKEEFixedString& morphName, bool cacheTRI = false);
 
-	inline SculptDataPtr GetSculptTarget(TESNPC * npc, bool create = true)
+	inline SculptDataPtr GetSculptTarget(RE::TESNPC* npc, bool create = true)
 	{
 		return m_sculptStorage.GetSculptTarget(npc, create);
 	}
-	inline void SetSculptTarget(TESNPC * npc, const SculptDataPtr & data)
+	inline void SetSculptTarget(RE::TESNPC* npc, const SculptDataPtr& data)
 	{
-		return m_sculptStorage.SetSculptTarget(npc, data);
+		m_sculptStorage.SetSculptTarget(npc, data);
 	}
-	inline void EraseSculptData(TESNPC * npc)
+	inline void EraseSculptData(RE::TESNPC* npc)
 	{
 		m_sculptStorage.EraseNPC(npc);
 	}
-	inline void EraseMorphData(TESNPC * npc)
+	inline void EraseMorphData(RE::TESNPC* npc)
 	{
 		m_valueMap.EraseNPC(npc);
 	}
@@ -368,27 +387,27 @@ protected:
 #endif
 };
 
-class SKSETaskApplyMorphs : public TaskDelegate
+class SKSETaskApplyMorphs : public SKSE::detail::TaskDelegate
 {
 public:
 	virtual void Run();
 	virtual void Dispose() { delete this; }
 
-	SKSETaskApplyMorphs(Actor * actor);
+	SKSETaskApplyMorphs(RE::Actor* actor);
 
 private:
-	UInt32			m_formId;
+	std::uint32_t m_formId;
 };
 
-class SKSETaskApplyMorphNormals : public TaskDelegate
+class SKSETaskApplyMorphNormals : public SKSE::detail::TaskDelegate
 {
 public:
 	virtual void Run();
 	virtual void Dispose() { delete this; }
 
-	SKSETaskApplyMorphNormals(NiPointer<NiAVObject> faceNode, bool updateModel = true);
+	SKSETaskApplyMorphNormals(RE::NiPointer<RE::NiAVObject> faceNode, bool updateModel = true);
 
 protected:
-	NiPointer<NiAVObject> m_faceNode;
+	RE::NiPointer<RE::NiAVObject> m_faceNode;
 	bool m_updateModel;
 };

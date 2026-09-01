@@ -88,7 +88,6 @@ void CDXArcBall::OnRotateEnd()
 	m_bDrag = false;
 }
 
-
 //--------------------------------------------------------------------------------------
 // Calculates the projection matrix based on input params
 //--------------------------------------------------------------------------------------
@@ -238,7 +237,6 @@ VOID CDXModelViewerCamera::Reset()
 	m_WorldArcBall.Reset();
 	m_ViewArcBall.Reset();
 }
-
 
 //--------------------------------------------------------------------------------------
 // Override for setting the view parameters

@@ -1,14 +1,10 @@
 #include "PartHandler.h"
 #include "FileUtils.h"
 
-#include "skse64/GameReferences.h"
-#include "skse64/GameObjects.h"
-#include "skse64/GameForms.h"
-#include "skse64/GameRTTI.h"
 
-#include "skse64/GameStreams.h"
+#include <cstdint>
 
-void PartSet::AddPart(UInt32 key, BGSHeadPart* part)
+void PartSet::AddPart(std::uint32_t key, RE::BGSHeadPart* part)
 {
 	iterator it = find(key);
 	if(it != end()) {
@@ -20,7 +16,7 @@ void PartSet::AddPart(UInt32 key, BGSHeadPart* part)
 	}
 }
 
-void PartSet::SetDefaultPart(UInt32 key, BGSHeadPart* part)
+void PartSet::SetDefaultPart(std::uint32_t key, RE::BGSHeadPart* part)
 {
 	iterator it = find(key);
 	if(it != end()) {
@@ -44,7 +40,7 @@ void PartSet::Visit(Visitor & visitor)
 	}
 }
 
-HeadPartList * PartSet::GetPartList(UInt32 key)
+HeadPartList * PartSet::GetPartList(std::uint32_t key)
 {
 	iterator it = find(key);
 	if(it != end()) {
@@ -54,7 +50,7 @@ HeadPartList * PartSet::GetPartList(UInt32 key)
 	return NULL;
 }
 
-BGSHeadPart * PartSet::GetDefaultPart(UInt32 key)
+RE::BGSHeadPart * PartSet::GetDefaultPart(std::uint32_t key)
 {
 	iterator it = find(key);
 	if(it != end()) {
@@ -64,7 +60,7 @@ BGSHeadPart * PartSet::GetDefaultPart(UInt32 key)
 	return NULL;
 }
 
-BGSHeadPart * PartSet::GetPartByIndex(HeadPartList * headPartList, UInt32 index)
+RE::BGSHeadPart * PartSet::GetPartByIndex(HeadPartList * headPartList, std::uint32_t index)
 {
 	if(index < headPartList->size())
 		return headPartList->at(index);
@@ -72,13 +68,13 @@ BGSHeadPart * PartSet::GetPartByIndex(HeadPartList * headPartList, UInt32 index)
 	return NULL;
 }
 
-SInt32 PartSet::GetPartIndex(HeadPartList * headPartList, BGSHeadPart * headPart)
+std::int32_t PartSet::GetPartIndex(HeadPartList * headPartList, RE::BGSHeadPart * headPart)
 {
-	SInt32 partIndex = -1;
-	for(UInt32 p = 0; p < headPartList->size(); p++)
+	std::int32_t partIndex = -1;
+	for(std::uint32_t p = 0; p < headPartList->size(); p++)
 	{
-		BGSHeadPart * partMatch = headPartList->at(p);
-		if(partMatch->partName == headPart->partName) {
+		RE::BGSHeadPart * partMatch = headPartList->at(p);
+		if(partMatch->formEditorID == headPart->formEditorID) {
 			partIndex = p;
 			break;
 		}
@@ -97,17 +93,16 @@ void PartSet::Revert()
 	clear();
 }
 
-
 void ReadPartReplacements(std::string fixedPath, std::string modPath, std::string fileName)
 {
 	std::string fullPath = fixedPath + modPath + fileName;
-	BSResourceNiBinaryStream file(fullPath.c_str());
-	if (!file.IsValid()) {
+	RE::BSResourceNiBinaryStream file(fullPath.c_str());
+	if (!file.good()) {
 		return;
 	}
 
-	UInt32 lineCount = 0;
-	UInt8 gender = 0;
+	std::uint32_t lineCount = 0;
+	std::uint8_t gender = 0;
 	std::string str = "";
 	while (BSFileUtil::ReadLine(&file, &str))
 	{
@@ -130,37 +125,37 @@ void ReadPartReplacements(std::string fixedPath, std::string modPath, std::strin
 
 		std::vector<std::string> side = std::explode(str, '=');
 		if (side.size() < 2) {
-			_ERROR("%s Error - Line (%d) race from %s has no left-hand side.", __FUNCTION__, lineCount, fullPath.c_str());
+			SKSE::log::error("{} Error - Line ({}) race from {} has no left-hand side.", __FUNCTION__, lineCount, fullPath.c_str());
 			continue;
 		}
 
 		std::string lSide = std::trim(side[0]);
 		std::string rSide = std::trim(side[1]);
 
-		BGSHeadPart * facePart = GetHeadPartByName(rSide);
-		TESRace * race = GetRaceByName(lSide);
+		RE::BGSHeadPart * facePart = GetHeadPartByName(rSide);
+		RE::TESRace * race = GetRaceByName(lSide);
 		if (!race) {
-			_WARNING("%s Warning - Line (%d) race %s from %s is not a valid race.", __FUNCTION__, lineCount, lSide.c_str(), fullPath.c_str());
+			SKSE::log::warn("{} Warning - Line ({}) race {} from {} is not a valid race.", __FUNCTION__, lineCount, lSide.c_str(), fullPath.c_str());
 			continue;
 		}
 
 		if (!facePart) {
-			_WARNING("%s Warning - Line (%d) head part %s from %s is not a valid head part.", __FUNCTION__, lineCount, rSide.c_str(), fullPath.c_str());
+			SKSE::log::warn("{} Warning - Line ({}) head part {} from {} is not a valid head part.", __FUNCTION__, lineCount, rSide.c_str(), fullPath.c_str());
 			continue;
 		}
 
-		auto charGenData = race->chargenData[gender];
+		auto charGenData = race->faceRelatedData[gender];
 		if (!charGenData) {
-			_ERROR("%s Error - Line (%d) race %s from %s has no CharGen data.", __FUNCTION__, lineCount, lSide.c_str(), fullPath.c_str());
+			SKSE::log::error("{} Error - Line ({}) race {} from {} has no CharGen data.", __FUNCTION__, lineCount, lSide.c_str(), fullPath.c_str());
 			continue;
 		}
 
 		if (charGenData->headParts) {
-			for (UInt32 i = 0; i < charGenData->headParts->count; i++) {
-				BGSHeadPart * headPart = NULL;
-				if (charGenData->headParts->GetNthItem(i, headPart)) {
+			for (std::uint32_t i = 0; i < charGenData->headParts->size(); i++) {
+				RE::BGSHeadPart * headPart = (*charGenData->headParts)[i];
+				if (headPart) {
 					if (headPart->type == facePart->type) {
-						charGenData->headParts->entries[i] = facePart;
+						(*charGenData->headParts)[i] = facePart;
 					}
 				}
 			}

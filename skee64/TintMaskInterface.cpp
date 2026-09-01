@@ -1,25 +1,17 @@
 #include "TintMaskInterface.h"
+#include "SKEEHooks.h"
 #include "ItemDataInterface.h"
 #include "ShaderUtilities.h"
 #include "NifUtils.h"
 #include "FileUtils.h"
 
-#include "skse64/GameData.h"
-#include "skse64/GameReferences.h"
-#include "skse64/GameObjects.h"
-#include "skse64/GameRTTI.h"
 
-#include "skse64/GameStreams.h"
 
-#include "skse64/NiGeometry.h"
-#include "skse64/NiExtraData.h"
-#include "skse64/NiRTTI.h"
-#include "skse64/NiProperties.h"
-#include "skse64/NiMaterial.h"
-#include "skse64/NiRenderer.h"
-#include "skse64/NiTextures.h"
+#include "RE/N/NiGeometry.h"
+#include "RE/N/NiExtraData.h"
+#include "RE/N/NiRTTI.h"
+#include "RE/B/BSResourceNiBinaryStream.h"
 
-#include "skse64/PapyrusEvents.h"
 
 #include "tinyxml2.h"
 
@@ -30,35 +22,38 @@
 
 #include <vector>
 #include <algorithm>
+#include <cstdint>
+
+
 
 CDXShaderFactory			g_shaderFactory;
 CDXNifPixelShaderCache		g_pixelShaders(&g_shaderFactory);
 extern TintMaskInterface	g_tintMaskInterface;
-extern UInt32	g_tintHairSlot;
+extern std::uint32_t	g_tintHairSlot;
 
 skee_u32 TintMaskInterface::GetVersion()
 {
 	return kCurrentPluginVersion;
 }
 
-void TintMaskInterface::CreateTintsFromData(TESObjectREFR * refr, std::map<SInt32, CDXNifTextureRenderer::MaskData> & masks, const LayerTarget & layerTarget, ItemAttributeDataPtr & overrides, UInt32 & flags)
+void TintMaskInterface::CreateTintsFromData(RE::TESObjectREFR * refr, std::map<std::int32_t, CDXNifTextureRenderer::MaskData> & masks, const LayerTarget & layerTarget, ItemAttributeDataPtr & overrides, std::uint32_t & flags)
 {
-	UInt32 skinColor = 0;
-	UInt32 hairColor = 0;
+	std::uint32_t skinColor = 0;
+	std::uint32_t hairColor = 0;
 
-	if (refr->baseForm && refr->baseForm->formType == TESNPC::kTypeID)
+	if (refr->GetBaseObject() && refr->GetBaseObject()->Is(RE::FormType::NPC))
 	{
-		TESNPC* actorBase = static_cast<TESNPC*>(refr->baseForm);
-		skinColor = ((UInt32)actorBase->color.red << 16) | ((UInt32)actorBase->color.green << 8) | (UInt32)actorBase->color.blue;
+		RE::TESNPC* actorBase = static_cast<RE::TESNPC*>(refr->GetBaseObject());
+		skinColor = ((std::uint32_t)actorBase->bodyTintColor.red << 16) | ((std::uint32_t)actorBase->bodyTintColor.green << 8) | (std::uint32_t)actorBase->bodyTintColor.blue;
 
-		auto headData = actorBase->headData;
+		auto headData = actorBase->headRelatedData;
 		if (headData) {
 			auto hairColorForm = headData->hairColor;
 			if (hairColorForm) {
 				// Dunno why the hell they multiplied hairColor by 2
-				hairColor |= min((hairColorForm->abgr & 0xFF) * 2, 255) << 16;
-				hairColor |= min(((hairColorForm->abgr >> 8) & 0xFF) * 2, 255) << 8;
-				hairColor |= min(((hairColorForm->abgr >> 16) & 0xFF) * 2, 255);
+				hairColor |= std::min((std::int32_t)hairColorForm->color.red * 2, 255) << 16;
+				hairColor |= std::min((std::int32_t)hairColorForm->color.green * 2, 255) << 8;
+				hairColor |= std::min((std::int32_t)hairColorForm->color.blue * 2, 255);
 			}
 		}
 	}
@@ -89,7 +84,7 @@ void TintMaskInterface::CreateTintsFromData(TESObjectREFR * refr, std::map<SInt3
 		masks[base.first].textureType = static_cast<CDXTextureRenderer::TextureType>(base.second);
 	}
 	for (auto base : layerTarget.alphaData) {
-		masks[base.first].color |= (UInt32)(base.second * 255) << 24;
+		masks[base.first].color |= (std::uint32_t)(base.second * 255) << 24;
 	}
 
 	if (overrides)
@@ -125,7 +120,6 @@ void TintMaskInterface::CreateTintsFromData(TESObjectREFR * refr, std::map<SInt3
 				}
 			}
 
-
 			for (auto base : layerData.m_blendMap) {
 				auto it = masks.find(base.first);
 				if (it != masks.end()) {
@@ -142,13 +136,13 @@ void TintMaskInterface::CreateTintsFromData(TESObjectREFR * refr, std::map<SInt3
 	}
 }
 
-NIOVTaskDeferredMask::NIOVTaskDeferredMask(TESObjectREFR * refr, bool isFirstPerson, TESObjectARMO * armor, TESObjectARMA * addon, NiAVObject * object, ItemAttributeDataPtr overrides)
+NIOVTaskDeferredMask::NIOVTaskDeferredMask(RE::TESObjectREFR * refr, bool isFirstPerson, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::NiAVObject * object, ItemAttributeDataPtr overrides)
 {
 	m_firstPerson = isFirstPerson;
 	m_formId = refr->formID;
 	m_armorId = armor ? armor->formID : 0;
 	m_addonId = addon ? addon->formID : 0;
-	m_object = object;
+	m_object = RE::NiPointer<RE::NiAVObject>(object);
 	m_overrides = overrides;
 }
 
@@ -159,50 +153,50 @@ void NIOVTaskDeferredMask::Dispose()
 
 void NIOVTaskDeferredMask::Run()
 {
-	TESForm * refrForm = LookupFormByID(m_formId);
-	TESForm * armorForm = LookupFormByID(m_armorId);
-	TESForm * addonForm = m_addonId ? LookupFormByID(m_addonId) : nullptr;
+	RE::TESForm * refrForm = RE::TESForm::LookupByID(m_formId);
+	RE::TESForm * armorForm = RE::TESForm::LookupByID(m_armorId);
+	RE::TESForm * addonForm = m_addonId ? RE::TESForm::LookupByID(m_addonId) : nullptr;
 	if (refrForm && armorForm) {
-		TESObjectREFR * refr = DYNAMIC_CAST(refrForm, TESForm, TESObjectREFR);
-		TESObjectARMO * armor = DYNAMIC_CAST(armorForm, TESForm, TESObjectARMO);
-		TESObjectARMA * addon = addonForm ? DYNAMIC_CAST(addonForm, TESForm, TESObjectARMA) : nullptr;
+		RE::TESObjectREFR * refr = refrForm ? refrForm->As<RE::TESObjectREFR>() : nullptr;
+		RE::TESObjectARMO * armor = armorForm ? armorForm->As<RE::TESObjectARMO>() : nullptr;
+		RE::TESObjectARMA * addon = addonForm ? addonForm->As<RE::TESObjectARMA>() : nullptr;
 
 		if (refr && armor) {
-			g_tintMaskInterface.ApplyMasks(refr, m_firstPerson, armor, addon, m_object, TintMaskInterface::kUpdate_All, m_overrides);
+			g_tintMaskInterface.ApplyMasks(refr, m_firstPerson, armor, addon, m_object.get(), TintMaskInterface::kUpdate_All, m_overrides);
 		}
 	}
 }
 
-void TintMaskInterface::ApplyMasks(TESObjectREFR * refr, bool isFirstPerson, TESObjectARMO * armor, TESObjectARMA * addon, 
-	NiAVObject * rootNode, UInt32 flags, ItemAttributeDataPtr overrides, LayerFunctor layerFunctor)
+void TintMaskInterface::ApplyMasks(RE::TESObjectREFR * refr, bool isFirstPerson, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, 
+	RE::NiAVObject * rootNode, std::uint32_t flags, ItemAttributeDataPtr overrides, LayerFunctor layerFunctor)
 {
 	LayerTargetList layerList;
-	VisitObjects(rootNode, [&](NiAVObject* object)
+	VisitObjects(rootNode, [&](RE::NiAVObject* object)
 	{
 		LayerTarget mask;
 		mask.targetIndex = 0; // Target the diffuse by default
-		if (mask.object = object->GetAsBSGeometry()) {
-			auto textureData = ni_cast(NifUtils::GetExtraData(object, "MASKT"), NiStringsExtraData);
+		if (mask.object = RE::NiPointer<RE::BSGeometry>(object ? object->AsGeometry() : nullptr)) {
+			auto textureData = netimmerse_cast<RE::NiStringsExtraData*>(object->GetExtraData("MASKT"));
 			if (textureData) {
-				for (SInt32 i = 0; i < textureData->m_size; ++i)
+				for (std::int32_t i = 0; i < textureData->size; ++i)
 				{
-					mask.textureData[i] = textureData->m_data[i];
+					mask.textureData[i] = textureData->value[i];
 				}
 				
 			}
-			auto colorData = ni_cast(NifUtils::GetExtraData(object, "MASKC"), NiIntegersExtraData);
+			auto colorData = netimmerse_cast<RE::NiIntegersExtraData*>(object->GetExtraData("MASKC"));
 			if (colorData) {
-				for (SInt32 i = 0; i < colorData->m_size && i < colorData->m_size; ++i)
+				for (std::int32_t i = 0; i < colorData->size && i < colorData->size; ++i)
 				{
-					mask.colorData[i] = colorData->m_data[i];
+					mask.colorData[i] = colorData->value[i];
 				}
 			}
 
-			auto alphaData = ni_cast(NifUtils::GetExtraData(object, "MASKA"), NiFloatsExtraData);
+			auto alphaData = netimmerse_cast<RE::NiFloatsExtraData*>(object->GetExtraData("MASKA"));
 			if (alphaData) {
-				for (SInt32 i = 0; i < alphaData->m_size && i < alphaData->m_size; ++i)
+				for (std::int32_t i = 0; i < alphaData->size && i < alphaData->size; ++i)
 				{
-					mask.alphaData[i] = alphaData->m_data[i];
+					mask.alphaData[i] = alphaData->value[i];
 				}
 			}
 
@@ -213,7 +207,7 @@ void TintMaskInterface::ApplyMasks(TESObjectREFR * refr, bool isFirstPerson, TES
 		return false;
 	});
 
-	m_modelMap.ApplyLayers(refr, isFirstPerson, armor, addon, rootNode, [&](NiPointer<BSGeometry> geom, SInt32 targetIndex, TextureLayer* layer)
+	m_modelMap.ApplyLayers(refr, isFirstPerson, armor, addon, rootNode, [&](RE::NiPointer<RE::BSGeometry> geom, std::int32_t targetIndex, TextureLayer* layer)
 	{
 		LayerTarget obj;
 		obj.object = geom;
@@ -234,10 +228,11 @@ void TintMaskInterface::ApplyMasks(TESObjectREFR * refr, bool isFirstPerson, TES
 	}
 
 	std::unique_ptr<CDXD3DDevice> device;
-	Microsoft::WRL::ComPtr<ID3D11DeviceContext> pDeviceContext = g_renderManager->context;
-	Microsoft::WRL::ComPtr<ID3D11Device> pDevice;
-	pDeviceContext->GetDevice(&pDevice);
-	if (!pDevice) {
+	// Renderer runtime data exposes the context as a raw pointer; the ComPtr ctor takes an owning ref.
+	REX::W32::ComPtr<REX::W32::ID3D11DeviceContext> pDeviceContext(RE::BSGraphics::Renderer::GetSingleton()->GetRuntimeData().context);
+	REX::W32::ComPtr<REX::W32::ID3D11Device> pDevice;
+	pDeviceContext->GetDevice(pDevice.GetAddressOf());
+	if (!pDevice.Get()) {
 		return;
 	}
 	device = std::make_unique<CDXD3DDevice>(pDevice, pDeviceContext);
@@ -245,14 +240,14 @@ void TintMaskInterface::ApplyMasks(TESObjectREFR * refr, bool isFirstPerson, TES
 	int i = 0;
 	for (auto & layer : layerList)
 	{
-		NiPointer<BSShaderProperty> shaderProperty = niptr_cast<BSShaderProperty>(layer.object->m_spEffectState);
+		RE::NiPointer<RE::BSShaderProperty> shaderProperty = layer.object->GetGeometryRuntimeData().shaderProperty;
 		if(shaderProperty) {
-			BSLightingShaderProperty * lightingShader = ni_cast(shaderProperty, BSLightingShaderProperty);
+			RE::BSLightingShaderProperty* lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(shaderProperty.get());
 			if(lightingShader) {
-				BSLightingShaderMaterial * material = (BSLightingShaderMaterial *)lightingShader->material;
+				RE::BSLightingShaderMaterial * material = (RE::BSLightingShaderMaterial *)lightingShader->material;
 
-				UInt32 changedFlags = 0;
-				std::map<SInt32, CDXNifTextureRenderer::MaskData> tintMasks;
+				std::uint32_t changedFlags = 0;
+				std::map<std::int32_t, CDXNifTextureRenderer::MaskData> tintMasks;
 				CreateTintsFromData(refr, tintMasks, layer, itemOverrideData, changedFlags);
 
 				// Must have selective update
@@ -261,15 +256,17 @@ void TintMaskInterface::ApplyMasks(TESObjectREFR * refr, bool isFirstPerson, TES
 				}
 
 				const char * texturePath = nullptr;
-				NiPointer<NiTexture> sourceTexture;
+				RE::NiPointer<RE::NiSourceTexture> sourceTexture;
 				if (material->textureSet)
 				{
-					texturePath = material->textureSet->GetTexturePath(layer.targetIndex);
+					texturePath = material->textureSet->GetTexturePath(static_cast<RE::BSTextureSet::Texture>(layer.targetIndex));
 					if (!texturePath) {
 						continue;
 					}
 
-					LoadTexture(texturePath, 1, sourceTexture, false);
+					RE::NiPointer<RE::NiTexture> texture;
+					RE::BSShaderManager::GetTexture(texturePath, 1, texture, false);
+                    sourceTexture.reset(static_cast<RE::NiSourceTexture*>(texture.get()));
 				}
 
 				// No source texture at this path, bad texture
@@ -296,33 +293,33 @@ void TintMaskInterface::ApplyMasks(TESObjectREFR * refr, bool isFirstPerson, TES
 				}
 
 				char path[512];
-				_snprintf_s(path, 512, "RT [%08X][%08X][%08X](%s)", refr->formID, armor->formID, addon ? addon->formID : 0, layer.object->m_name);
+				_snprintf_s(path, 512, "RT [%08X][%08X][%08X](%s)", refr->formID, armor->formID, addon ? addon->formID : 0, layer.object->name.c_str());
 
-				NiPointer<NiTexture> output;
+				RE::NiPointer<RE::NiSourceTexture> output;
 				if (renderer->ApplyMasksToTexture(device.get(), sourceTexture, tintMasks, path, output))
 				{
-					BSLightingShaderMaterial * newMaterial = static_cast<BSLightingShaderMaterial*>(material->Create());
-					newMaterial->Copy(material);
+					RE::BSShaderMaterial* newMaterial = material->Create();
+					newMaterial->CopyMembers(material);
 
 					// If the target material has HairTint we should neutralize the color and block it from receiving tint updates
 					// But only if theres a layer in the XML that says to do this, this is still missing TODO
-					if (newMaterial->GetShaderType() == BSLightingShaderMaterial::kShaderType_HairTint)
+					if (newMaterial->GetFeature() == RE::BSShaderMaterial::Feature::kHairTint)
 					{
-						BSLightingShaderMaterialHairTint* hairMaterial = static_cast<BSLightingShaderMaterialHairTint*>(newMaterial);
-						hairMaterial->tintColor.r = 0.5;
-						hairMaterial->tintColor.g = 0.5;
-						hairMaterial->tintColor.b = 0.5;
+						RE::BSLightingShaderMaterialHairTint* hairMaterial = static_cast<RE::BSLightingShaderMaterialHairTint*>(newMaterial);
+						hairMaterial->tintColor.red = 0.5;
+						hairMaterial->tintColor.green = 0.5;
+						hairMaterial->tintColor.blue = 0.5;
 
-						NiExtraData* extraData = NifUtils::GetExtraData(lightingShader, "NO_TINT");
+						RE::NiExtraData* extraData = lightingShader->GetExtraData("NO_TINT");
 						if (!extraData) {
-							extraData = NiBooleanExtraData::Create("NO_TINT", true);
+							extraData = RE::NiBooleanExtraData::Create("NO_TINT", true);
 							lightingShader->AddExtraData(extraData);
 						}
 					}
 
-					NiTexturePtr * targetTexture = GetTextureFromIndex(newMaterial, layer.targetIndex);
+					auto targetTexture = GetTextureFromIndex(static_cast<RE::BSLightingShaderMaterial*>(newMaterial), layer.targetIndex);
 					if (targetTexture) {
-						*targetTexture = output;
+						targetTexture->reset(static_cast<RE::NiSourceTexture*>(output.get()));
 					}
 
 					if (layerFunctor) {
@@ -330,8 +327,8 @@ void TintMaskInterface::ApplyMasks(TESObjectREFR * refr, bool isFirstPerson, TES
 					}
 
 #if DUMP_TEXTURE
-					char texturePath[MAX_PATH];
-					_snprintf_s(texturePath, MAX_PATH, "Layer_%d_%s.dds", i++, layer.object->m_name);
+					char texturePath[REX::W32::MAX_PATH];
+					_snprintf_s(texturePath, REX::W32::MAX_PATH, "Layer_%d_%s.dds", i++, layer.object->name);
 					int len = strlen(texturePath);
 					for (int i = 0; i < len; ++i)
 					{
@@ -342,11 +339,11 @@ void TintMaskInterface::ApplyMasks(TESObjectREFR * refr, bool isFirstPerson, TES
 					SaveRenderedDDS(output.get(), texturePath);
 #endif
 
-					CALL_MEMBER_FN(lightingShader, SetMaterial)(newMaterial, 1); // This creates a new material from the one we created above, so we destroy it after
-					CALL_MEMBER_FN(lightingShader, InitializeShader)(layer.object);
+					lightingShader->SetMaterial(newMaterial, 1); // This creates a new material from the one we created above, so we destroy it after
+					SKEE::InitializeShader(lightingShader, layer.object.get());
 					
-					newMaterial->~BSLightingShaderMaterial();
-					Heap_Free(newMaterial);
+					newMaterial->~BSShaderMaterial();
+					RE::free(newMaterial);
 				}
 
 #if 0
@@ -355,8 +352,8 @@ void TintMaskInterface::ApplyMasks(TESObjectREFR * refr, bool isFirstPerson, TES
 				if (m_maskMap.IsCaching())
 					newTarget = m_maskMap.GetRenderTarget(lightingShader);
 				if (!newTarget) {
-					UInt32 width = 0;
-					UInt32 height = 0;
+					std::uint32_t width = 0;
+					std::uint32_t height = 0;
 					if (mask.resolutionWData)
 						width = mask.resolutionWData;
 					if (mask.resolutionHData)
@@ -364,29 +361,29 @@ void TintMaskInterface::ApplyMasks(TESObjectREFR * refr, bool isFirstPerson, TES
 					else
 						height = mask.resolutionWData;
 
-					newTarget = CreateSourceTexture("TintMask");
-					newTarget->rendererData = g_renderManager->CreateRenderTexture(width, height);
+					newTarget = SKEE::CreateSourceTexture("TintMask");
+					newTarget->rendererData = RE::BSGraphics::Renderer::GetSingleton()->CreateRenderTexture(width, height);
 
 					if (newTarget && m_maskMap.IsCaching()) {
 						m_maskMap.AddRenderTargetGroup(lightingShader, newTarget);
 					}
 				}
 				if(newTarget) {
-					tArray<TintMask*> tintMasks;
+					RE::BSTArray<TintMask*> tintMasks;
 					CreateTintsFromData(tintMasks, mask.layerCount, mask.textureData, mask.colorData, mask.alphaData, overrideMap);
 
 					newTarget->IncRef();
 					if (ApplyMasksToRenderTarget(&tintMasks, newTarget)) {
 						BSLightingShaderMaterialFacegen * tintedMaterial = static_cast<BSLightingShaderMaterialFacegen*>(CreateShaderMaterial(BSLightingShaderMaterialFacegen::kShaderType_FaceGen));
-						CALL_MEMBER_FN(tintedMaterial, CopyFrom)(material);
+						tintedMaterial->CopyMembers(material);
 						tintedMaterial->renderedTexture = newTarget;
-						CALL_MEMBER_FN(lightingShader, SetFlags)(0x0A, true); // Enable detailmap
-						CALL_MEMBER_FN(lightingShader, SetFlags)(0x15, false); // Disable FaceGen_RGB
+						lightingShader->SetFlags(static_cast<RE::BSShaderProperty::EShaderPropertyFlag8>(0x0A), true); // Enable detailmap
+						lightingShader->SetFlags(static_cast<RE::BSShaderProperty::EShaderPropertyFlag8>(0x15), false); // Disable FaceGen_RGB
 						//material->ReleaseTextures();
-						CALL_MEMBER_FN(lightingShader, SetMaterial)(tintedMaterial, 1); // New material takes texture ownership
+						lightingShader->SetMaterial(tintedMaterial, 1); // New material takes texture ownership
 						if (newTarget) // Let the material now take ownership since the old target is destroyed now
 							newTarget->DecRef();
-						CALL_MEMBER_FN(lightingShader, InitializeShader)(mask.object);
+						SKEE::InitializeShader(lightingShader, mask.object.get());
 					}
 
 					newTarget->DecRef();
@@ -402,13 +399,13 @@ void TintMaskInterface::ApplyMasks(TESObjectREFR * refr, bool isFirstPerson, TES
 
 void TintMaskMap::ManageRenderTargetGroups()
 {
-	SimpleLocker locker(&m_lock);
+	std::lock_guard<std::recursive_mutex> locker(m_lock);
 	m_caching = true;
 }
 
-std::shared_ptr<CDXNifTextureRenderer> TintMaskMap::GetRenderTarget(BSLightingShaderProperty* key, SInt32 index)
+std::shared_ptr<CDXNifTextureRenderer> TintMaskMap::GetRenderTarget(RE::BSLightingShaderProperty* key, std::int32_t index)
 {
-	auto it = m_data.find(key);
+	auto it = m_data.find(RE::NiPointer<RE::BSLightingShaderProperty>(key));
 	if (it != m_data.end()) {
 		auto idx = it->second.find(index);
 		if (idx != it->second.end()) {
@@ -419,15 +416,15 @@ std::shared_ptr<CDXNifTextureRenderer> TintMaskMap::GetRenderTarget(BSLightingSh
 	return nullptr;
 }
 
-void TintMaskMap::AddRenderTargetGroup(BSLightingShaderProperty* key, SInt32 index, std::shared_ptr<CDXNifTextureRenderer> value)
+void TintMaskMap::AddRenderTargetGroup(RE::BSLightingShaderProperty* key, std::int32_t index, std::shared_ptr<CDXNifTextureRenderer> value)
 {
-	SimpleLocker locker(&m_lock);
-	m_data[key][index] = value;
+	std::lock_guard<std::recursive_mutex> locker(m_lock);
+	m_data[RE::NiPointer<RE::BSLightingShaderProperty>(key)][index] = value;
 }
 
 void TintMaskMap::ReleaseRenderTargetGroups()
 {
-	SimpleLocker locker(&m_lock);
+	std::lock_guard<std::recursive_mutex> locker(m_lock);
 	m_data.clear();
 	m_caching = false;
 }
@@ -467,29 +464,29 @@ MaskTriShapeMap * MaskModelMap::GetTriShapeMap(SKEEFixedString nifPath)
 	return nullptr;
 }
 
-bool ApplyMaskData(MaskTriShapeMap * triShapeMap, NiAVObject * object, const char * nameOverride, std::function<void(NiPointer<BSGeometry>, SInt32, TextureLayer*)> functor)
+bool ApplyMaskData(MaskTriShapeMap * triShapeMap, RE::NiAVObject * object, const char * nameOverride, std::function<void(RE::NiPointer<RE::BSGeometry>, std::int32_t, TextureLayer*)> functor)
 {
-	NiPointer<BSGeometry> geometry = object->GetAsBSGeometry();
+	RE::NiPointer<RE::BSGeometry> geometry{object ? object->AsGeometry() : nullptr};
 	if (!geometry) {
 		return false;
 	}
 
-	auto textureMap = triShapeMap->GetTextureMap(nameOverride ? nameOverride : object->m_name);
+	auto textureMap = triShapeMap->GetTextureMap(nameOverride ? nameOverride : object->name);
 	if (!textureMap) {
 		return false;
 	}
 
-	NiPointer<NiProperty> shaderProperty = niptr_cast<NiProperty>(geometry->m_spEffectState);
+	RE::BSShaderProperty* shaderProperty = geometry->GetGeometryRuntimeData().shaderProperty.get();
 	if (!shaderProperty) {
 		return false;
 	}
 
-	auto lightingShader = ni_cast(shaderProperty, BSLightingShaderProperty);
+	auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(shaderProperty);
 	if (!lightingShader) {
 		return false;
 	}
 
-	auto material = static_cast<BSLightingShaderMaterial*>(lightingShader->material);
+	auto material = static_cast<RE::BSLightingShaderMaterial*>(lightingShader->material);
 	if (!material) {
 		return false;
 	}
@@ -500,16 +497,16 @@ bool ApplyMaskData(MaskTriShapeMap * triShapeMap, NiAVObject * object, const cha
 	}
 
 	// Pass over all the textures to match with those that exist in the mapping
-	for (UInt32 i = 0; i < 8; ++i)
+	for (std::uint32_t i = 0; i < 8; ++i)
 	{
-		const char * texture = textureSet->GetTexturePath(i);
+		const char * texture = textureSet->GetTexturePath(static_cast<RE::BSTextureSet::Texture>(i));
 		if (!texture)
 			continue;
 
 		auto it = textureMap->find(GetSanitizedPath(texture));
 		if (it == textureMap->end())
 		{
-			char buff[std::numeric_limits<SInt32>::digits10 + 1];
+			char buff[std::numeric_limits<std::int32_t>::digits10 + 1];
 			sprintf_s(buff, "%d", i);
 			it = textureMap->find(buff);
 		}
@@ -524,36 +521,36 @@ bool ApplyMaskData(MaskTriShapeMap * triShapeMap, NiAVObject * object, const cha
 	return true;
 }
 
-SKEEFixedString MaskModelMap::GetModelPath(UInt8 gender, bool isFirstPerson, TESObjectARMO * armor, TESObjectARMA * arma)
+SKEEFixedString MaskModelMap::GetModelPath(std::uint8_t gender, bool isFirstPerson, RE::TESObjectARMO * armor, RE::TESObjectARMA * arma)
 {
 	SKEEFixedString modelPath;
 	if (arma) {
-		modelPath = arma->models[isFirstPerson == true ? 1 : 0][gender].GetModelName();
+		modelPath = (isFirstPerson ? arma->bipedModel1stPersons[gender] : arma->bipedModels[gender]).GetModel();
 		if (isFirstPerson && modelPath.length() == 0) { // If first person was not found, try third person
-			modelPath = arma->models[0][gender].GetModelName();
+			modelPath = arma->bipedModels[gender].GetModel();
 			if (modelPath.length() == 0) { // If gender not found, try male
-				modelPath = arma->models[0][0].GetModelName();
+				modelPath = arma->bipedModels[0].GetModel();
 			}
 		}
 	}
 	else if (armor) {
-		modelPath = armor->bipedModel.textureSwap[gender].GetModelName();
+		modelPath = armor->worldModels[gender].GetModel();
 		if (modelPath.length() == 0) { // If gender not found, try male
-			modelPath = armor->bipedModel.textureSwap[0].GetModelName();
+			modelPath = armor->worldModels[0].GetModel();
 		}
 	}
 
 	return modelPath;
 }
 
-void MaskModelMap::ApplyLayers(TESObjectREFR * refr, bool isFirstPerson, TESObjectARMO * armor, TESObjectARMA * arma, NiAVObject * node, std::function<void(NiPointer<BSGeometry>, SInt32, TextureLayer*)> functor)
+void MaskModelMap::ApplyLayers(RE::TESObjectREFR * refr, bool isFirstPerson, RE::TESObjectARMO * armor, RE::TESObjectARMA * arma, RE::NiAVObject * node, std::function<void(RE::NiPointer<RE::BSGeometry>, std::int32_t, TextureLayer*)> functor)
 {
-	UInt8 gender = 0;
-	TESNPC * actorBase = DYNAMIC_CAST(refr->baseForm, TESForm, TESNPC);
+	std::uint8_t gender = 0;
+	RE::TESNPC * actorBase = refr->GetBaseObject() ? refr->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 	if (actorBase)
-		gender = CALL_MEMBER_FN(actorBase, GetSex)();
+		gender = actorBase->GetSex();
 
-	SimpleLocker locker(&m_lock);
+	std::lock_guard<std::recursive_mutex> locker(m_lock);
 
 	// Special case if the addon has no 1p model, use the 3p model
 	SKEEFixedString modelPath = GetModelPath(gender, isFirstPerson, armor, arma);
@@ -562,8 +559,8 @@ void MaskModelMap::ApplyLayers(TESObjectREFR * refr, bool isFirstPerson, TESObje
 		return;
 	}
 
-	UInt32 count = 0;
-	VisitObjects(node, [&](NiAVObject* object)
+	std::uint32_t count = 0;
+	VisitObjects(node, [&](RE::NiAVObject* object)
 	{
 		if (ApplyMaskData(triShapeMap, object, nullptr, functor))
 			count++;
@@ -575,9 +572,9 @@ void MaskModelMap::ApplyLayers(TESObjectREFR * refr, bool isFirstPerson, TESObje
 		ApplyMaskData(triShapeMap, node, "", functor);
 }
 
-bool TintMaskInterface::IsDyeable(TESObjectARMO * armor)
+bool TintMaskInterface::IsDyeable(RE::TESObjectARMO * armor)
 {
-	SimpleLocker locker(&m_dyeableLock);
+	std::lock_guard<std::recursive_mutex> locker(m_dyeableLock);
 
 	auto it = m_dyeable.find(armor->formID);
 	if (it != m_dyeable.end())
@@ -587,14 +584,14 @@ bool TintMaskInterface::IsDyeable(TESObjectARMO * armor)
 	else
 	{
 		// This could be expensive so lets just cache items we've seen
-		for (UInt8 g = 0; g <= 1; ++g)
+		for (std::uint8_t g = 0; g <= 1; ++g)
 		{
-			for (UInt8 fp = 0; fp <= 1; ++fp)
+			for (std::uint8_t fp = 0; fp <= 1; ++fp)
 			{
-				for (UInt32 i = 0; i < armor->armorAddons.count; i++)
+				for (std::uint32_t i = 0; i < armor->armorAddons.size(); i++)
 				{
-					TESObjectARMA * arma = nullptr;
-					if (armor->armorAddons.GetNthItem(i, arma) && arma)
+					RE::TESObjectARMA* arma = armor->armorAddons[i];
+					if (arma)
 					{
 						SKEEFixedString modelPath = m_modelMap.GetModelPath(g, fp == 1, armor, arma);
 						if (m_modelMap.GetTriShapeMap(modelPath))
@@ -613,20 +610,21 @@ bool TintMaskInterface::IsDyeable(TESObjectARMO * armor)
 	return false;
 }
 
-void TintMaskInterface::VisitTemplateData(TESObjectREFR* refr, TESObjectARMO* armor, std::function<void(MaskTriShapeMap*)> functor)
+void TintMaskInterface::VisitTemplateData(RE::TESObjectREFR* refr, RE::TESObjectARMO* armor, std::function<void(MaskTriShapeMap*)> functor)
 {
-	UInt8 gender = 0;
-	TESNPC* actorBase = DYNAMIC_CAST(refr->baseForm, TESForm, TESNPC);
+	std::uint8_t gender = 0;
+	RE::TESNPC* actorBase = refr->GetBaseObject() ? refr->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 	if (actorBase) {
-		Actor* actor = static_cast<Actor*>(refr);
-		gender = CALL_MEMBER_FN(actorBase, GetSex)();
+		RE::Actor* actor = static_cast<RE::Actor*>(refr);
+		gender = actorBase->GetSex();
 
-		for (UInt32 i = 0; i < armor->armorAddons.count; ++i)
+		for (std::uint32_t i = 0; i < armor->armorAddons.size(); ++i)
 		{
-			TESObjectARMA* addon = nullptr;
-			armor->armorAddons.GetNthItem(i, addon);
+			RE::TESObjectARMA* addon = armor->armorAddons[i];
+			if (!addon)
+				continue;
 
-			if (!addon->IsPlayable() || !addon->isValidRace(actor->race))
+			if (!addon->GetPlayable() || !addon->IsValidRace(actor->race))
 				continue;
 
 			auto shapeMap = m_modelMap.GetTriShapeMap(m_modelMap.GetModelPath(gender, false, armor, addon));
@@ -638,7 +636,7 @@ void TintMaskInterface::VisitTemplateData(TESObjectREFR* refr, TESObjectARMO* ar
 	}
 }
 
-void TintMaskInterface::GetTemplateColorMap(TESObjectREFR* refr, TESObjectARMO * armor, std::map<SInt32, UInt32>& colorMap)
+void TintMaskInterface::GetTemplateColorMap(RE::TESObjectREFR* refr, RE::TESObjectARMO * armor, std::map<std::int32_t, std::uint32_t>& colorMap)
 {
 	VisitTemplateData(refr, armor, [&](auto shapeMap)
 	{
@@ -662,7 +660,7 @@ void TintMaskInterface::GetTemplateColorMap(TESObjectREFR* refr, TESObjectARMO *
 						auto ait = layer.second.alphas.find(slot.second);
 						if (ait != layer.second.alphas.end())
 						{
-							colorMap[slot.first] |= UInt32(ait->second * 255) << 24;
+							colorMap[slot.first] |= std::uint32_t(ait->second * 255) << 24;
 						}
 					}
 				}
@@ -684,7 +682,7 @@ void TintMaskInterface::GetTemplateColorMap(TESObjectREFR* refr, TESObjectARMO *
 						auto it = layer.second.alphas.find(color.first);
 						if (it != layer.second.alphas.end())
 						{
-							colorMap[color.first] |= UInt32(it->second * 255) << 24;
+							colorMap[color.first] |= std::uint32_t(it->second * 255) << 24;
 						}
 					}
 				}
@@ -693,8 +691,7 @@ void TintMaskInterface::GetTemplateColorMap(TESObjectREFR* refr, TESObjectARMO *
 	});
 }
 
-
-void TintMaskInterface::GetSlotTextureIndexMap(TESObjectREFR* refr, TESObjectARMO* armor, std::map<SInt32, UInt32>& slotTextureIndexMap)
+void TintMaskInterface::GetSlotTextureIndexMap(RE::TESObjectREFR* refr, RE::TESObjectARMO* armor, std::map<std::int32_t, std::uint32_t>& slotTextureIndexMap)
 {
 	VisitTemplateData(refr, armor, [&](auto shapeMap)
 	{
@@ -705,7 +702,7 @@ void TintMaskInterface::GetSlotTextureIndexMap(TESObjectREFR* refr, TESObjectARM
 				// Try all textures, though we probably only care about the diffuse
 				for (auto& layer : shape.second)
 				{
-					SInt32 textureIndex = 0;
+					std::int32_t textureIndex = 0;
 					if (sscanf_s(layer.first.c_str(), "%d", &textureIndex))
 					{
 						for (auto& slot : layer.second.slots)
@@ -721,9 +718,9 @@ void TintMaskInterface::GetSlotTextureIndexMap(TESObjectREFR* refr, TESObjectARM
 
 void TintMaskInterface::LoadMods()
 {
-	m_dyeableLock.Lock();
+	m_dyeableLock.lock();
 	m_dyeable.clear();
-	m_dyeableLock.Release();
+	m_dyeableLock.unlock();
 	m_modelMap.Lock();
 	m_modelMap.m_data.clear();
 	
@@ -739,12 +736,18 @@ void TintMaskInterface::LoadMods()
 	m_modelMap.Release();
 }
 
-void TintMaskInterface::ParseTintData(LPCTSTR filePath)
+void TintMaskInterface::ParseTintData(const char* filePath)
 {
 	std::string path(filePath);
 	path.erase(0, 5);
 
-	BSResourceNiBinaryStream bStream(path.c_str());
+	// BSResourceNiBinaryStream resolves through BSA archives too (legacy behavior);
+	// a plain std::ifstream only sees loose files.
+	RE::BSResourceNiBinaryStream bStream(path.c_str());
+	if (!bStream.good()) {
+		SKSE::log::error("{} - Failed to open tint data file {}", __FUNCTION__, path);
+		return;
+	}
 	std::string data;
 	BSFileUtil::ReadAll(&bStream, data);
 
@@ -752,7 +755,7 @@ void TintMaskInterface::ParseTintData(LPCTSTR filePath)
 	tintDoc.Parse(data.c_str(), data.size());
 
 	if (tintDoc.Error()) {
-		_ERROR("%s", tintDoc.GetErrorStr1());
+		SKSE::log::error("{}", tintDoc.GetErrorStr1());
 		return;
 	}
 
@@ -771,7 +774,7 @@ void TintMaskInterface::ParseTintData(LPCTSTR filePath)
 
 			bool remappable = object->BoolAttribute("remappable");
 
-			UInt32 index = 0;
+			std::uint32_t index = 0;
 			auto child = object->FirstChildElement("geometry");
 			while (child)
 			{
@@ -807,7 +810,7 @@ void TintMaskInterface::ParseTintData(LPCTSTR filePath)
 					auto path = mask->Attribute("path");
 					auto color = mask->Attribute("color");
 
-					UInt32 colorValue;
+					std::uint32_t colorValue;
 					if (_strnicmp(color, "skin", 4) == 0) {
 						colorValue = kPreset_Skin;
 					}
@@ -829,20 +832,20 @@ void TintMaskInterface::ParseTintData(LPCTSTR filePath)
 						type = "mask";
 					}
 
-					UInt8 typeNumber = static_cast<UInt8>(CDXNifTextureRenderer::TextureType::Mask);
+					std::uint8_t typeNumber = static_cast<std::uint8_t>(CDXNifTextureRenderer::TextureType::Mask);
 					if (_strnicmp(type, "mask", 4) == 0) {
-						 typeNumber = static_cast<UInt8>(CDXNifTextureRenderer::TextureType::Mask);
+						 typeNumber = static_cast<std::uint8_t>(CDXNifTextureRenderer::TextureType::Mask);
 					}
 					else if (_strnicmp(type, "normal", 6) == 0) {
-						typeNumber = static_cast<UInt8>(CDXNifTextureRenderer::TextureType::Normal);
+						typeNumber = static_cast<std::uint8_t>(CDXNifTextureRenderer::TextureType::Normal);
 					}
 					else if (_strnicmp(type, "solid", 5) == 0 || _strnicmp(type, "color", 5) == 0) {
-						typeNumber = static_cast<UInt8>(CDXNifTextureRenderer::TextureType::Color);
+						typeNumber = static_cast<std::uint8_t>(CDXNifTextureRenderer::TextureType::Color);
 					}
 					else {
-						SInt32 typeValue = 0;
+						std::int32_t typeValue = 0;
 						sscanf_s(type, "%d", &typeValue);
-						typeNumber = static_cast<UInt8>(typeValue);
+						typeNumber = static_cast<std::uint8_t>(typeValue);
 					}
 					
 					int i = index;
@@ -878,82 +881,82 @@ void TintMaskInterface::ParseTintData(LPCTSTR filePath)
 	}
 }
 
-void TintMaskInterface::OnAttach(TESObjectREFR * refr, TESObjectARMO * armor, TESObjectARMA * addon, NiAVObject * object, bool isFirstPerson, NiNode * skeleton, NiNode * root)
+void TintMaskInterface::OnAttach(RE::TESObjectREFR * refr, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::NiAVObject * object, bool isFirstPerson, RE::NiNode * skeleton, RE::NiNode * root)
 {
-	UInt32 armorMask = armor->bipedObject.GetSlotMask();
-	UInt32 addonMask = addon->biped.GetSlotMask();
+	std::uint32_t armorMask = armor->GetSlotMask().underlying();
+	std::uint32_t addonMask = addon->GetSlotMask().underlying();
 	if (((armorMask & addonMask) & (g_tintHairSlot)) != 0)
 	{
-		Character * actor = refr->formType == Character::kTypeID ? static_cast<Character*>(refr) : nullptr;
-		NiColorA value;
-		TESNPC * actorBase = static_cast<TESNPC*>(refr->baseForm);
+		RE::Actor* actor = refr->IsActor() ? static_cast<RE::Actor*>(refr) : nullptr;
+		RE::NiColorA value;
+		RE::TESNPC * actorBase = static_cast<RE::TESNPC*>(refr->GetBaseObject());
 		if (GetActorHairColor(actor, value)) {
-			NiColorA* color = &value;
-			UpdateModelHair(object, &color);
+			RE::NiColorA* color = &value;
+			SKEE::UpdateModelHair(object, &color);
 		}
 	}
 }
 
-bool TintMaskInterface::GetActorHairColor(Actor* actor, NiColorA& color)
+bool TintMaskInterface::GetActorHairColor(RE::Actor* actor, RE::NiColorA& color)
 {
-	BGSColorForm* hairColorForm = nullptr;
-	TESNPC* actorBase = static_cast<TESNPC*>(actor->baseForm);
+	RE::BGSColorForm* hairColorForm = nullptr;
+	RE::TESNPC* actorBase = static_cast<RE::TESNPC*>(actor->GetBaseObject());
 	if (actorBase) {
-		UInt8 gender = CALL_MEMBER_FN(actorBase, GetSex)();
+		std::uint8_t gender = actorBase->GetSex();
 		// Try our parent templates
-		TESNPC* templateNPC = actorBase;
+		RE::TESNPC* templateNPC = actorBase;
 		do {
-			auto headData = templateNPC->headData;
+			auto headData = templateNPC->headRelatedData;
 			if (headData) {
 				hairColorForm = headData->hairColor;
 			}
-			templateNPC = templateNPC->nextTemplate;
+			templateNPC = templateNPC->faceNPC;
 		} while (templateNPC && !hairColorForm);
 
 		// No templates had a hair color record, get the default from the race
 		if (!hairColorForm)
 		{
-			TESRace* race = actor->race;
+			RE::TESRace* race = actor->race;
 			if (!race) {
-				race = actorBase->race.race;
+				race = actorBase->GetRace();
 			}
 
 			// Race had no chargen data, they probably don't have a hair record
-			auto chargenData = race->chargenData[gender];
+			auto chargenData = race->faceRelatedData[gender];
 			if (!chargenData)
 			{
 				return false;
 			}
 
-			hairColorForm = race->chargenData[gender]->defaultColor;
+			hairColorForm = race->faceRelatedData[gender]->defaultHairColor;
 		}
 	}
 
 	if (hairColorForm) {
-		color.r = static_cast<float>(min((hairColorForm->abgr & 0xFF) * 2, 255)) / 255.0f;
-		color.g = static_cast<float>(min(((hairColorForm->abgr >> 8) & 0xFF) * 2, 255)) / 255.0f;
-		color.b = static_cast<float>(min(((hairColorForm->abgr >> 16) & 0xFF) * 2, 255)) / 255.0f;
-		color.a = 1.0f;
+		color.red = static_cast<float>(std::min((std::int32_t)hairColorForm->color.red * 2, 255)) / 255.0f;
+		color.green = static_cast<float>(std::min((std::int32_t)hairColorForm->color.green * 2, 255)) / 255.0f;
+		color.blue = static_cast<float>(std::min((std::int32_t)hairColorForm->color.blue * 2, 255)) / 255.0f;
+		color.alpha = 1.0f;
 		return true;
 	}
 
 	return false;
 }
 
-EventResult TintMaskInterface::ReceiveEvent(SKSENiNodeUpdateEvent * evn, EventDispatcher<SKSENiNodeUpdateEvent>* dispatcher)
+RE::BSEventNotifyControl TintMaskInterface::ProcessEvent(const SKSE::NiNodeUpdateEvent* a_event, RE::BSTEventSource<SKSE::NiNodeUpdateEvent>* a_source)
 {
-	TESObjectREFR* refr = evn->reference;
-	if (refr && refr->formType == Character::kTypeID)
+	RE::TESObjectREFR* refr = a_event->reference;
+	if (refr && refr->IsActor())
 	{
-		Character * actor = static_cast<Character*>(refr);
-		NiColorA value;
+		RE::Actor* actor = static_cast<RE::Actor*>(refr);
+		RE::NiColorA value;
 		if (GetActorHairColor(actor, value)) {
-			NiColorA* color = &value;
-			VisitEquippedNodes(actor, g_tintHairSlot, [&](TESObjectARMO* armor, TESObjectARMA* arma, NiAVObject* node, bool isFP)
+			RE::NiColorA* color = &value;
+			VisitEquippedNodes(actor, g_tintHairSlot, [&](RE::TESObjectARMO* armor, RE::TESObjectARMA* arma, RE::NiAVObject* node, bool isFP)
 			{
-				UpdateModelHair(node, &color);
+				SKEE::UpdateModelHair(node, &color);
 			});
 		}
 	}
-	return kEvent_Continue;
+	return RE::BSEventNotifyControl::kContinue;
 }

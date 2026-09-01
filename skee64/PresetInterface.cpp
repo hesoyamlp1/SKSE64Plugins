@@ -1,13 +1,38 @@
 #include "PresetInterface.h"
+#include "SKEEHooks.h"
+#include "SKEETasks.h"
+#include <RE/M/MemoryManager.h>
 
-#include "common/IFileStream.h"
-#include "skse64_common/skse_version.h"
 
-#include "skse64/GameRTTI.h"
-#include "skse64/GameObjects.h"
-#include "skse64/GameReferences.h"
-#include "skse64/GameData.h"
-#include "skse64/GameStreams.h"
+
+#include <RE/B/BSFixedString.h>
+#include <RE/B/BSShaderTextureSet.h>
+#include <RE/B/BSLightingShaderProperty.h>
+#include <RE/B/BSLightingShaderMaterial.h>
+#include <RE/B/BSLightingShaderMaterialHairTint.h>
+#include <RE/B/BSTextureSet.h>
+#include <RE/N/NiNode.h>
+#include <RE/N/NiAVObject.h>
+#include <RE/N/NiTexture.h>
+#include <RE/N/NiSmartPointer.h>
+#include <RE/T/TESNPC.h>
+#include <RE/T/TESRace.h>
+#include <RE/T/TESDataHandler.h>
+#include <RE/T/TESForm.h>
+#include <RE/T/TESObjectREFR.h>
+#include <RE/A/Actor.h>
+#include <RE/P/PlayerCharacter.h>
+#include <RE/B/BGSTextureSet.h>
+#include <RE/B/BGSHeadPart.h>
+#include <RE/N/NiColor.h>
+#include <RE/B/BSFaceGenNiNode.h>
+#include <RE/RTTI.h>
+#include <RE/B/BSStream.h>
+#include <RE/N/NiBinaryStream.h>
+#include <SKSE/API.h>
+#include <SKSE/Interfaces.h>
+
+
 
 #include "OverrideInterface.h"
 #include "NiTransformInterface.h"
@@ -18,6 +43,7 @@
 #include "ShaderUtilities.h"
 #include "FileUtils.h"
 #include "NifUtils.h"
+#include <cstdint>
 
 extern OverrideInterface	g_overrideInterface;
 extern NiTransformInterface g_transformInterface;
@@ -25,25 +51,14 @@ extern BodyMorphInterface	g_bodyMorphInterface;
 extern OverlayInterface		g_overlayInterface;
 extern StringTable			g_stringTable;
 extern FaceMorphInterface	g_morphInterface;
-extern SKSETaskInterface*	g_task;
 
-class ValidRaceFinder : public BGSListForm::Visitor
+// Running SKSE/game versions, captured from the LoadInterface in SKSE_PLUGIN_LOAD (main.cpp)
+extern std::uint32_t g_skseVersion;
+extern std::uint32_t g_runtimeVersion;
+
+PresetDataPtr PresetInterface::GetMappedPreset(RE::TESNPC* npc)
 {
-public:
-	ValidRaceFinder(TESRace* race) : m_race(race) { }
-	virtual bool Accept(TESForm* form)
-	{
-		if (m_race == form)
-			return true;
-
-		return false;
-	};
-	TESRace* m_race;
-};
-
-PresetDataPtr PresetInterface::GetMappedPreset(TESNPC* npc)
-{
-	SimpleLocker locker(&m_mappedPreset.m_lock);
+	std::lock_guard<std::recursive_mutex> locker(m_mappedPreset.m_lock);
 	auto it = m_mappedPreset.m_data.find(npc);
 	if (it != m_mappedPreset.m_data.end())
 		return it->second;
@@ -51,16 +66,16 @@ PresetDataPtr PresetInterface::GetMappedPreset(TESNPC* npc)
 	return nullptr;
 }
 
-void PresetInterface::AssignMappedPreset(TESNPC* npc, PresetDataPtr presetData)
+void PresetInterface::AssignMappedPreset(RE::TESNPC* npc, PresetDataPtr presetData)
 {
 	EraseMappedPreset(npc);
-	SimpleLocker locker(&m_mappedPreset.m_lock);
+	std::lock_guard<std::recursive_mutex> locker(m_mappedPreset.m_lock);
 	m_mappedPreset.m_data.emplace(npc, presetData);
 }
 
-bool PresetInterface::EraseMappedPreset(TESNPC* npc)
+bool PresetInterface::EraseMappedPreset(RE::TESNPC* npc)
 {
-	SimpleLocker locker(&m_mappedPreset.m_lock);
+	std::lock_guard<std::recursive_mutex> locker(m_mappedPreset.m_lock);
 	auto it = m_mappedPreset.m_data.find(npc);
 	if (it != m_mappedPreset.m_data.end()) {
 		m_mappedPreset.m_data.erase(it);
@@ -72,48 +87,47 @@ bool PresetInterface::EraseMappedPreset(TESNPC* npc)
 
 void PresetInterface::ClearMappedPresets()
 {
-	SimpleLocker locker(&m_mappedPreset.m_lock);
+	std::lock_guard<std::recursive_mutex> locker(m_mappedPreset.m_lock);
 	m_mappedPreset.m_data.clear();
 }
 
-void PresetInterface::ApplyMappedPreset(TESNPC* npc, BSFaceGenNiNode* faceNode, BGSHeadPart* headPart)
+void PresetInterface::ApplyMappedPreset(RE::TESNPC* npc, RE::BSFaceGenNiNode* faceNode, RE::BGSHeadPart* headPart)
 {
 	PresetDataPtr presetData = GetMappedPreset(npc);
 	if (presetData && faceNode && headPart) {
-		NiAVObject* object = faceNode->GetObjectByName(&headPart->partName.data);
+		RE::NiAVObject* object = faceNode->GetObjectByName(headPart->formEditorID.c_str());
 		if (object) {
-			BSGeometry* geometry = object->GetAsBSGeometry();
+			RE::BSGeometry* geometry = object ? object->AsGeometry() : nullptr;
 			if (geometry) {
-				BSShaderProperty* shaderProperty = niptr_cast<BSShaderProperty>(geometry->m_spEffectState);
+				RE::BSShaderProperty* shaderProperty = geometry->GetGeometryRuntimeData().shaderProperty.get();
 				if (shaderProperty) {
-					if (ni_is_type(shaderProperty->GetRTTI(), BSLightingShaderProperty)) {
-						BSLightingShaderProperty* lightingShader = (BSLightingShaderProperty*)shaderProperty;
-						BSLightingShaderMaterial* material = (BSLightingShaderMaterial*)shaderProperty->material;
-						if (headPart->type == BGSHeadPart::kTypeFace) {
+					RE::BSLightingShaderProperty* lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(shaderProperty);
+					if (lightingShader) {
+						RE::BSLightingShaderMaterial* material = static_cast<RE::BSLightingShaderMaterial*>(shaderProperty->material);
+						if (headPart->type.any(RE::BGSHeadPart::HeadPartType::kFace)) {
 
-							BSShaderTextureSet* newTextureSet = BSShaderTextureSet::Create();
-							for (UInt32 i = 0; i < BSTextureSet::kNumTextures; i++)
-							{
-								newTextureSet->SetTexturePath(i, material->textureSet->GetTexturePath(i));
+							RE::BSShaderTextureSet* newTextureSet = RE::BSShaderTextureSet::Create();
+							for (std::uint32_t i = 0; i < RE::BSTextureSet::Texture::kTotal; i++) {
+								newTextureSet->SetTexturePath(static_cast<RE::BSTextureSet::Texture>(i), material->textureSet->GetTexturePath(static_cast<RE::BSTextureSet::Texture>(i)));
 							}
-							newTextureSet->SetTexturePath(6, presetData->tintTexture.data);
-							material->SetTextureSet(newTextureSet);
+							newTextureSet->SetTexturePath(static_cast<RE::BSTextureSet::Texture>(6), presetData->tintTexture.c_str());
+							material->SetTextureSet(RE::NiPointer<RE::BSTextureSet>(newTextureSet));
 
-							NiPointer<NiTexture> newTexture;
-							LoadTexture(presetData->tintTexture.data, 1, newTexture, false);
+							RE::NiPointer<RE::NiTexture> newTexture;
+							RE::BSShaderManager::GetTexture(presetData->tintTexture.c_str(), 1, newTexture, false);
 
-							NiTexturePtr* targetTexture = GetTextureFromIndex(material, 6);
+							auto targetTexture = GetTextureFromIndex(material, 6);
 							if (targetTexture) {
-								*targetTexture = newTexture;
+								targetTexture->reset(static_cast<RE::NiSourceTexture*>(newTexture.get()));
 							}
 
-							CALL_MEMBER_FN(lightingShader, InitializeShader)(geometry);
+							SKEE::InitializeShader(lightingShader, geometry);
 						}
-						else if (material->GetShaderType() == BSLightingShaderMaterial::kShaderType_HairTint) {
-							BSLightingShaderMaterialHairTint* tintedMaterial = (BSLightingShaderMaterialHairTint*)material; // I don't know what this * 2.0 bullshit is.
-							tintedMaterial->tintColor.r = (((presetData->hairColor >> 16) & 0xFF) / 255.0) * 2.0;
-							tintedMaterial->tintColor.g = (((presetData->hairColor >> 8) & 0xFF) / 255.0) * 2.0;
-							tintedMaterial->tintColor.b = ((presetData->hairColor & 0xFF) / 255.0) * 2.0;
+						else if (material->GetFeature() == RE::BSShaderMaterial::Feature::kHairTint) {
+							RE::BSLightingShaderMaterialHairTint* tintedMaterial = static_cast<RE::BSLightingShaderMaterialHairTint*>(static_cast<RE::BSLightingShaderMaterialBase*>(material));
+							tintedMaterial->tintColor.red = (((presetData->hairColor >> 16) & 0xFF) / 255.0) * 2.0;
+							tintedMaterial->tintColor.green = (((presetData->hairColor >> 8) & 0xFF) / 255.0) * 2.0;
+							tintedMaterial->tintColor.blue = ((presetData->hairColor & 0xFF) / 255.0) * 2.0;
 						}
 					}
 				}
@@ -122,99 +136,106 @@ void PresetInterface::ApplyMappedPreset(TESNPC* npc, BSFaceGenNiNode* faceNode, 
 	}
 }
 
-void PresetInterface::ApplyPresetData(Actor* actor, PresetDataPtr presetData, bool setSkinColor, ApplyTypes applyType)
+void PresetInterface::ApplyPresetData(RE::Actor* actor, PresetDataPtr presetData, bool setSkinColor, ApplyTypes applyType)
 {
-	PlayerCharacter* player = (*g_thePlayer);
-	TESNPC* npc = DYNAMIC_CAST(actor->baseForm, TESForm, TESNPC);
-	TESRace* race = npc->race.race;
+	RE::PlayerCharacter* player = RE::PlayerCharacter::GetSingleton();
+	RE::TESNPC* npc = actor->GetBaseObject() ? actor->GetBaseObject()->As<RE::TESNPC>() : nullptr;
+	RE::TESRace* race = npc->GetRace();
 
 	// Wipe the HeadPart list and replace it with the default race list
-	UInt8 gender = CALL_MEMBER_FN(npc, GetSex)();
-	TESRace::CharGenData* chargenData = race->chargenData[gender];
+	std::uint8_t gender = (npc->GetSex() == RE::SEX::kFemale);
+	RE::TESRace::FaceRelatedData* chargenData = race->faceRelatedData[gender];
 	if (chargenData) {
-		BGSHeadPart** headParts = npc->headparts;
-		tArray<BGSHeadPart*>* headPartList = race->chargenData[gender]->headParts;
+		RE::BGSHeadPart** headParts = npc->headParts;
+		RE::BSTArray<RE::BGSHeadPart*>* headPartList = race->faceRelatedData[gender]->headParts;
 		if (headParts && headPartList) {
-			Heap_Free(headParts);
-			npc->numHeadParts = headPartList->count;
-			headParts = (BGSHeadPart**)Heap_Allocate(npc->numHeadParts * sizeof(BGSHeadPart*));
-			for (UInt32 i = 0; i < headPartList->count; i++)
-				headPartList->GetNthItem(i, headParts[i]);
-			npc->headparts = headParts;
+			RE::free(headParts);
+			std::int8_t partCount = static_cast<std::int8_t>(headPartList->size());
+			auto* newHeadParts = static_cast<RE::BGSHeadPart**>(RE::malloc(partCount * sizeof(RE::BGSHeadPart*)));
+			for (std::uint32_t i = 0; i < headPartList->size(); i++)
+				newHeadParts[i] = (*headPartList)[i];
+			npc->numHeadParts = partCount;
+			npc->headParts = newHeadParts;
 		}
 	}
 
 	if (presetData->headTexture) {
-		if (!npc->headData) {
-			npc->headData = (TESNPC::HeadData*)Heap_Allocate(sizeof(TESNPC::HeadData));
+		if (!npc->headRelatedData) {
+			npc->headRelatedData = new RE::TESNPC::HeadRelatedData();
 
 			// If we had no head data we probably have no hair color assigned, this isn't good
 			// lets just assign the first color from our race settings incase
-			BGSColorForm* color = nullptr;
-			if (race->chargenData[gender]->colors->count > 0)
-				race->chargenData[gender]->colors->GetNthItem(0, color);
+			RE::BGSColorForm* color = nullptr;
+			if (race->faceRelatedData[gender] && race->faceRelatedData[gender]->availableHairColors && race->faceRelatedData[gender]->availableHairColors->size() > 0)
+				color = (*race->faceRelatedData[gender]->availableHairColors)[0];
 
-			npc->headData->hairColor = color;
-			npc->headData->headTexture = nullptr;
+			npc->headRelatedData->hairColor = color;
+			npc->headRelatedData->faceDetails = nullptr;
 		}
-		npc->headData->headTexture = presetData->headTexture;
+		npc->headRelatedData->faceDetails = presetData->headTexture;
 	}
-
 
 	// Replace the old parts with the new parts if they are the right sex
 	for (auto& part : presetData->headParts) {
-		if ((gender == 0 && (part->partFlags & BGSHeadPart::kFlagMale) == BGSHeadPart::kFlagMale) ||
-			(gender == 1 && (part->partFlags & BGSHeadPart::kFlagFemale) == BGSHeadPart::kFlagFemale))
+		if ((gender == 0 && part->flags.any(RE::BGSHeadPart::Flag::kMale)) ||
+			(gender == 1 && part->flags.any(RE::BGSHeadPart::Flag::kFemale)))
 		{
-			ValidRaceFinder partFinder(race);
 			if (part->validRaces) {
-				if (part->validRaces->Visit(partFinder))
-					CALL_MEMBER_FN(npc, ChangeHeadPart)(part);
+				bool validRace = false;
+				for (auto* form : part->validRaces->forms) {
+					if (form == race) { validRace = true; break; }
+				}
+				if (validRace)
+					npc->ChangeHeadPart(part);
 			}
 		}
 	}
 
 	npc->weight = presetData->weight;
 
-	if (!npc->faceMorph)
-		npc->faceMorph = (TESNPC::FaceMorphs*)Heap_Allocate(sizeof(TESNPC::FaceMorphs));
+	if (!npc->faceData)
+		{ auto* fd = RE::malloc<RE::TESNPC::FaceData>();
+		std::memset(fd, 0, sizeof(RE::TESNPC::FaceData));
+		npc->faceData = fd; }
 
-	UInt32 i = 0;
+	std::uint32_t i = 0;
 	for (auto value : presetData->presets) {
-		npc->faceMorph->presets[i] = value;
+		npc->faceData->parts[i] = value;
 		i++;
 	}
 
 	i = 0;
 	for (auto value : presetData->morphs) {
-		npc->faceMorph->option[i] = value;
+		npc->faceData->morphs[i] = value;
 		i++;
 	}
 
 	for (auto& tint : presetData->tints) {
 		float alpha = (tint.color >> 24) / 255.0;
-		TintMask* tintMask = NULL;
-		if (player == actor && player->tintMasks.GetNthItem(tint.index, tintMask)) {
+		auto* tintArr = player->GetTintList();
+		RE::TintMask* tintMask = nullptr;
+		if (player == actor && tintArr && tint.index < tintArr->size()) {
+			tintMask = (*tintArr)[tint.index];
 			tintMask->color.red = (tint.color >> 16) & 0xFF;
 			tintMask->color.green = (tint.color >> 8) & 0xFF;
 			tintMask->color.blue = tint.color & 0xFF;
 			tintMask->alpha = alpha;
 			if (tintMask->alpha > 0)
-				tintMask->texture->str = tint.name;
+				tintMask->texture->textureName = tint.name;
 		}
 
 		if (tint.index == 0 && setSkinColor)
 		{
 			float alpha = (tint.color >> 24) / 255.0;
-			TintMask tintMask;
+			RE::TintMask tintMask;
 			tintMask.color.red = (tint.color >> 16) & 0xFF;
 			tintMask.color.green = (tint.color >> 8) & 0xFF;
 			tintMask.color.blue = tint.color & 0xFF;
 			tintMask.alpha = alpha;
-			tintMask.tintType = TintMask::kMaskType_SkinTone;
+			tintMask.type.set(RE::TintMask::Type::kSkinTone);
 
-			NiColorA colorResult;
-			CALL_MEMBER_FN(npc, SetSkinFromTint)(&colorResult, &tintMask, true);
+			RE::NiColorA colorResult;
+			npc->SetSkinFromTint(&colorResult, &tintMask, true);
 		}
 	}
 
@@ -250,7 +271,7 @@ void PresetInterface::ApplyPresetData(Actor* actor, PresetDataPtr presetData, bo
 
 	if ((applyType & kPresetApplySkinOverrides) == kPresetApplySkinOverrides)
 	{
-		for (UInt32 i = 0; i <= 1; i++) {
+		for (std::uint32_t i = 0; i <= 1; i++) {
 			for (auto& slot : presetData->skinData[i]) {
 				for (auto& value : slot.second) {
 					g_overrideInterface.Impl_AddSkinOverride(actor, gender == 1 ? true : false, i == 1 ? true : false, slot.first, value);
@@ -265,7 +286,7 @@ void PresetInterface::ApplyPresetData(Actor* actor, PresetDataPtr presetData, bo
 
 	if ((applyType & kPresetApplyTransforms) == kPresetApplyTransforms)
 	{
-		for (UInt32 i = 0; i <= 1; i++) {
+		for (std::uint32_t i = 0; i <= 1; i++) {
 			for (auto& xForms : presetData->transformData[i]) {
 				for (auto& key : xForms.second) {
 					for (auto& value : key.second) {
@@ -293,101 +314,106 @@ void PresetInterface::ApplyPresetData(Actor* actor, PresetDataPtr presetData, bo
 
 #include <json/json.h>
 
+
 struct PresetHeader
 {
 	enum
 	{
-		kSignature = MACRO_SWAP32('SKSE'),	// endian-swapping so the order matches
+		kSignature = 0x45534B53,	// endian-swapping so the order matches
 		kVersion = 3,
 
 		kVersion_Invalid = 0
 	};
 
-	UInt32	signature;
-	UInt32	formatVersion;
-	UInt32	skseVersion;
-	UInt32	runtimeVersion;
+	std::uint32_t	signature;
+	std::uint32_t	formatVersion;
+	std::uint32_t	skseVersion;
+	std::uint32_t	runtimeVersion;
 };
 
-bool PresetInterface::SaveJsonPreset(const char* filePath, Actor* actor)
+bool PresetInterface::SaveJsonPreset(const char* filePath, RE::Actor* actor)
 {
 	Json::StyledWriter writer;
 	Json::Value root;
 
-	IFileStream		currentFile;
-	IFileStream::MakeAllDirs(filePath);
+	BinaryStream		currentFile;
+	FileUtils::MakeAllDirs(filePath);
 	if (!currentFile.Create(filePath))
 	{
-		_ERROR("%s: couldn't create preset file (%s) Error (%d)", __FUNCTION__, filePath, GetLastError());
+		SKSE::log::error("{}: couldn't create preset file ({}) Error ({})", __FUNCTION__, filePath, GetLastError());
 		return true;
 	}
 
 	Json::Value versionInfo;
 	versionInfo["signature"] = PresetHeader::kSignature;
 	versionInfo["formatVersion"] = PresetHeader::kVersion;
-	versionInfo["skseVersion"] = PACKED_SKSE_VERSION;
-	versionInfo["runtimeVersion"] = RUNTIME_VERSION_1_4_2;
+	versionInfo["skseVersion"] = g_skseVersion;
+	versionInfo["runtimeVersion"] = g_runtimeVersion;
 
-
-	TESNPC* npc = DYNAMIC_CAST(actor->baseForm, TESForm, TESNPC);
-	DataHandler* dataHandler = DataHandler::GetSingleton();
+	RE::TESNPC* npc = actor->GetBaseObject() ? actor->GetBaseObject()->As<RE::TESNPC>() : nullptr;
+	RE::TESDataHandler* dataHandler = RE::TESDataHandler::GetSingleton();
 
 	bool isFemale = false;
 	if (npc)
-		isFemale = CALL_MEMBER_FN(npc, GetSex)() == 1;
+		isFemale = (npc->GetSex() == RE::SEX::kFemale);
 
-	std::map<UInt8, const char*> modListLegacy;
+	std::map<std::uint8_t, const char*> modListLegacy;
 	std::set<std::string> modList;
-	std::map<UInt8, BGSHeadPart*> partList;
+	std::map<std::uint8_t, RE::BGSHeadPart*> partList;
 
-	UInt32 numHeadParts = 0;
-	BGSHeadPart** headParts = nullptr;
-	if (CALL_MEMBER_FN(npc, HasOverlays)()) {
-		numHeadParts = GetNumActorBaseOverlays(npc);
-		headParts = GetActorBaseOverlays(npc);
-	}
-	else {
+	std::uint32_t numHeadParts = 0;
+	RE::BGSHeadPart** headParts = nullptr;
+	if (npc->HasOverlays()) {
+		numHeadParts = npc->GetNumBaseOverlays();
+		headParts = npc->GetBaseOverlays();
+	} else {
 		numHeadParts = npc->numHeadParts;
-		headParts = npc->headparts;
+		headParts = npc->headParts;
 	}
 
 	// Acquire only vanilla dependencies
-	for (UInt32 i = 0; i < numHeadParts; i++)
+	for (std::uint32_t i = 0; i < numHeadParts; i++)
 	{
-		BGSHeadPart* headPart = headParts[i];
+		RE::BGSHeadPart* headPart = headParts[i];
 		if (headPart && !headPart->IsExtraPart()) {
-			ModInfo* modInfo = GetModInfoByFormID(headPart->formID, false);
+			RE::TESDataHandler* dataHandler = RE::TESDataHandler::GetSingleton();
+			const RE::TESFile* modInfo = dataHandler->LookupLoadedModByIndex(headPart->formID >> 24);
 			if (modInfo) {
-				modListLegacy.emplace(modInfo->GetPartialIndex(), modInfo->name);
+				modListLegacy.emplace(static_cast<std::uint8_t>(modInfo->GetPartialIndex()), modInfo->GetFilename().data());
 			}
 
 			partList.emplace(i, headPart);
 		}
 	}
 
-	// Acquire all mod dependencies
-	for (UInt32 i = 0; i < numHeadParts; i++)
+	// Acquire all mod dependencies (loaded and unloaded, matching the legacy
+	// GetModInfoByFormID(formID, true) semantics)
+	for (std::uint32_t i = 0; i < numHeadParts; i++)
 	{
-		BGSHeadPart* headPart = headParts[i];
+		RE::BGSHeadPart* headPart = headParts[i];
 		if (headPart && !headPart->IsExtraPart()) {
-			ModInfo* modInfo = GetModInfoByFormID(headPart->formID, true);
-			if (modInfo) {
-				modList.emplace(modInfo->name);
+			for (RE::TESFile* modInfo : dataHandler->files) {
+				if (modInfo && modInfo->GetCompileIndex() == (headPart->formID >> 24)) {
+					modList.emplace(modInfo->GetFilename());
+					break;
+				}
 			}
 		}
 	}
 
-	std::map<UInt8, std::pair<UInt32, const char*>> tintList;
-	if (actor == (*g_thePlayer))
+	std::map<std::uint8_t, std::pair<std::uint32_t, const char*>> tintList;
+	RE::PlayerCharacter* player = RE::PlayerCharacter::GetSingleton();
+	if (actor == player)
 	{
-		for (UInt32 i = 0; i < (*g_thePlayer)->tintMasks.count; i++)
+		auto* tintArr = player->GetTintList();
+		for (std::uint32_t i = 0; tintArr && i < tintArr->size(); i++)
 		{
-			TintMask* tintMask = nullptr;
-			if ((*g_thePlayer)->tintMasks.GetNthItem(i, tintMask))
+			RE::TintMask* tintMask = (*tintArr)[i];
+			if (tintMask)
 			{
-				UInt32 tintColor = ((UInt32)(tintMask->alpha * 255.0) << 24) | tintMask->color.red << 16 | tintMask->color.green << 8 | tintMask->color.blue;
+				std::uint32_t tintColor = ((std::uint32_t)(tintMask->alpha * 255.0) << 24) | tintMask->color.red << 16 | tintMask->color.green << 8 | tintMask->color.blue;
 				if (tintMask->texture)
-					tintList.emplace(i, std::make_pair(tintColor, tintMask->texture->str.data));
+					tintList.emplace(i, std::make_pair(tintColor, tintMask->texture->textureName.c_str()));
 			}
 		}
 	}
@@ -428,15 +454,15 @@ bool PresetInterface::SaveJsonPreset(const char* filePath, Actor* actor)
 	}
 
 	Json::Value morphInfo;
-	if (npc->faceMorph)
+	if (npc->faceData)
 	{
-		for (UInt8 p = 0; p < TESNPC::FaceMorphs::kNumPresets; p++) {
-			Json::Value morphValue = (Json::UInt)npc->faceMorph->presets[p];
+		for (std::uint8_t p = 0; p < RE::TESNPC::FaceData::kTotalPresets; p++) {
+			Json::Value morphValue = (Json::UInt)npc->faceData->parts[p];
 			morphInfo["presets"].append(morphValue);
 		}
 
-		for (UInt8 o = 0; o < TESNPC::FaceMorphs::kNumOptions; o++) {
-			Json::Value morphValue = npc->faceMorph->option[o];
+		for (std::uint8_t o = 0; o < RE::TESNPC::FaceData::Morphs::kTotal; o++) {
+			Json::Value morphValue = npc->faceData->morphs[o];
 			morphInfo["morphs"].append(morphValue);
 		}
 	}
@@ -456,19 +482,18 @@ bool PresetInterface::SaveJsonPreset(const char* filePath, Actor* actor)
 		}
 	}
 
-
 	Json::Value sculptData;
 	auto sculptTarget = g_morphInterface.GetSculptTarget(npc, false);
 	if (sculptTarget) {
-		for (UInt32 i = 0; i < numHeadParts; i++) // Acquire all unique parts
+		for (std::uint32_t i = 0; i < numHeadParts; i++) // Acquire all unique parts
 		{
-			BGSHeadPart* headPart = headParts[i];
+			RE::BGSHeadPart* headPart = headParts[i];
 			if (headPart) {
-				BSFixedString morphPath = SculptData::GetHostByPart(headPart);
+				RE::BSFixedString morphPath = SculptData::GetHostByPart(headPart);
 				auto sculptHost = sculptTarget->GetSculptHost(morphPath, false);
 				if (sculptHost) {
 					Json::Value hostData;
-					hostData["host"] = morphPath.data;
+					hostData["host"] = morphPath.c_str();
 
 					TRIModelData data;
 					g_morphInterface.GetModelTri(morphPath, data);
@@ -491,12 +516,12 @@ bool PresetInterface::SaveJsonPreset(const char* filePath, Actor* actor)
 	}
 
 	Json::Value textureInfo;
-	BGSHeadPart* facePart = npc->GetCurrentHeadPartByType(BGSHeadPart::kTypeFace);
+	RE::BGSHeadPart* facePart = npc->GetCurrentHeadPartByType(RE::BGSHeadPart::HeadPartType::kFace);
 	if (facePart) {
-		BGSTextureSet* textureSet = GetTextureSetForPart(npc, facePart);
+		RE::BGSTextureSet* textureSet = GetTextureSetForPart(npc, facePart);
 		if (textureSet) {
-			for (UInt8 i = 0; i < BSShaderTextureSet::kNumTextures; i++) {
-				const char* texturePath = textureSet->textureSet.GetTexturePath(i);
+			for (std::uint8_t i = 0; i < RE::BSTextureSet::Texture::kTotal; i++) {
+				const char* texturePath = textureSet->GetTexturePath(static_cast<RE::BSTextureSet::Texture>(i));
 				if (texturePath != nullptr) {
 					Json::Value textureValue;
 					textureValue["index"] = i;
@@ -516,8 +541,8 @@ bool PresetInterface::SaveJsonPreset(const char* filePath, Actor* actor)
 
 	// Collect skin data
 	PresetData::SkinData skinData[2];
-	for (UInt32 i = 0; i <= 1; i++) {
-		g_overrideInterface.VisitSkin(actor, isFemale, i == 1, [&i, &skinData](UInt32 slotMask, OverrideVariant& value)
+	for (std::uint32_t i = 0; i <= 1; i++) {
+		g_overrideInterface.VisitSkin(actor, isFemale, i == 1, [&i, &skinData](std::uint32_t slotMask, OverrideVariant& value)
 		{
 			skinData[i][slotMask].push_back(value);
 			return false;
@@ -526,7 +551,7 @@ bool PresetInterface::SaveJsonPreset(const char* filePath, Actor* actor)
 
 	// Collect transform data
 	PresetData::TransformData transformData[2];
-	for (UInt32 i = 0; i <= 1; i++) {
+	for (std::uint32_t i = 0; i <= 1; i++) {
 		g_transformInterface.Impl_VisitNodes(actor, i == 1, isFemale, [&i, &transformData](SKEEFixedString node, OverrideRegistration<StringTableItem>* keys)
 		{
 			keys->Visit([&i, &node, &transformData](const StringTableItem& key, OverrideSet* set)
@@ -556,7 +581,7 @@ bool PresetInterface::SaveJsonPreset(const char* filePath, Actor* actor)
 		}
 	});
 
-	for (UInt32 i = 0; i <= 1; i++) {
+	for (std::uint32_t i = 0; i <= 1; i++) {
 		for (auto& data : transformData[i]) {
 			Json::Value transform;
 			transform["firstPerson"] = (bool)(i == 1);
@@ -620,7 +645,7 @@ bool PresetInterface::SaveJsonPreset(const char* filePath, Actor* actor)
 		root["overrides"].append(ovr);
 	}
 
-	for (UInt32 i = 0; i <= 1; i++) {
+	for (std::uint32_t i = 0; i <= 1; i++) {
 		for (auto& data : skinData[i]) {
 			Json::Value slot;
 			slot["firstPerson"] = (bool)(i == 1);
@@ -671,18 +696,18 @@ bool PresetInterface::SaveJsonPreset(const char* filePath, Actor* actor)
 	root["headParts"] = headPartInfo;
 	root["actor"]["weight"] = npc->weight;
 
-	if (npc->headData) {
-		auto hairColor = npc->headData->hairColor;
+	if (npc->headRelatedData) {
+		auto hairColor = npc->headRelatedData->hairColor;
 		if (hairColor)
 			root["actor"]["hairColor"] = (Json::UInt)(hairColor->color.red << 16 | hairColor->color.green << 8 | hairColor->color.blue);
 
-		auto headTexture = npc->headData->headTexture;
+		auto headTexture = npc->headRelatedData->faceDetails;
 		if (headTexture) {
 			root["actor"]["headTexture"] = GetFormIdentifier(headTexture);
 
-			ModInfo* modInfo = GetModInfoByFormID(headTexture->formID, true);
+			RE::TESFile* modInfo = GetModInfoByFormID(headTexture->formID, true);
 			if (modInfo) {
-				modList.emplace(modInfo->name);
+				modList.emplace(std::string(modInfo->GetFilename()));
 			}
 		}
 	}
@@ -702,13 +727,13 @@ bool PresetInterface::SaveJsonPreset(const char* filePath, Actor* actor)
 
 bool PresetInterface::SaveBinaryPreset(const char* filePath)
 {
-	IFileStream		currentFile;
-	IFileStream::MakeAllDirs(filePath);
+	BinaryStream		currentFile;
+	FileUtils::MakeAllDirs(filePath);
 
-	_DMESSAGE("creating preset");
+	SKSE::log::debug("creating preset");
 	if (!currentFile.Create(filePath))
 	{
-		_ERROR("%s: couldn't create preset file (%s) Error (%d)", __FUNCTION__, filePath, GetLastError());
+		SKSE::log::error("{}: couldn't create preset file ({}) Error ({})", __FUNCTION__, filePath, GetLastError());
 		return true;
 	}
 
@@ -717,71 +742,72 @@ bool PresetInterface::SaveBinaryPreset(const char* filePath)
 		PresetHeader fileHeader;
 		fileHeader.signature = PresetHeader::kSignature;
 		fileHeader.formatVersion = PresetHeader::kVersion;
-		fileHeader.skseVersion = PACKED_SKSE_VERSION;
-		fileHeader.runtimeVersion = RUNTIME_VERSION_1_4_2;
+		fileHeader.skseVersion = g_skseVersion;
+		fileHeader.runtimeVersion = g_runtimeVersion;
 
 		currentFile.Skip(sizeof(fileHeader));
 
-		PlayerCharacter* player = (*g_thePlayer);
-		TESNPC* npc = DYNAMIC_CAST(player->baseForm, TESForm, TESNPC);
-		DataHandler* dataHandler = DataHandler::GetSingleton();
+		RE::PlayerCharacter* player = RE::PlayerCharacter::GetSingleton();
+		RE::TESNPC* npc = player->GetBaseObject() ? player->GetBaseObject()->As<RE::TESNPC>() : nullptr;
+		RE::TESDataHandler* dataHandler = RE::TESDataHandler::GetSingleton();
 
-		typedef std::map<UInt8, const char*> ModMap;
-		typedef std::pair<UInt8, const char*> ModPair;
+		typedef std::map<std::uint8_t, const char*> ModMap;
+		typedef std::pair<std::uint8_t, const char*> ModPair;
 
-		typedef std::map<UInt8, BGSHeadPart*> PartMap;
-		typedef std::pair<UInt8, BGSHeadPart*> PartPair;
+		typedef std::map<std::uint8_t, RE::BGSHeadPart*> PartMap;
+		typedef std::pair<std::uint8_t, RE::BGSHeadPart*> PartPair;
 
-		typedef std::pair<UInt32, const char*> TintCouple;
-		typedef std::map<UInt8, TintCouple> TintMap;
-		typedef std::pair<UInt8, TintCouple> TintPair;
+		typedef std::pair<std::uint32_t, const char*> TintCouple;
+		typedef std::map<std::uint8_t, TintCouple> TintMap;
+		typedef std::pair<std::uint8_t, TintCouple> TintPair;
 
 		ModMap modList;
 		PartMap partList;
 
-		UInt32 numHeadParts = 0;
-		BGSHeadPart** headParts = NULL;
-		if (CALL_MEMBER_FN(npc, HasOverlays)()) {
-			numHeadParts = GetNumActorBaseOverlays(npc);
-			headParts = GetActorBaseOverlays(npc);
+		std::uint32_t numHeadParts = 0;
+		RE::BGSHeadPart** headParts = NULL;
+		if (npc->HasOverlays()) {
+			numHeadParts = npc->GetNumBaseOverlays();
+			headParts = npc->GetBaseOverlays();
 		}
 		else {
 			numHeadParts = npc->numHeadParts;
-			headParts = npc->headparts;
+			headParts = npc->headParts;
 		}
-		for (UInt32 i = 0; i < numHeadParts; i++) // Acquire all unique parts
+		for (std::uint32_t i = 0; i < numHeadParts; i++) // Acquire all unique parts
 		{
-			BGSHeadPart* headPart = headParts[i];
+			RE::BGSHeadPart* headPart = headParts[i];
 			if (headPart && !headPart->IsExtraPart()) {
-				ModInfo* modInfo = GetModInfoByFormID(headPart->formID);
+				RE::TESFile* modInfo = GetModInfoByFormID(headPart->formID);
 				if (modInfo) {
-					modList.emplace(modInfo->modIndex, modInfo->name);
+					modList.emplace(std::uint8_t(headPart->formID >> 24), modInfo->GetFilename().data());
 					partList.emplace(i, headPart);
 				}
 			}
 		}
 
 		TintMap tintList;
-		for (UInt32 i = 0; i < player->tintMasks.count; i++)
+		auto* tintArr = player->GetTintList();
+		for (std::uint32_t i = 0; tintArr && i < tintArr->size(); i++)
 		{
-			TintMask* tintMask = NULL;
-			if (player->tintMasks.GetNthItem(i, tintMask))
+			RE::TintMask* tintMask = (*tintArr)[i];
+			if (tintMask)
 			{
-				UInt32 tintColor = ((UInt32)(tintMask->alpha * 255.0) << 24) | tintMask->color.red << 16 | tintMask->color.green << 8 | tintMask->color.blue;
-				tintList.emplace(i, TintCouple(tintColor, tintMask->texture->str.data));
+				std::uint32_t tintColor = ((std::uint32_t)(tintMask->alpha * 255.0) << 24) | tintMask->color.red << 16 | tintMask->color.green << 8 | tintMask->color.blue;
+				tintList.emplace(i, TintCouple(tintColor, tintMask->texture->textureName.c_str()));
 			}
 		}
 
-		UInt8 modCount = modList.size();
-		UInt8 partCount = partList.size();
-		UInt8 tintCount = tintList.size();
+		std::uint8_t modCount = modList.size();
+		std::uint8_t partCount = partList.size();
+		std::uint8_t tintCount = tintList.size();
 
 		currentFile.Write8(modCount);
 		for (auto mIt = modList.begin(); mIt != modList.end(); ++mIt)
 		{
 			currentFile.Write8(mIt->first);
 
-			UInt16 strLen = strlen(mIt->second);
+			std::uint16_t strLen = strlen(mIt->second);
 			currentFile.Write16(strLen);
 			currentFile.WriteBuf(mIt->second, strLen);
 		}
@@ -795,24 +821,24 @@ bool PresetInterface::SaveBinaryPreset(const char* filePath)
 
 		currentFile.WriteFloat(npc->weight);
 
-		if (npc->faceMorph)
+		if (npc->faceData)
 		{
-			currentFile.Write8(TESNPC::FaceMorphs::kNumPresets);
-			for (UInt8 p = 0; p < TESNPC::FaceMorphs::kNumPresets; p++)
-				currentFile.Write8(npc->faceMorph->presets[p]);
+			currentFile.Write8(RE::TESNPC::FaceData::kTotalPresets);
+			for (std::uint8_t p = 0; p < RE::TESNPC::FaceData::kTotalPresets; p++)
+				currentFile.Write8(npc->faceData->parts[p]);
 
-			currentFile.Write8(TESNPC::FaceMorphs::kNumOptions);
-			for (UInt8 o = 0; o < TESNPC::FaceMorphs::kNumOptions; o++)
-				currentFile.WriteFloat(npc->faceMorph->option[o]);
+			currentFile.Write8(RE::TESNPC::FaceData::Morphs::kTotal);
+			for (std::uint8_t o = 0; o < RE::TESNPC::FaceData::Morphs::kTotal; o++)
+				currentFile.WriteFloat(npc->faceData->morphs[o]);
 		}
 		else {
 			currentFile.Write8(0);
 			currentFile.Write8(0);
 		}
 
-		UInt32 hairColor = 0;
-		if (npc->headData && npc->headData->hairColor) {
-			hairColor = npc->headData->hairColor->color.red << 16 | npc->headData->hairColor->color.green << 8 | npc->headData->hairColor->color.blue;
+		std::uint32_t hairColor = 0;
+		if (npc->headRelatedData && npc->headRelatedData->hairColor) {
+			hairColor = npc->headRelatedData->hairColor->color.red << 16 | npc->headRelatedData->hairColor->color.green << 8 | npc->headRelatedData->hairColor->color.blue;
 		}
 		currentFile.Write32(hairColor);
 
@@ -822,14 +848,14 @@ bool PresetInterface::SaveBinaryPreset(const char* filePath)
 			currentFile.Write8(tmIt->first);
 			currentFile.Write32(tmIt->second.first);
 
-			UInt16 strLen = strlen(tmIt->second.second);
+			std::uint16_t strLen = strlen(tmIt->second.second);
 			currentFile.Write16(strLen);
 			currentFile.WriteBuf(tmIt->second.second, strLen);
 		}
 
-		SInt64 offset = currentFile.GetOffset();
-		currentFile.Skip(sizeof(UInt8));
-		UInt8 totalMorphs = 0;
+		std::int64_t offset = currentFile.GetOffset();
+		currentFile.Skip(sizeof(std::uint8_t));
+		std::uint8_t totalMorphs = 0;
 
 		ValueSet* valueSet = g_morphInterface.GetValueMap().GetValueSet(npc);
 		if (valueSet)
@@ -837,7 +863,7 @@ bool PresetInterface::SaveBinaryPreset(const char* filePath)
 			for (auto it = valueSet->begin(); it != valueSet->end(); ++it)
 			{
 				if (it->second != 0.0) {
-					UInt16 strLen = strlen(it->first->c_str());
+					std::uint16_t strLen = strlen(it->first->c_str());
 					currentFile.Write16(strLen);
 					currentFile.WriteBuf(it->first->c_str(), strLen);
 
@@ -847,22 +873,22 @@ bool PresetInterface::SaveBinaryPreset(const char* filePath)
 			}
 		}
 
-		SInt64 jumpBack = currentFile.GetOffset();
+		std::int64_t jumpBack = currentFile.GetOffset();
 		currentFile.SetOffset(offset);
 		currentFile.Write8(totalMorphs);
 
 		currentFile.SetOffset(jumpBack);
 		offset = currentFile.GetOffset();
-		currentFile.Skip(sizeof(UInt8));
-		UInt8 totalTextures = 0;
-		BGSHeadPart* facePart = npc->GetCurrentHeadPartByType(BGSHeadPart::kTypeFace);
+		currentFile.Skip(sizeof(std::uint8_t));
+		std::uint8_t totalTextures = 0;
+		RE::BGSHeadPart* facePart = npc->GetCurrentHeadPartByType(RE::BGSHeadPart::HeadPartType::kFace);
 		if (facePart) {
-			BGSTextureSet* textureSet = GetTextureSetForPart(npc, facePart);
+			RE::BGSTextureSet* textureSet = GetTextureSetForPart(npc, facePart);
 			if (textureSet) {
-				for (UInt8 i = 0; i < BSShaderTextureSet::kNumTextures; i++) {
-					const char* texturePath = textureSet->textureSet.GetTexturePath(i);
+				for (std::uint8_t i = 0; i < RE::BSTextureSet::Texture::kTotal; i++) {
+					const char* texturePath = textureSet->GetTexturePath(static_cast<RE::BSTextureSet::Texture>(i));
 					if (texturePath != NULL) {
-						UInt16 strLen = strlen(texturePath);
+						std::uint16_t strLen = strlen(texturePath);
 						currentFile.Write8(i);
 						currentFile.Write16(strLen);
 						currentFile.WriteBuf(texturePath, strLen);
@@ -881,7 +907,7 @@ bool PresetInterface::SaveBinaryPreset(const char* filePath)
 	}
 	catch (...)
 	{
-		_ERROR("SavePreset: exception during save");
+		SKSE::log::error("SavePreset: exception during save");
 	}
 
 	currentFile.Close();
@@ -898,9 +924,9 @@ PresetData::PresetData()
 bool PresetInterface::LoadJsonPreset(const char* filePath, PresetDataPtr presetData)
 {
 	bool loadError = false;
-	BSResourceNiBinaryStream file(filePath);
-	if (!file.IsValid()) {
-		_ERROR("%s: File %s failed to open.", __FUNCTION__, filePath);
+	RE::BSResourceNiBinaryStream file(filePath);
+	if (!file.good()) {
+		SKSE::log::error("{}: File {} failed to open.", __FUNCTION__, filePath);
 		loadError = true;
 		return loadError;
 	}
@@ -916,7 +942,7 @@ bool PresetInterface::LoadJsonPreset(const char* filePath, PresetDataPtr presetD
 
 	bool parseSuccess = reader.parse(in, root);
 	if (!parseSuccess) {
-		_ERROR("%s: Error occured parsing json for %s.", __FUNCTION__, filePath);
+		SKSE::log::error("{}: Error occured parsing json for {}.", __FUNCTION__, filePath);
 		loadError = true;
 		return loadError;
 	}
@@ -924,23 +950,23 @@ bool PresetInterface::LoadJsonPreset(const char* filePath, PresetDataPtr presetD
 	Json::Value defaultValue;
 	Json::Value version = root["version"];
 	if (version.empty()) {
-		_ERROR("%s: No version header.", __FUNCTION__);
+		SKSE::log::error("{}: No version header.", __FUNCTION__);
 		loadError = true;
 		return loadError;
 	}
 
-	UInt32 signature = version["signature"].asUInt();
+	std::uint32_t signature = version["signature"].asUInt();
 	if (signature != PresetHeader::kSignature)
 	{
-		_ERROR("%s: invalid file signature (found %08X expected %08X)", __FUNCTION__, signature, (UInt32)PresetHeader::kSignature);
+		SKSE::log::error("{}: invalid file signature (found {:08X} expected {:08X})", __FUNCTION__, signature, (std::uint32_t)PresetHeader::kSignature);
 		loadError = true;
 		return loadError;
 	}
 
-	UInt32 formatVersion = version["formatVersion"].asUInt();
+	std::uint32_t formatVersion = version["formatVersion"].asUInt();
 	if (formatVersion <= PresetHeader::kVersion_Invalid)
 	{
-		_ERROR("%s: version invalid (%08X)", __FUNCTION__, formatVersion);
+		SKSE::log::error("{}: version invalid ({:08X})", __FUNCTION__, formatVersion);
 		loadError = true;
 		return loadError;
 	}
@@ -948,17 +974,17 @@ bool PresetInterface::LoadJsonPreset(const char* filePath, PresetDataPtr presetD
 	Json::Value mods = root["mods"];
 	Json::Value modNames = root["modNames"];
 	if (mods.empty() && modNames.empty()) {
-		_ERROR("%s: No mods header.", __FUNCTION__);
+		SKSE::log::error("{}: No mods header.", __FUNCTION__);
 		loadError = true;
 		return loadError;
 	}
 
-	DataHandler* dataHandler = DataHandler::GetSingleton();
+	RE::TESDataHandler* dataHandler = RE::TESDataHandler::GetSingleton();
 
-	std::map<UInt32, std::string> modList;
+	std::map<std::uint32_t, std::string> modList;
 	if (mods.type() == Json::arrayValue) {
 		for (auto& mod : mods) {
-			UInt32 modIndex = mod["index"].asUInt();
+			std::uint32_t modIndex = mod["index"].asUInt();
 			std::string modName = mod["name"].asString();
 
 			modList.emplace(modIndex, modName);
@@ -977,37 +1003,37 @@ bool PresetInterface::LoadJsonPreset(const char* filePath, PresetDataPtr presetD
 	if (!headParts.empty() && headParts.type() == Json::arrayValue) {
 		for (auto& part : headParts) {
 			if (part.isMember("formIdentifier")) {
-				TESForm* headPartForm = GetFormFromIdentifier(part["formIdentifier"].asString());
+				RE::TESForm* headPartForm = GetFormFromIdentifier(part["formIdentifier"].asString());
 				if (headPartForm) {
-					BGSHeadPart* headPart = DYNAMIC_CAST(headPartForm, TESForm, BGSHeadPart);
+					RE::BGSHeadPart* headPart = headPartForm ? headPartForm->As<RE::BGSHeadPart>() : nullptr;
 					if (headPart) {
 						presetData->headParts.push_back(headPart);
 					}
 				}
 			}
 			else if (part.isMember("formId")) {
-				UInt8 partType = part["type"].asUInt();
-				UInt32 formId = part["formId"].asUInt();
+				std::uint8_t partType = part["type"].asUInt();
+				std::uint32_t formId = part["formId"].asUInt();
 
-				UInt32 modIndex = formId >> 24;
+				std::uint32_t modIndex = formId >> 24;
 				auto it = modList.find(modIndex != 0xFE ? modIndex : (formId >> 12));
 				if (it != modList.end()) {
-					const ModInfo* modInfo = dataHandler->LookupModByName(it->second.c_str());
-					if (modInfo && modInfo->IsActive()) {
+					const RE::TESFile* modInfo = dataHandler->LookupModByName(it->second.c_str());
+					if (modInfo && BSFileUtil::IsActive(modInfo)) {
 						formId = modInfo->GetFormID(formId);
-						TESForm* headPartForm = LookupFormByID(formId);
+						RE::TESForm* headPartForm = RE::TESForm::LookupByID(formId);
 						if (headPartForm) {
-							BGSHeadPart* headPart = DYNAMIC_CAST(headPartForm, TESForm, BGSHeadPart);
+							RE::BGSHeadPart* headPart = headPartForm ? headPartForm->As<RE::BGSHeadPart>() : nullptr;
 							if (headPart) {
 								presetData->headParts.push_back(headPart);
 							}
 						}
 						else {
-							_WARNING("Could not resolve part %08X", formId);
+							SKSE::log::warn("Could not resolve part {:08X}", formId);
 						}
 					}
 					else {
-						_WARNING("Could not load part type %d from %s; mod not found.", partType, it->second.c_str());
+						SKSE::log::warn("Could not load part type {} from {}; mod not found.", partType, it->second.c_str());
 					}
 				}
 			}
@@ -1019,10 +1045,9 @@ bool PresetInterface::LoadJsonPreset(const char* filePath, PresetDataPtr presetD
 		presetData->weight = headData["weight"].asFloat();
 		presetData->hairColor = headData["hairColor"].asUInt();
 		if (headData.isMember("headTexture")) {
-			presetData->headTexture = DYNAMIC_CAST(GetFormFromIdentifier(headData["headTexture"].asString()), TESForm, BGSTextureSet);
+			presetData->headTexture = GetFormFromIdentifier(headData["headTexture"].asString()) ? GetFormFromIdentifier(headData["headTexture"].asString())->As<RE::BGSTextureSet>() : nullptr;
 		}
 	}
-
 
 	Json::Value tintInfo = root["tintInfo"];
 	if (!tintInfo.empty() && tintInfo.type() == Json::arrayValue) {
@@ -1051,7 +1076,7 @@ bool PresetInterface::LoadJsonPreset(const char* filePath, PresetDataPtr presetD
 		if (!defaultMorphs.empty()) {
 			Json::Value presets = defaultMorphs["presets"];
 			for (auto& preset : presets) {
-				UInt32 presetValue = preset.asUInt();
+				std::uint32_t presetValue = preset.asUInt();
 				if (presetValue == 255)
 					presetValue = -1;
 
@@ -1073,7 +1098,7 @@ bool PresetInterface::LoadJsonPreset(const char* filePath, PresetDataPtr presetD
 			}
 		}
 
-		SInt32 multiplier = -1;
+		std::int32_t multiplier = -1;
 
 		Json::Value sculptMult = morphs["sculptDivisor"];
 		if (!sculptMult.empty())
@@ -1088,8 +1113,8 @@ bool PresetInterface::LoadJsonPreset(const char* filePath, PresetDataPtr presetD
 
 				auto sculptedData = std::make_shared<MappedSculptData>();
 				for (auto& morphData : data) {
-					UInt16 index = morphData[0].asUInt();
-					NiPoint3 pt;
+					std::uint16_t index = morphData[0].asUInt();
+					RE::NiPoint3 pt;
 
 					if (multiplier > 0) {
 						pt.x = (float)morphData[1].asInt() / (float)multiplier;
@@ -1114,11 +1139,11 @@ bool PresetInterface::LoadJsonPreset(const char* filePath, PresetDataPtr presetD
 	if (!transforms.empty()) {
 		for (auto& xForm : transforms) {
 			bool isFirstPerson = xForm["firstPerson"].asBool();
-			BSFixedString nodeName = xForm["node"].asString().c_str();
+			RE::BSFixedString nodeName = xForm["node"].asString().c_str();
 
 			Json::Value keys = xForm["keys"];
 			for (auto& key : keys) {
-				BSFixedString keyName = key["name"].asString().c_str();
+				RE::BSFixedString keyName = key["name"].asString().c_str();
 
 				Json::Value values = key["values"];
 				for (auto& jvalue : values) {
@@ -1150,7 +1175,7 @@ bool PresetInterface::LoadJsonPreset(const char* filePath, PresetDataPtr presetD
 	Json::Value overrides = root["overrides"];
 	if (!overrides.empty()) {
 		for (auto& ovr : overrides) {
-			BSFixedString node = ovr["node"].asString().c_str();
+			RE::BSFixedString node = ovr["node"].asString().c_str();
 			Json::Value values = ovr["values"];
 			for (auto& jvalue : values) {
 				OverrideVariant value;
@@ -1180,7 +1205,7 @@ bool PresetInterface::LoadJsonPreset(const char* filePath, PresetDataPtr presetD
 	if (!skinOverrides.empty()) {
 		for (auto& skinData : skinOverrides) {
 			bool isFirstPerson = skinData["firstPerson"].asBool();
-			UInt32 slotMask = skinData["slotMask"].asUInt();
+			std::uint32_t slotMask = skinData["slotMask"].asUInt();
 
 			Json::Value values = skinData["values"];
 			for (auto& jvalue : values) {
@@ -1211,7 +1236,7 @@ bool PresetInterface::LoadJsonPreset(const char* filePath, PresetDataPtr presetD
 	Json::Value bodyMorphs = root["bodyMorphs"];
 	if (!bodyMorphs.empty()) {
 		for (auto& bm : bodyMorphs) {
-			BSFixedString name = bm["name"].asString().c_str();
+			RE::BSFixedString name = bm["name"].asString().c_str();
 
 			// Legacy version
 			Json::Value keyless = bm["value"];
@@ -1234,8 +1259,8 @@ bool PresetInterface::LoadJsonPreset(const char* filePath, PresetDataPtr presetD
 					SKEEFixedString ext(strKey.substr(strKey.find_last_of(".") + 1).c_str());
 					if (ext == SKEEFixedString("esp") || ext == SKEEFixedString("esm") || ext == SKEEFixedString("esl"))
 					{
-						const ModInfo* modInfo = dataHandler->LookupModByName(key.c_str());
-						if (!modInfo || !modInfo->IsActive())
+						const RE::TESFile* modInfo = dataHandler->LookupModByName(key.c_str());
+						if (!modInfo || !BSFileUtil::IsActive(modInfo))
 							continue;
 					}
 
@@ -1248,13 +1273,13 @@ bool PresetInterface::LoadJsonPreset(const char* filePath, PresetDataPtr presetD
 	return loadError;
 }
 
-bool PresetInterface::SavePreset(const char* filePath, const char* tintPath, Actor* actor)
+bool PresetInterface::SavePreset(const char* filePath, const char* tintPath, RE::Actor* actor)
 {
-	if (actor->formType != Character::kTypeID) {
+	if (actor->IsNot(RE::FormType::ActorCharacter)) {
 		return false;
 	}
 
-	TESNPC* npc = DYNAMIC_CAST(actor->baseForm, TESForm, TESNPC);
+	RE::TESNPC* npc = actor->GetBaseObject() ? actor->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 	if (!npc) {
 		return false;
 	}
@@ -1270,20 +1295,20 @@ bool PresetInterface::SavePreset(const char* filePath, const char* tintPath, Act
 			auto dir = path.substr(0, idx + 1);
 			auto file = path.substr(idx + 1);
 			
-			g_task->AddTask(new SKSETaskExportTintMask(dir.c_str(), file.c_str()));
+			SKEE_AddTask(SKSE::GetTaskInterface(), new SKSETaskExportTintMask(dir.c_str(), file.c_str()));
 		}
 	}
 
 	return false;
 }
 
-bool PresetInterface::LoadPreset(const char* filePath, const char* tintPath, Actor* actor, ApplyTypes applyTypes)
+bool PresetInterface::LoadPreset(const char* filePath, const char* tintPath, RE::Actor* actor, ApplyTypes applyTypes)
 {
-	if (actor->formType != Character::kTypeID) {
+	if (actor->IsNot(RE::FormType::ActorCharacter)) {
 		return false;
 	}
 
-	TESNPC* npc = DYNAMIC_CAST(actor->baseForm, TESForm, TESNPC);
+	RE::TESNPC* npc = actor->GetBaseObject() ? actor->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 	if (!npc) {
 		return false;
 	}
@@ -1308,16 +1333,16 @@ bool PresetInterface::LoadPreset(const char* filePath, const char* tintPath, Act
 	AssignMappedPreset(npc, presetData);
 	ApplyPresetData(actor, presetData, true, applyTypes);
 
-	CALL_MEMBER_FN(actor, QueueNiNodeUpdate)(true);
+	actor->DoReset3D(true);
 	return true;
 }
 
 bool PresetInterface::LoadBinaryPreset(const char* filePath, PresetDataPtr presetData)
 {
 	bool loadError = false;
-	BSResourceNiBinaryStream file(filePath);
-	if (!file.IsValid()) {
-		_ERROR("%s: File %s failed to open.", __FUNCTION__, filePath);
+	RE::BSResourceNiBinaryStream file(filePath);
+	if (!file.good()) {
+		SKSE::log::error("{}: File {} failed to open.", __FUNCTION__, filePath);
 		loadError = true;
 		return loadError;
 	}
@@ -1325,48 +1350,48 @@ bool PresetInterface::LoadBinaryPreset(const char* filePath, PresetDataPtr prese
 	try
 	{
 		PresetHeader header;
-		file.Read(&header, sizeof(header));
+		file.get(header);
 
 		if (header.signature != PresetHeader::kSignature)
 		{
-			_ERROR("%s: invalid file signature (found %08X expected %08X)", __FUNCTION__, header.signature, (UInt32)PresetHeader::kSignature);
+			SKSE::log::error("{}: invalid file signature (found {:08X} expected {:08X})", __FUNCTION__, header.signature, (std::uint32_t)PresetHeader::kSignature);
 			loadError = true;
 			goto done;
 		}
 
 		if (header.formatVersion <= PresetHeader::kVersion_Invalid)
 		{
-			_ERROR("%s: version invalid (%08X)", __FUNCTION__, header.formatVersion);
+			SKSE::log::error("{}: version invalid ({:08X})", __FUNCTION__, header.formatVersion);
 			loadError = true;
 			goto done;
 		}
 
 		if (header.formatVersion < 2)
 		{
-			_ERROR("%s: version too old (found %08X current %08X)", __FUNCTION__, header.formatVersion, (UInt32)PresetHeader::kVersion);
+			SKSE::log::error("{}: version too old (found {:08X} current {:08X})", __FUNCTION__, header.formatVersion, (std::uint32_t)PresetHeader::kVersion);
 			goto done;
 		}
 
-		DataHandler* dataHandler = DataHandler::GetSingleton();
+		RE::TESDataHandler* dataHandler = RE::TESDataHandler::GetSingleton();
 
-		typedef std::map<UInt8, std::string> ModMap;
-		typedef std::pair<UInt8, std::string> ModPair;
+		typedef std::map<std::uint8_t, std::string> ModMap;
+		typedef std::pair<std::uint8_t, std::string> ModPair;
 
 		ModMap modList;
-		UInt8 modCount = 0;
-		file.Read(&modCount, sizeof(modCount));
+		std::uint8_t modCount = 0;
+		file.get(modCount);
 
-		char textBuffer[MAX_PATH];
-		for (UInt8 i = 0; i < modCount; i++)
+		char textBuffer[REX::W32::MAX_PATH];
+		for (std::uint8_t i = 0; i < modCount; i++)
 		{
-			UInt8 modIndex;
-			file.Read(&modIndex, sizeof(modIndex));
+			std::uint8_t modIndex;
+			file.get(modIndex);
 
-			UInt16 strLen = 0;
-			file.Read(&strLen, sizeof(strLen));
+			std::uint16_t strLen = 0;
+			file.get(strLen);
 
-			memset(textBuffer, 0, MAX_PATH);
-			file.Read(textBuffer, strLen);
+			memset(textBuffer, 0, REX::W32::MAX_PATH);
+			file.read(textBuffer, strLen);
 
 			std::string modName(textBuffer);
 
@@ -1374,52 +1399,53 @@ bool PresetInterface::LoadBinaryPreset(const char* filePath, PresetDataPtr prese
 			presetData->modList.push_back(modName);
 		}
 
-		UInt8 partCount = 0;
-		file.Read(&partCount, sizeof(partCount));
+		std::uint8_t partCount = 0;
+		file.get(partCount);
 
-		for (UInt8 i = 0; i < partCount; i++)
+		for (std::uint8_t i = 0; i < partCount; i++)
 		{
-			UInt8 partType = 0;
-			file.Read(&partType, sizeof(partType));
+			std::uint8_t partType = 0;
+			file.get(partType);
 
-			UInt32 formId = 0;
-			file.Read(&formId, sizeof(formId));
+			std::uint32_t formId = 0;
+			file.get(formId);
 
-			UInt32 modIndex = formId >> 24;
+			std::uint32_t modIndex = formId >> 24;
 			auto it = modList.find(modIndex != 0xFE ? modIndex : (formId >> 12));
 			if (it != modList.end()) {
-				const ModInfo* modInfo = dataHandler->LookupModByName(it->second.c_str());
-				if (modInfo && modInfo->IsActive()) {
+				const RE::TESFile* modInfo = dataHandler->LookupModByName(it->second.c_str());
+				if (modInfo && BSFileUtil::IsActive(modInfo)) {
 					formId = modInfo->GetFormID(formId);
-					TESForm* headPartForm = LookupFormByID(formId);
+					RE::TESForm* headPartForm = RE::TESForm::LookupByID(formId);
 					if (headPartForm) {
-						BGSHeadPart* headPart = DYNAMIC_CAST(headPartForm, TESForm, BGSHeadPart);
+						RE::BGSHeadPart* headPart = headPartForm ? headPartForm->As<RE::BGSHeadPart>() : nullptr;
 						if (headPart) {
 							presetData->headParts.push_back(headPart);
 						}
 					}
 					else {
-						_WARNING("Could not resolve part %08X", formId);
+						SKSE::log::warn("Could not resolve part {:08X}", formId);
 					}
 				}
 				else {
-					_WARNING("Could not load part type %d from %s; mod not found.", partType, it->second.c_str());
+					SKSE::log::warn("Could not load part type {} from {}; mod not found.", partType, it->second.c_str());
 				}
 			}
 		}
 
 		float weight = 0.0;
-		file.Read(&weight, sizeof(weight));
+		file.get(weight);
 
 		presetData->weight = weight;
 
-		UInt8 presetCount = 0;
-		file.Read(&presetCount, sizeof(presetCount));
+		std::uint8_t presetCount = 0;
+		file.get(presetCount);
 
-		for (UInt8 i = 0; i < presetCount; i++)
+		for (std::uint8_t i = 0; i < presetCount; i++)
 		{
-			SInt32 preset = 0;
-			file.Read(&preset, sizeof(UInt8));
+			std::uint8_t presetByte = 0;
+			file.get(presetByte);
+			std::int32_t preset = presetByte;
 
 			if (preset == 255)
 				preset = -1;
@@ -1427,40 +1453,40 @@ bool PresetInterface::LoadBinaryPreset(const char* filePath, PresetDataPtr prese
 			presetData->presets.push_back(preset);
 		}
 
-		UInt8 optionCount = 0;
-		file.Read(&optionCount, sizeof(optionCount));
+		std::uint8_t optionCount = 0;
+		file.get(optionCount);
 
-		for (UInt8 i = 0; i < optionCount; i++)
+		for (std::uint8_t i = 0; i < optionCount; i++)
 		{
 			float option = 0.0;
-			file.Read(&option, sizeof(option));
+			file.get(option);
 
 			presetData->morphs.push_back(option);
 		}
 
-		UInt32 hairColor = 0;
-		file.Read(&hairColor, sizeof(hairColor));
+		std::uint32_t hairColor = 0;
+		file.get(hairColor);
 
 		presetData->hairColor = hairColor;
 
-		UInt8 tintCount = 0;
-		file.Read(&tintCount, sizeof(tintCount));
+		std::uint8_t tintCount = 0;
+		file.get(tintCount);
 
-		for (UInt8 i = 0; i < tintCount; i++)
+		for (std::uint8_t i = 0; i < tintCount; i++)
 		{
-			UInt8 tintIndex = 0;
-			file.Read(&tintIndex, sizeof(tintIndex));
+			std::uint8_t tintIndex = 0;
+			file.get(tintIndex);
 
-			UInt32 tintColor = 0;
-			file.Read(&tintColor, sizeof(tintColor));
+			std::uint32_t tintColor = 0;
+			file.get(tintColor);
 
-			UInt16 strLen = 0;
-			file.Read(&strLen, sizeof(strLen));
+			std::uint16_t strLen = 0;
+			file.get(strLen);
 
-			memset(textBuffer, 0, MAX_PATH);
-			file.Read(textBuffer, strLen);
+			memset(textBuffer, 0, REX::W32::MAX_PATH);
+			file.read(textBuffer, strLen);
 
-			BSFixedString tintPath = textBuffer;
+			RE::BSFixedString tintPath = textBuffer;
 
 			PresetData::Tint tint;
 			tint.color = tintColor;
@@ -1469,19 +1495,19 @@ bool PresetInterface::LoadBinaryPreset(const char* filePath, PresetDataPtr prese
 			presetData->tints.push_back(tint);
 		}
 
-		UInt8 morphCount = 0;
-		file.Read(&morphCount, sizeof(morphCount));
+		std::uint8_t morphCount = 0;
+		file.get(morphCount);
 
-		for (UInt8 i = 0; i < morphCount; i++)
+		for (std::uint8_t i = 0; i < morphCount; i++)
 		{
-			UInt16 strLen = 0;
-			file.Read(&strLen, sizeof(strLen));
+			std::uint16_t strLen = 0;
+			file.get(strLen);
 
-			memset(textBuffer, 0, MAX_PATH);
-			file.Read(textBuffer, strLen);
+			memset(textBuffer, 0, REX::W32::MAX_PATH);
+			file.read(textBuffer, strLen);
 
 			float morphValue = 0.0;
-			file.Read(&morphValue, sizeof(morphValue));
+			file.get(morphValue);
 
 			PresetData::Morph morph;
 			morph.name = textBuffer;
@@ -1492,21 +1518,21 @@ bool PresetInterface::LoadBinaryPreset(const char* filePath, PresetDataPtr prese
 
 		if (header.formatVersion >= 3)
 		{
-			UInt8 textureCount = 0;
-			file.Read(&textureCount, sizeof(textureCount));
+			std::uint8_t textureCount = 0;
+			file.get(textureCount);
 
-			for (UInt8 i = 0; i < textureCount; i++)
+			for (std::uint8_t i = 0; i < textureCount; i++)
 			{
-				UInt8 textureIndex = 0;
-				file.Read(&textureIndex, sizeof(textureIndex));
+				std::uint8_t textureIndex = 0;
+				file.get(textureIndex);
 
-				UInt16 strLen = 0;
-				file.Read(&strLen, sizeof(strLen));
+				std::uint16_t strLen = 0;
+				file.get(strLen);
 
-				memset(textBuffer, 0, MAX_PATH);
-				file.Read(textBuffer, strLen);
+				memset(textBuffer, 0, REX::W32::MAX_PATH);
+				file.read(textBuffer, strLen);
 
-				BSFixedString texturePath(textBuffer);
+				RE::BSFixedString texturePath(textBuffer);
 
 				PresetData::Texture texture;
 				texture.index = textureIndex;
@@ -1518,7 +1544,7 @@ bool PresetInterface::LoadBinaryPreset(const char* filePath, PresetDataPtr prese
 	}
 	catch (...)
 	{
-		_ERROR("%s: exception during load", __FUNCTION__);
+		SKSE::log::error("{}: exception during load", __FUNCTION__);
 		loadError = true;
 	}
 
@@ -1526,25 +1552,25 @@ done:
 	return loadError;
 }
 
-void PresetInterface::ApplyPreset(Actor* actor, TESRace* race, TESNPC* npc, PresetDataPtr presetData, ApplyTypes applyType)
+void PresetInterface::ApplyPreset(RE::Actor* actor, RE::TESRace* race, RE::TESNPC* npc, PresetDataPtr presetData, ApplyTypes applyType)
 {
-	CALL_MEMBER_FN(actor, SetRace)(race, actor == (*g_thePlayer));
+	// race change handled via headRelatedData in CommonLib
 
-	npc->overlayRace = NULL;
+	// overlayRace removed (no CommonLib equivalent)
 	npc->weight = presetData->weight;
 
-	if (!npc->faceMorph)
-		npc->faceMorph = (TESNPC::FaceMorphs*)Heap_Allocate(sizeof(TESNPC::FaceMorphs));
+	if (!npc->faceData)
+		npc->faceData = new RE::TESNPC::FaceData();
 
-	UInt32 i = 0;
+	std::uint32_t i = 0;
 	for (auto& preset : presetData->presets) {
-		npc->faceMorph->presets[i] = preset;
+		npc->faceData->parts[i] = preset;
 		i++;
 	}
 
 	i = 0;
 	for (auto& morph : presetData->morphs) {
-		npc->faceMorph->option[i] = morph;
+		npc->faceData->morphs[i] = morph;
 		i++;
 	}
 
@@ -1561,45 +1587,43 @@ void PresetInterface::ApplyPreset(Actor* actor, TESRace* race, TESNPC* npc, Pres
 		g_morphInterface.SetMorphValue(npc, it.name, it.value);
 
 	// Wipe the HeadPart list and replace it with the default race list
-	UInt8 gender = CALL_MEMBER_FN(npc, GetSex)();
-	TESRace::CharGenData* chargenData = race->chargenData[gender];
-	if (chargenData) {
-		BGSHeadPart** headParts = npc->headparts;
-		tArray<BGSHeadPart*>* headPartList = race->chargenData[gender]->headParts;
-		if (headParts && headPartList) {
-			Heap_Free(headParts);
-			npc->numHeadParts = headPartList->count;
-			headParts = (BGSHeadPart**)Heap_Allocate(npc->numHeadParts * sizeof(BGSHeadPart*));
-			for (UInt32 i = 0; i < headPartList->count; i++)
-				headPartList->GetNthItem(i, headParts[i]);
-			npc->headparts = headParts;
-		}
+	std::uint8_t gender = (npc->GetSex() == RE::SEX::kFemale);
+	RE::BSTArray<RE::BGSHeadPart*>* headPartList = race->faceRelatedData[gender]->headParts;
+	if (headPartList && npc->headParts) {
+		RE::BGSHeadPart** oldHeadParts = npc->headParts;
+		std::int8_t partCount = static_cast<std::int8_t>(headPartList->size());
+		auto* newHeadParts = static_cast<RE::BGSHeadPart**>(RE::malloc(partCount * sizeof(RE::BGSHeadPart*)));
+		for (std::uint32_t i = 0; i < headPartList->size(); i++)
+			newHeadParts[i] = (*headPartList)[i];
+		RE::free(oldHeadParts);
+		npc->numHeadParts = partCount;
+		npc->headParts = newHeadParts;
 	}
 
 	// Force the remaining parts to change to that of the preset
 	for (auto part : presetData->headParts)
-		CALL_MEMBER_FN(npc, ChangeHeadPart)(part);
+		npc->ChangeHeadPart(part);
 
 	//npc->MarkChanged(0x2000800); // Save FaceData and Race
-	npc->MarkChanged(0x800); // Save FaceData
+	npc->AddChange(0x800); // Save FaceData (legacy TESForm::MarkChanged, vfunc 0A)
 
 	// Grab the skin tint and convert it from RGBA to RGB on NPC
 	if (presetData->tints.size() > 0) {
 		PresetData::Tint& tint = presetData->tints.at(0);
 		float alpha = (tint.color >> 24) / 255.0;
-		TintMask tintMask;
+		RE::TintMask tintMask;
 		tintMask.color.red = (tint.color >> 16) & 0xFF;
 		tintMask.color.green = (tint.color >> 8) & 0xFF;
 		tintMask.color.blue = tint.color & 0xFF;
 		tintMask.alpha = alpha;
-		tintMask.tintType = TintMask::kMaskType_SkinTone;
+		tintMask.type.set(RE::TintMask::Type::kSkinTone);
 
-		NiColorA colorResult;
-		CALL_MEMBER_FN(npc, SetSkinFromTint)(&colorResult, &tintMask, true);
+		RE::NiColorA colorResult;
+		npc->SetSkinFromTint(&colorResult, &tintMask, true);
 	}
 
 	// Queue a node update
-	CALL_MEMBER_FN(actor, QueueNiNodeUpdate)(true);
+	actor->DoReset3D(true);
 
 	if ((applyType & ApplyTypes::kPresetApplyOverrides) == ApplyTypes::kPresetApplyOverrides) {
 		g_overrideInterface.Impl_RemoveAllReferenceNodeOverrides(actor);
@@ -1618,7 +1642,7 @@ void PresetInterface::ApplyPreset(Actor* actor, TESRace* race, TESNPC* npc, Pres
 
 	if ((applyType & ApplyTypes::kPresetApplySkinOverrides) == ApplyTypes::kPresetApplySkinOverrides)
 	{
-		for (UInt32 i = 0; i <= 1; i++) {
+		for (std::uint32_t i = 0; i <= 1; i++) {
 			for (auto& slot : presetData->skinData[i]) {
 				for (auto& value : slot.second) {
 					g_overrideInterface.Impl_AddSkinOverride(actor, gender == 1 ? true : false, i == 1 ? true : false, slot.first, value);
@@ -1629,7 +1653,7 @@ void PresetInterface::ApplyPreset(Actor* actor, TESRace* race, TESNPC* npc, Pres
 
 	if ((applyType & ApplyTypes::kPresetApplyTransforms) == ApplyTypes::kPresetApplyTransforms) {
 		g_transformInterface.Impl_RemoveAllReferenceTransforms(actor);
-		for (UInt32 i = 0; i <= 1; i++) {
+		for (std::uint32_t i = 0; i <= 1; i++) {
 			for (auto& xForms : presetData->transformData[i]) {
 				for (auto& key : xForms.second) {
 					for (auto& value : key.second) {

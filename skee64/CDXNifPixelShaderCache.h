@@ -3,6 +3,8 @@
 #include "CDXPixelShaderCache.h"
 #include "CDXShaderFactory.h"
 
+
+
 class CDXTexturePixelShaderFile : public CDXShaderFile
 {
 public:
@@ -24,5 +26,5 @@ class CDXNifPixelShaderCache : public CDXPixelShaderCache
 public:
 	explicit CDXNifPixelShaderCache(CDXShaderFactory * factory) : CDXPixelShaderCache(factory) { }
 
-	virtual Microsoft::WRL::ComPtr<ID3D11PixelShader> GetShader(CDXD3DDevice* device, const std::string & name) override;
+	virtual REX::W32::ComPtr<REX::W32::ID3D11PixelShader> GetShader(CDXD3DDevice* device, const std::string & name) override;
 };

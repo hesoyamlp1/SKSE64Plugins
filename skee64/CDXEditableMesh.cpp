@@ -1,6 +1,8 @@
 #include "CDXEditableMesh.h"
+#include <algorithm>
 #include "CDXMaterial.h"
 #include "CDXShader.h"
+#include <cstdint>
 
 using namespace DirectX;
 
@@ -58,8 +60,8 @@ void CDXEditableMesh::BuildAdjacency()
 	if (!pIndices)
 		return;
 
-	for (UInt16 i = 0; i < GetVertexCount(); i++) {
-		for (UInt32 f = 0; f < GetFaceCount(); f++) {
+	for (std::uint16_t i = 0; i < GetVertexCount(); i++) {
+		for (std::uint32_t f = 0; f < GetFaceCount(); f++) {
 			CDXMeshFace * face = (CDXMeshFace *)&pIndices[f * 3];
 			if (i == face->v1 || i == face->v2 || i == face->v3)
 				m_adjacency[i].push_back(*face);
@@ -76,16 +78,16 @@ void CDXEditableMesh::BuildFacemap()
 		return;
 
 	CDXEdgeMap edges;
-	for (UInt32 f = 0; f < GetFaceCount(); f++)
+	for (std::uint32_t f = 0; f < GetFaceCount(); f++)
 	{
 		CDXMeshFace * face = (CDXMeshFace *)&pIndices[f * 3];
-		auto it = edges.emplace(CDXMeshEdge(min(face->v1, face->v2), max(face->v1, face->v2)), 1);
+		auto it = edges.emplace(CDXMeshEdge(std::min(face->v1, face->v2), std::max(face->v1, face->v2)), 1);
 		if (it.second == false)
 			it.first->second++;
-		it = edges.emplace(CDXMeshEdge(min(face->v2, face->v3), max(face->v2, face->v3)), 1);
+		it = edges.emplace(CDXMeshEdge(std::min(face->v2, face->v3), std::max(face->v2, face->v3)), 1);
 		if (it.second == false)
 			it.first->second++;
-		it = edges.emplace(CDXMeshEdge(min(face->v3, face->v1), max(face->v3, face->v1)), 1);
+		it = edges.emplace(CDXMeshEdge(std::min(face->v3, face->v1), std::max(face->v3, face->v1)), 1);
 		if (it.second == false)
 			it.first->second++;
 	}
@@ -105,7 +107,7 @@ void CDXEditableMesh::BuildNormals()
 	if (!pVertices)
 		return;
 
-	for (UInt16 i = 0; i < GetVertexCount(); i++) {
+	for (std::uint16_t i = 0; i < GetVertexCount(); i++) {
 		 XMStoreFloat3(&pVertices[i].Normal, CalculateVertexNormal(i));
 	}
 	UnlockVertices(LockMode::WRITE);

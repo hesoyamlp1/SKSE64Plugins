@@ -1,3 +1,5 @@
+#include <cassert>
+
 /*
 Original code by Lee Thomason (www.grinninglizard.com)
 
@@ -13,7 +15,6 @@ redistribute it freely, subject to the following restrictions:
 not claim that you wrote the original software. If you use this
 software in a product, an acknowledgment in the product documentation
 would be appreciated but is not required.
-
 
 2. Altered source versions must be plainly marked as such, and
 must not be misrepresented as being the original software.
@@ -75,7 +76,6 @@ distribution.
 #   define TINYXML2_LIB
 #endif
 
-
 #if defined(DEBUG)
 #   if defined(_MSC_VER)
 #       define TIXMLASSERT( x )           if ( !(x)) { __debugbreak(); } //if ( !(x)) WinDebugBreak()
@@ -89,7 +89,6 @@ distribution.
 #   else
 #       define TIXMLASSERT( x )           {}
 #endif
-
 
 #if defined(_MSC_VER) && (_MSC_VER >= 1400 ) && (!defined WINCE)
 // Microsoft visual studio, version 2005 and higher.
@@ -200,7 +199,6 @@ private:
     char*   _end;
 };
 
-
 /*
 	A dynamic array of Plain Old Data. Doesn't support constructors, etc.
 	Has a small initial memory pool, so that low or no usage will not
@@ -302,7 +300,6 @@ private:
     int _size;			// number objects in use
 };
 
-
 /*
 	Parent virtual class of a pool for fast allocation
 	and deallocation of objects.
@@ -318,7 +315,6 @@ public:
     virtual void Free( void* ) = 0;
     virtual void SetTracked() = 0;
 };
-
 
 /*
 	Template child class to create pools of the correct type.
@@ -418,8 +414,6 @@ private:
     int _nUntracked;
 };
 
-
-
 /**
 	Implements the interface to the "Visitor pattern" (see the Accept() method.)
 	If you call the Accept() method, it requires being passed a XMLVisitor
@@ -479,7 +473,6 @@ public:
         return true;
     }
 };
-
 
 /*
 	Utility functionality.
@@ -558,7 +551,6 @@ public:
     static bool	ToFloat( const char* str, float* value );
     static bool ToDouble( const char* str, double* value );
 };
-
 
 /** XMLNode is a base class for every object that is in the
 	XML Document Object Model (DOM), except XMLAttributes.
@@ -849,7 +841,6 @@ private:
     void Unlink( XMLNode* child );
 };
 
-
 /** XML text.
 
 	Note that a text node can have child element nodes, for example:
@@ -899,7 +890,6 @@ private:
     bool _isCData;
 };
 
-
 /** An XML Comment. */
 class TINYXML2_LIB XMLComment : public XMLNode
 {
@@ -926,7 +916,6 @@ protected:
 
 private:
 };
-
 
 /** In correct XML the declaration is the first entry in the file.
 	@verbatim
@@ -963,7 +952,6 @@ protected:
     XMLDeclaration& operator=( const XMLDeclaration& );	// not supported
 };
 
-
 /** Any tag that TinyXML-2 doesn't recognize is saved as an
 	unknown. It is a tag of text, but should not be modified.
 	It will be written back to the XML, unchanged, when the file
@@ -995,7 +983,6 @@ protected:
     XMLUnknown& operator=( const XMLUnknown& );	// not supported
 };
 
-
 enum XMLError {
     XML_NO_ERROR = 0,
     XML_SUCCESS = 0,
@@ -1022,7 +1009,6 @@ enum XMLError {
     XML_CAN_NOT_CONVERT_TEXT,
     XML_NO_TEXT_NODE
 };
-
 
 /** An attribute is a name-value pair. Elements have an arbitrary
 	number of attributes, each with a unique name.
@@ -1123,7 +1109,6 @@ private:
     XMLAttribute*   _next;
     MemPool*        _memPool;
 };
-
 
 /** The element is a container class. It has a value, the element name,
 	and can contain other elements, text, comments, and unknowns.
@@ -1489,12 +1474,10 @@ private:
     XMLAttribute* _rootAttribute;
 };
 
-
 enum Whitespace {
     PRESERVE_WHITESPACE,
     COLLAPSE_WHITESPACE
 };
-
 
 /** A Document binds together all the functionality.
 	It can be saved, loaded, and printed to the screen.
@@ -1518,7 +1501,7 @@ public:
 
     /**
     	Parse an XML file from a character string.
-    	Returns XML_NO_ERROR (0) on success, or
+    	Returns XML_NOSKSE::log::error(0) on success, or
     	an errorID.
 
     	You may optionally pass in the 'nBytes', which is
@@ -1530,7 +1513,7 @@ public:
 
     /**
     	Load an XML file from disk.
-    	Returns XML_NO_ERROR (0) on success, or
+    	Returns XML_NOSKSE::log::error(0) on success, or
     	an errorID.
     */
     XMLError LoadFile( const char* filename );
@@ -1539,14 +1522,14 @@ public:
     	Load an XML file from disk. You are responsible
     	for providing and closing the FILE*.
 
-    	Returns XML_NO_ERROR (0) on success, or
+    	Returns XML_NOSKSE::log::error(0) on success, or
     	an errorID.
     */
     XMLError LoadFile( FILE* );
 
     /**
     	Save the XML file to disk.
-    	Returns XML_NO_ERROR (0) on success, or
+    	Returns XML_NOSKSE::log::error(0) on success, or
     	an errorID.
     */
     XMLError SaveFile( const char* filename, bool compact = false );
@@ -1555,7 +1538,7 @@ public:
     	Save the XML file to disk. You are responsible
     	for providing and closing the FILE*.
 
-    	Returns XML_NO_ERROR (0) on success, or
+    	Returns XML_NOSKSE::log::error(0) on success, or
     	an errorID.
     */
     XMLError SaveFile( FILE* fp, bool compact = false );
@@ -1703,7 +1686,6 @@ private:
     MemPoolT< sizeof(XMLComment) >	 _commentPool;
 };
 
-
 /**
 	A XMLHandle is a class that wraps a node pointer with null checks; this is
 	an incredibly useful thing. Note that XMLHandle is not part of the TinyXML-2
@@ -1838,7 +1820,6 @@ private:
     XMLNode* _node;
 };
 
-
 /**
 	A variant of the XMLHandle class for working with const XMLNodes and Documents. It is the
 	same in all regards, except for the 'const' qualifiers. See XMLHandle for API.
@@ -1886,7 +1867,6 @@ public:
         return XMLConstHandle( _node ? _node->NextSiblingElement( _value ) : 0 );
     }
 
-
     const XMLNode* ToNode() const				{
         return _node;
     }
@@ -1906,7 +1886,6 @@ public:
 private:
     const XMLNode* _node;
 };
-
 
 /**
 	Printing functionality. The XMLPrinter gives you more
@@ -2068,7 +2047,6 @@ private:
     DynArray< char, 20 > _accumulator;
 #endif
 };
-
 
 }	// tinyxml2
 

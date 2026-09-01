@@ -1,79 +1,76 @@
 #include <vector>
+#include "SKEETasks.h"
 
 #include "ItemDataInterface.h"
 
-#include "skse64/PluginAPI.h"
-#include "skse64/ScaleformMovie.h"
-
-#include "skse64/GameForms.h"
-#include "skse64/GameRTTI.h"
-#include "skse64/GameReferences.h"
-#include "skse64/GameExtraData.h"
+#include "RE/G/GFxValue.h"
+#include "RE/G/GFxMovieView.h"
+#include "RE/I/InventoryChanges.h"
 
 #include "TintMaskInterface.h"
 #include "ScaleformFunctions.h"
 #include "ScaleformUtils.h"
+#include <cstdint>
+#include <cassert>
 
-extern SKSETaskInterface	* g_task;
+extern const SKSE::TaskInterface* g_task;
 extern ItemDataInterface	g_itemDataInterface;
 extern TintMaskInterface	g_tintMaskInterface;
 extern DyeMap			g_dyeMap;
 
-class DyeableItemCollector
+class DyeableItemCollector : public RE::InventoryChanges::IItemChangeVisitor
 {
 public:
 	typedef std::vector<IItemDataInterface::Identifier> FoundItems;
 
 	DyeableItemCollector() {}
 
-	bool Accept(InventoryEntryData* pEntryData)
+	virtual RE::BSContainer::ForEachResult Visit(RE::InventoryEntryData* pEntryData) override
 	{
 		if (!pEntryData)
-			return true;
+			return RE::BSContainer::ForEachResult::kContinue;
 
 		if (pEntryData->countDelta < 1)
-			return true;
+			return RE::BSContainer::ForEachResult::kContinue;
 
-		ExtendDataList* pExtendList = pEntryData->extendDataList;
+		RE::BSSimpleList<RE::ExtraDataList*>* pExtendList = pEntryData->extraLists;
 		if (!pExtendList)
-			return true;
+			return RE::BSContainer::ForEachResult::kContinue;
 
-		SInt32 n = 0;
-		BaseExtraList* pExtraDataList = pExtendList->GetNthItem(n);
-		while (pExtraDataList)
+		for (RE::ExtraDataList* pExtraDataList : *pExtendList)
 		{
+			if (!pExtraDataList)
+				continue;
+
 			// Only armor right now
-			if (TESObjectARMO * armor = DYNAMIC_CAST(pEntryData->type, TESForm, TESObjectARMO)) {
+			if (RE::TESObjectARMO* armor = pEntryData->object ? pEntryData->object->As<RE::TESObjectARMO>() : nullptr) {
 				IItemDataInterface::Identifier itemData;
-				if (ExtraRank * extraRank = static_cast<ExtraRank*>(pExtraDataList->GetByType(kExtraData_Rank)))
+				if (RE::ExtraRank* extraRank = static_cast<RE::ExtraRank*>(pExtraDataList->GetByType(RE::ExtraDataType::kRank)))
 				{
 					itemData.type |= IItemDataInterface::Identifier::kTypeRank;
 					itemData.rankId = extraRank->rank;
 				}
-				if (ExtraUniqueID * extraUID = static_cast<ExtraUniqueID*>(pExtraDataList->GetByType(kExtraData_UniqueID)))
+				if (RE::ExtraUniqueID* extraUID = static_cast<RE::ExtraUniqueID*>(pExtraDataList->GetByType(RE::ExtraDataType::kUniqueID)))
 				{
 					itemData.type |= IItemDataInterface::Identifier::kTypeUID;
-					itemData.uid = extraUID->uniqueId;
-					itemData.ownerForm = extraUID->ownerFormId;
+					itemData.uid = extraUID->uniqueID;
+					itemData.ownerForm = extraUID->baseID;
 				}
-				if (pExtraDataList->HasType(kExtraData_Worn) || pExtraDataList->HasType(kExtraData_WornLeft))
+				if (pExtraDataList->HasType(RE::ExtraDataType::kWorn) || pExtraDataList->HasType(RE::ExtraDataType::kWornLeft))
 				{
 					itemData.type |= IItemDataInterface::Identifier::kTypeSlot;
-					itemData.slotMask = armor->bipedObject.GetSlotMask();
+					itemData.slotMask = armor->GetSlotMask().underlying();
 				}
 
 				if (itemData.type != IItemDataInterface::Identifier::kTypeNone && g_tintMaskInterface.IsDyeable(armor)) {
-					itemData.form = pEntryData->type;
+					itemData.form = pEntryData->object;
 					itemData.extraData = pExtraDataList;
 					m_found.push_back(itemData);
 				}
 			}
-
-			n++;
-			pExtraDataList = pExtendList->GetNthItem(n);
 		}
 
-		return true;
+		return RE::BSContainer::ForEachResult::kContinue;
 	}
 
 	FoundItems& Found()
@@ -84,41 +81,38 @@ private:
 	FoundItems	m_found;
 };
 
-class DyeItemCollector
+class DyeItemCollector : public RE::InventoryChanges::IItemChangeVisitor
 {
 public:
 	struct FoundData
 	{
-		TESForm * form;
-		SInt32	count;
-		std::vector<UInt32> colors;
+		RE::TESForm * form;
+		std::int32_t	count;
+		std::vector<std::uint32_t> colors;
 	};
 	typedef std::vector<FoundData> FoundItems;
 
 	DyeItemCollector() {}
 
-	bool Accept(InventoryEntryData* pEntryData)
+	virtual RE::BSContainer::ForEachResult Visit(RE::InventoryEntryData* pEntryData) override
 	{
 		if (!pEntryData)
-			return true;
+			return RE::BSContainer::ForEachResult::kContinue;
 
 		if (pEntryData->countDelta < 1)
-			return true;
+			return RE::BSContainer::ForEachResult::kContinue;
 
-		if (pEntryData->type->formType == AlchemyItem::kTypeID) {
-			AlchemyItem * potion = DYNAMIC_CAST(pEntryData->type, TESForm, AlchemyItem);
+		if (pEntryData->object->Is(RE::FormType::AlchemyItem)) {
+			RE::AlchemyItem * potion = pEntryData->object ? pEntryData->object->As<RE::AlchemyItem>() : nullptr;
 			if (potion) {
 				FoundData found;
-				found.form = NULL;
+				found.form = nullptr;
 				found.count = 0;
-				AlchemyItem::EffectItem * effect = NULL;
-				for (UInt32 i = 0; i < potion->effectItemList.count; i++) {
-					if (potion->effectItemList.GetNthItem(i, effect)) {
-						if (g_dyeMap.IsValidDye(effect->mgef)) {
-							found.form = pEntryData->type;
-							found.count = pEntryData->countDelta;
-							found.colors.push_back(g_dyeMap.GetDyeColor(effect->mgef));
-						}
+				for (RE::Effect* effect : potion->effects) {
+					if (effect && g_dyeMap.IsValidDye(effect->baseEffect)) {
+						found.form = pEntryData->object;
+						found.count = pEntryData->countDelta;
+						found.colors.push_back(g_dyeMap.GetDyeColor(effect->baseEffect));
 					}
 				}
 
@@ -132,14 +126,14 @@ public:
 				if (found.form)
 					m_found.push_back(found);
 			}
-		} else if (g_dyeMap.IsValidDye(pEntryData->type)) {
+		} else if (g_dyeMap.IsValidDye(pEntryData->object)) {
 			FoundData found;
-			found.form = pEntryData->type;
+			found.form = pEntryData->object;
 			found.count = pEntryData->countDelta;
 			found.colors.push_back(g_dyeMap.GetDyeColor(found.form));
 			m_found.push_back(found);
 		}
-		return true;
+		return RE::BSContainer::ForEachResult::kContinue;
 	}
 
 	FoundItems& Found()
@@ -150,42 +144,42 @@ private:
 	FoundItems	m_found;
 };
 
-void SKSEScaleform_GetDyeableItems::Invoke(Args * args)
+void SKSEScaleform_GetDyeableItems::Call(RE::GFxFunctionHandler::Params& a_params)
 {
 	using namespace ScaleformUtils;
 
-	ASSERT(args->numArgs >= 1);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_Number);
+	assert(a_params.argCount >= 1);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kNumber);
 
-	UInt32		formidArg = 0;
-	TESForm		* formArg = NULL;
+	std::uint32_t		formidArg = 0;
+	RE::TESForm		* formArg = nullptr;
 
-	if (args->numArgs >= 1) {
-		formidArg = (UInt32)args->args[0].GetNumber();
+	if (a_params.argCount >= 1) {
+		formidArg = (std::uint32_t)a_params.args[0].GetNumber();
 		if (formidArg > 0)
-			formArg = LookupFormByID(formidArg);
+			formArg = RE::TESForm::LookupByID(formidArg);
 	}
 
-	Actor * actor = DYNAMIC_CAST(formArg, TESForm, Actor);
+	RE::Actor * actor = formArg ? formArg->As<RE::Actor>() : nullptr;
 	if (!actor) {
-		_MESSAGE("%s - Invalid form type (%X)", __FUNCTION__, formidArg);
+		SKSE::log::info("{} - Invalid form type ({:X})", __FUNCTION__, formidArg);
 		return;
 	}
 	
-	ExtraContainerChanges * extraContainer = static_cast<ExtraContainerChanges*>(actor->extraData.GetByType(kExtraData_ContainerChanges));
+	RE::ExtraContainerChanges * extraContainer = actor->extraList.GetByType<RE::ExtraContainerChanges>();
 	if (extraContainer) {
 		DyeableItemCollector::FoundItems foundData;
-		if (extraContainer->data && extraContainer->data->objList) {
+		if (extraContainer->changes) {
 			DyeableItemCollector dyeFinder;
-			extraContainer->data->objList->Visit(dyeFinder);
+			extraContainer->changes->VisitInventory(reinterpret_cast<RE::InventoryChanges::IItemChangeVisitor&>(dyeFinder));
 			foundData = dyeFinder.Found();
 
 			if (!foundData.empty()) {
-				args->movie->CreateArray(args->result);
+				a_params.movie->CreateArray(a_params.retVal);
 
 				for (auto & item : foundData) {
-					GFxValue itm;
-					args->movie->CreateObject(&itm);
+					RE::GFxValue itm{};
+					a_params.movie->CreateObject(&itm);
 					RegisterNumber(&itm, "type", item.type);
 					RegisterNumber(&itm, "uid", item.uid);
 					RegisterNumber(&itm, "owner", item.ownerForm);
@@ -193,17 +187,17 @@ void SKSEScaleform_GetDyeableItems::Invoke(Args * args)
 					RegisterNumber(&itm, "slotMask", item.slotMask);
 					RegisterNumber(&itm, "weaponSlot", item.weaponSlot);
 
-					const char * itemName = NULL;
+					const char * itemName = nullptr;
 					if (item.form && item.extraData) {
-						itemName = item.extraData->GetDisplayName(item.form);
+						itemName = item.extraData->GetDisplayName(static_cast<RE::TESBoundObject*>(item.form));
 						if (!itemName) {
-							TESFullName* pFullName = DYNAMIC_CAST(item.form, TESForm, TESFullName);
+							RE::TESFullName* pFullName = item.form ? item.form->As<RE::TESFullName>() : nullptr;
 							if (pFullName)
-								itemName = pFullName->name.data;
+								itemName = pFullName->fullName.c_str();
 						}
 
 						if (itemName)
-							RegisterString(&itm, args->movie, "name", itemName);
+							RegisterString(&itm, a_params.movie, "name", itemName);
 					}
 
 					std::shared_ptr<ItemAttributeData> itemData;
@@ -212,26 +206,26 @@ void SKSEScaleform_GetDyeableItems::Invoke(Args * args)
 
 					// This is an approx color lookup, its possible multiple shapes may have differing color templates but use the same override
 					// we can only show one color so last shape wins
-					if (item.form->formType == TESObjectARMO::kTypeID)
+					if (item.form && item.form->IsArmor())
 					{
-						std::map<SInt32, UInt32> colorMap;
-						g_tintMaskInterface.GetTemplateColorMap(actor, static_cast<TESObjectARMO*>(item.form), colorMap);
+						std::map<std::int32_t, std::uint32_t> colorMap;
+						g_tintMaskInterface.GetTemplateColorMap(actor, static_cast<RE::TESObjectARMO*>(item.form), colorMap);
 
-						GFxValue baseArray;
-						args->movie->CreateArray(&baseArray);
-						for (UInt32 i = 0; i < 15; i++) {
-							GFxValue colorValue;
+						RE::GFxValue baseArray{};
+						a_params.movie->CreateArray(&baseArray);
+						for (std::uint32_t i = 0; i < 15; i++) {
+							RE::GFxValue colorValue;
 							colorValue.SetNumber(colorMap[i]);
-							baseArray.PushBack(&colorValue);
+							baseArray.PushBack(colorValue);
 						}
 
-						itm.SetMember("base", &baseArray);
+						itm.SetMember("base", baseArray);
 					}
 
-					GFxValue colorArray;
-					args->movie->CreateArray(&colorArray);
-					for (UInt32 i = 0; i < 15; i++) {
-						UInt32 color = 0;
+					RE::GFxValue colorArray{};
+					a_params.movie->CreateArray(&colorArray);
+					for (std::uint32_t i = 0; i < 15; i++) {
+						std::uint32_t color = 0;
 						if (itemData) {
 							itemData->GetLayer(0, [&](auto layerData)
 							{
@@ -241,148 +235,148 @@ void SKSEScaleform_GetDyeableItems::Invoke(Args * args)
 							});
 						}
 
-						GFxValue colorValue;
+						RE::GFxValue colorValue{};
 						colorValue.SetNumber(color);
-						colorArray.PushBack(&colorValue);
+						colorArray.PushBack(colorValue);
 					}
 
-					itm.SetMember("colors", &colorArray);
-					args->result->PushBack(&itm);
+					itm.SetMember("colors", colorArray);
+					a_params.retVal->PushBack(itm);
 				}
 			}
 		}
 	}
 }
 
-void SKSEScaleform_GetDyeItems::Invoke(Args * args)
+void SKSEScaleform_GetDyeItems::Call(RE::GFxFunctionHandler::Params& a_params)
 {
 	using namespace ScaleformUtils;
 
-	ASSERT(args->numArgs >= 1);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_Number);
+	assert(a_params.argCount >= 1);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kNumber);
 
-	UInt32		formidArg = 0;
-	TESForm		* formArg = NULL;
+	std::uint32_t		formidArg = 0;
+	RE::TESForm		* formArg = nullptr;
 
-	if (args->numArgs >= 1) {
-		formidArg = (UInt32)args->args[0].GetNumber();
+	if (a_params.argCount >= 1) {
+		formidArg = (std::uint32_t)a_params.args[0].GetNumber();
 		if (formidArg > 0)
-			formArg = LookupFormByID(formidArg);
+			formArg = RE::TESForm::LookupByID(formidArg);
 	}
 
-	TESObjectREFR * reference = DYNAMIC_CAST(formArg, TESForm, Actor);
+	RE::Actor * reference = formArg ? formArg->As<RE::Actor>() : nullptr;
 	if (!reference) {
-		_MESSAGE("%s - Invalid form type (%X)", __FUNCTION__, formidArg);
+		SKSE::log::info("{} - Invalid form type ({:X})", __FUNCTION__, formidArg);
 		return;
 	}
 
-	ExtraContainerChanges * extraContainer = static_cast<ExtraContainerChanges*>(reference->extraData.GetByType(kExtraData_ContainerChanges));
+	RE::ExtraContainerChanges * extraContainer = reference->extraList.GetByType<RE::ExtraContainerChanges>();
 	if (extraContainer) {
 		DyeItemCollector::FoundItems foundData;
-		if (extraContainer->data && extraContainer->data->objList) {
+		if (extraContainer->changes) {
 			DyeItemCollector dyeFinder;
-			extraContainer->data->objList->Visit(dyeFinder);
+			extraContainer->changes->VisitInventory(reinterpret_cast<RE::InventoryChanges::IItemChangeVisitor&>(dyeFinder));
 			foundData = dyeFinder.Found();
 
 			if (!foundData.empty()) {
-				args->movie->CreateArray(args->result);
+				a_params.movie->CreateArray(a_params.retVal);
 
 				for (auto & item : foundData) {
-					GFxValue itm;
-					args->movie->CreateObject(&itm);
-					RegisterNumber(&itm, "formId", item.form->formID);
+					RE::GFxValue itm{};
+					a_params.movie->CreateObject(&itm);
+					RegisterNumber(&itm, "formId", item.form ? item.form->formID : 0);
 					RegisterNumber(&itm, "count", item.count);
 
-					GFxValue colorArray;
-					args->movie->CreateArray(&colorArray);
+					RE::GFxValue colorArray{};
+					a_params.movie->CreateArray(&colorArray);
 					for (auto color : item.colors) {
-						GFxValue itemColor;
+						RE::GFxValue itemColor{};
 						itemColor.SetNumber(color);
-						colorArray.PushBack(&itemColor);
+						colorArray.PushBack(itemColor);
 					}
-					itm.SetMember("colors", &colorArray);
+					itm.SetMember("colors", colorArray);
 
-					const char * itemName = NULL;
+					const char * itemName = nullptr;
 					if (item.form) {
-						TESFullName* pFullName = DYNAMIC_CAST(item.form, TESForm, TESFullName);
+						RE::TESFullName* pFullName = item.form ? item.form->As<RE::TESFullName>() : nullptr;
 						if (pFullName)
-							RegisterString(&itm, args->movie, "name", pFullName->name.data);
+							RegisterString(&itm, a_params.movie, "name", pFullName->fullName.c_str());
 					}
 
-					args->result->PushBack(&itm);
+					a_params.retVal->PushBack(itm);
 				}
 			}
 		}
 	}
 }
 
-void SKSEScaleform_SetItemDyeColor::Invoke(Args * args)
+void SKSEScaleform_SetItemDyeColor::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	ASSERT(args->numArgs >= 2);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_Number);
-	ASSERT(args->args[1].GetType() == GFxValue::kType_Object);
-	ASSERT(args->args[2].GetType() == GFxValue::kType_Number);
+	assert(a_params.argCount >= 2);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kNumber);
+	assert(a_params.args[1].GetType() == RE::GFxValue::ValueType::kObject);
+	assert(a_params.args[2].GetType() == RE::GFxValue::ValueType::kNumber);
 
-	UInt32		formidArg = 0;
-	TESForm		* formArg = NULL;
-	UInt32		maskIndex = args->args[2].GetNumber();
-	UInt32		color = 0;
+	std::uint32_t		formidArg = 0;
+	RE::TESForm		* formArg = nullptr;
+	std::uint32_t		maskIndex = a_params.args[2].GetNumber();
+	std::uint32_t		color = 0;
 	bool		clear = false;
 
-	if (args->numArgs >= 3) {
-		if (args->args[3].GetType() == GFxValue::kType_Undefined || args->args[3].GetType() == GFxValue::kType_Null)
+	if (a_params.argCount >= 3) {
+		if (a_params.args[3].GetType() == RE::GFxValue::ValueType::kUndefined || a_params.args[3].GetType() == RE::GFxValue::ValueType::kNull)
 			clear = true;
 		else
-			color = args->args[3].GetNumber();
+			color = a_params.args[3].GetNumber();
 	} else {
 		clear = true;
 	}
 
-	if (args->numArgs >= 1) {
-		formidArg = (UInt32)args->args[0].GetNumber();
+	if (a_params.argCount >= 1) {
+		formidArg = (std::uint32_t)a_params.args[0].GetNumber();
 		if (formidArg > 0)
-			formArg = LookupFormByID(formidArg);
+			formArg = RE::TESForm::LookupByID(formidArg);
 	}
 
-	Actor * actor = DYNAMIC_CAST(formArg, TESForm, Actor);
+	RE::Actor * actor = formArg ? formArg->As<RE::Actor>() : nullptr;
 	if (!actor) {
-		_MESSAGE("%s - Invalid form type (%X)", __FUNCTION__, formidArg);
+		SKSE::log::info("{} - Invalid form type ({:X})", __FUNCTION__, formidArg);
 		return;
 	}
 
 	IItemDataInterface::Identifier identifier;
-	GFxValue param[6];
+	RE::GFxValue param[6] = {};
 
-	if (args->args[1].HasMember("type")) {
-		args->args[1].GetMember("type", &param[0]);
+	if (a_params.args[1].HasMember("type")) {
+		a_params.args[1].GetMember("type", &param[0]);
 		identifier.type = param[0].GetNumber();
 	}
-	if (args->args[1].HasMember("uid")) {
-		args->args[1].GetMember("uid", &param[1]);
+	if (a_params.args[1].HasMember("uid")) {
+		a_params.args[1].GetMember("uid", &param[1]);
 		identifier.uid = param[1].GetNumber();
 	}
-	if (args->args[1].HasMember("owner")) {
-		args->args[1].GetMember("owner", &param[2]);
+	if (a_params.args[1].HasMember("owner")) {
+		a_params.args[1].GetMember("owner", &param[2]);
 		identifier.ownerForm = param[2].GetNumber();
 	}
-	if (args->args[1].HasMember("rankId")) {
-		args->args[1].GetMember("rankId", &param[3]);
+	if (a_params.args[1].HasMember("rankId")) {
+		a_params.args[1].GetMember("rankId", &param[3]);
 		identifier.rankId = param[3].GetNumber();
 	}
-	if (args->args[1].HasMember("slotMask")) {
-		args->args[1].GetMember("slotMask", &param[4]);
+	if (a_params.args[1].HasMember("slotMask")) {
+		a_params.args[1].GetMember("slotMask", &param[4]);
 		identifier.slotMask = param[4].GetNumber();
 	}
-	if (args->args[1].HasMember("weaponSlot")) {
-		args->args[1].GetMember("weaponSlot", &param[5]);
+	if (a_params.args[1].HasMember("weaponSlot")) {
+		a_params.args[1].GetMember("weaponSlot", &param[5]);
 		identifier.weaponSlot = param[5].GetNumber();
 	}
-	std::map<SInt32, UInt32> slotTextureIndexMap;
-	UInt32 uniqueId = g_itemDataInterface.GetItemUniqueID(actor, identifier, true);
-	TESForm* dyedItem = g_itemDataInterface.GetFormFromUniqueID(uniqueId);
-	if (dyedItem && dyedItem->formType == TESObjectARMO::kTypeID)
+	std::map<std::int32_t, std::uint32_t> slotTextureIndexMap;
+	std::uint32_t uniqueId = g_itemDataInterface.GetItemUniqueID(actor, identifier, true);
+	RE::TESForm* dyedItem = g_itemDataInterface.GetFormFromUniqueID(uniqueId);
+	if (dyedItem && dyedItem->IsArmor())
 	{
-		g_tintMaskInterface.GetSlotTextureIndexMap(actor, static_cast<TESObjectARMO*>(dyedItem), slotTextureIndexMap);
+		g_tintMaskInterface.GetSlotTextureIndexMap(actor, static_cast<RE::TESObjectARMO*>(dyedItem), slotTextureIndexMap);
 	}
 
 	if (clear)
@@ -390,82 +384,82 @@ void SKSEScaleform_SetItemDyeColor::Invoke(Args * args)
 	else
 		g_itemDataInterface.SetItemTextureLayerColor(uniqueId, slotTextureIndexMap[maskIndex], maskIndex, color);
 
-	g_task->AddTask(new NIOVTaskUpdateItemDye(actor, identifier, TintMaskInterface::kUpdate_All, false));
+	SKEE_AddTask(g_task, new NIOVTaskUpdateItemDye(actor, identifier, TintMaskInterface::kUpdate_All, false));
 }
 
-void SKSEScaleform_SetItemDyeColors::Invoke(Args * args)
+void SKSEScaleform_SetItemDyeColors::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	ASSERT(args->numArgs >= 2);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_Number);
-	ASSERT(args->args[1].GetType() == GFxValue::kType_Object);
-	ASSERT(args->args[2].GetType() == GFxValue::kType_Array);
+	assert(a_params.argCount >= 2);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kNumber);
+	assert(a_params.args[1].GetType() == RE::GFxValue::ValueType::kObject);
+	assert(a_params.args[2].GetType() == RE::GFxValue::ValueType::kArray);
 
-	UInt32		formidArg = 0;
-	TESForm		* formArg = NULL;
+	std::uint32_t		formidArg = 0;
+	RE::TESForm		* formArg = nullptr;
 
-	if (args->numArgs >= 1) {
-		formidArg = (UInt32)args->args[0].GetNumber();
+	if (a_params.argCount >= 1) {
+		formidArg = (std::uint32_t)a_params.args[0].GetNumber();
 		if (formidArg > 0)
-			formArg = LookupFormByID(formidArg);
+			formArg = RE::TESForm::LookupByID(formidArg);
 	}
 
-	Actor * actor = DYNAMIC_CAST(formArg, TESForm, Actor);
+	RE::Actor * actor = formArg ? formArg->As<RE::Actor>() : nullptr;
 	if (!actor) {
-		_MESSAGE("%s - Invalid form type (%X)", __FUNCTION__, formidArg);
+		SKSE::log::info("{} - Invalid form type ({:X})", __FUNCTION__, formidArg);
 		return;
 	}
 
 	IItemDataInterface::Identifier identifier;
-	GFxValue param[6];
+	RE::GFxValue param[6] = {};
 
-	if (args->args[1].HasMember("type")) {
-		args->args[1].GetMember("type", &param[0]);
+	if (a_params.args[1].HasMember("type")) {
+		a_params.args[1].GetMember("type", &param[0]);
 		identifier.type = param[0].GetNumber();
 	}
-	if (args->args[1].HasMember("uid")) {
-		args->args[1].GetMember("uid", &param[1]);
+	if (a_params.args[1].HasMember("uid")) {
+		a_params.args[1].GetMember("uid", &param[1]);
 		identifier.uid = param[1].GetNumber();
 	}
-	if (args->args[1].HasMember("owner")) {
-		args->args[1].GetMember("owner", &param[2]);
+	if (a_params.args[1].HasMember("owner")) {
+		a_params.args[1].GetMember("owner", &param[2]);
 		identifier.ownerForm = param[2].GetNumber();
 	}
-	if (args->args[1].HasMember("rankId")) {
-		args->args[1].GetMember("rankId", &param[3]);
+	if (a_params.args[1].HasMember("rankId")) {
+		a_params.args[1].GetMember("rankId", &param[3]);
 		identifier.rankId = param[3].GetNumber();
 	}
-	if (args->args[1].HasMember("slotMask")) {
-		args->args[1].GetMember("slotMask", &param[4]);
+	if (a_params.args[1].HasMember("slotMask")) {
+		a_params.args[1].GetMember("slotMask", &param[4]);
 		identifier.slotMask = param[4].GetNumber();
 	}
-	if (args->args[1].HasMember("weaponSlot")) {
-		args->args[1].GetMember("weaponSlot", &param[5]);
+	if (a_params.args[1].HasMember("weaponSlot")) {
+		a_params.args[1].GetMember("weaponSlot", &param[5]);
 		identifier.weaponSlot = param[5].GetNumber();
 	}
 
-	std::map<SInt32, UInt32> slotTextureIndexMap;
+	std::map<std::int32_t, std::uint32_t> slotTextureIndexMap;
 	
-	UInt32 uniqueId = g_itemDataInterface.GetItemUniqueID(actor, identifier, true);
-	TESForm* dyedItem = g_itemDataInterface.GetFormFromUniqueID(uniqueId);
-	if (dyedItem && dyedItem->formType == TESObjectARMO::kTypeID)
+	std::uint32_t uniqueId = g_itemDataInterface.GetItemUniqueID(actor, identifier, true);
+	RE::TESForm* dyedItem = g_itemDataInterface.GetFormFromUniqueID(uniqueId);
+	if (dyedItem && dyedItem->IsArmor())
 	{
-		g_tintMaskInterface.GetSlotTextureIndexMap(actor, static_cast<TESObjectARMO*>(dyedItem), slotTextureIndexMap);
+		g_tintMaskInterface.GetSlotTextureIndexMap(actor, static_cast<RE::TESObjectARMO*>(dyedItem), slotTextureIndexMap);
 	}
 
-	UInt32 size = args->args[2].GetArraySize();
-	for (UInt32 i = 0; i < size; ++i)
+	std::uint32_t size = a_params.args[2].GetArraySize();
+	for (std::uint32_t i = 0; i < size; ++i)
 	{
-		GFxValue element;
-		args->args[2].GetElement(i, &element);
+		RE::GFxValue element{};
+		a_params.args[2].GetElement(i, &element);
 
-		if (element.GetType() == GFxValue::kType_Undefined || element.GetType() == GFxValue::kType_Null) {
+		if (element.GetType() == RE::GFxValue::ValueType::kUndefined || element.GetType() == RE::GFxValue::ValueType::kNull) {
 			g_itemDataInterface.ClearItemTextureLayerColor(uniqueId, slotTextureIndexMap[i], i);
 		}
 		else {
-			UInt32 color = element.GetNumber();
+			std::uint32_t color = element.GetNumber();
 			g_itemDataInterface.SetItemTextureLayerColor(uniqueId, slotTextureIndexMap[i], i, color);
 		}
 	}
 
-	g_task->AddTask(new NIOVTaskUpdateItemDye(actor, identifier, TintMaskInterface::kUpdate_All, false));
+	SKEE_AddTask(g_task, new NIOVTaskUpdateItemDye(actor, identifier, TintMaskInterface::kUpdate_All, false));
 }

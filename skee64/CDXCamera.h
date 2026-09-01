@@ -48,7 +48,6 @@ public:
 
 	static CDXVec WINAPI    QuatFromBallPoints( const CDXVec& vFrom, const CDXVec& vTo );
 
-
 protected:
 	CDXMatrix m_mRotation;         // Matrix for arc ball's orientation
 	CDXMatrix m_mTranslation;      // Matrix for arc ball's position

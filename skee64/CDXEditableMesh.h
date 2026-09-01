@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <functional>
+#include <cstdint>
 
 typedef std::unordered_map<CDXMeshIndex, CDXColor>	CDXMaskMap;
 typedef std::pair<CDXMeshIndex, CDXColor>			CDXMaskPair;
@@ -21,7 +22,7 @@ typedef std::pair<CDXMeshIndex, CDXVec>				CDXVectorPair;
 typedef std::vector<CDXMeshFace>					CDXAdjacentList;
 typedef std::map<CDXMeshIndex, CDXAdjacentList>		CDXAdjacencyMap;
 
-typedef std::unordered_map<CDXMeshEdge, UInt32>		CDXEdgeMap;
+typedef std::unordered_map<CDXMeshEdge, std::uint32_t>		CDXEdgeMap;
 typedef std::unordered_set<CDXMeshIndex>			CDXVertexEdgeList;
 
 static DirectX::XMVECTOR COLOR_UNSELECTED = DirectX::XMVectorSet(1.0f, 1.0f, 1.0f, 0.0f);

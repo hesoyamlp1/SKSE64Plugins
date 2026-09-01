@@ -7,6 +7,7 @@
 
 #include <vector>
 #include <memory>
+#include <cstdint>
 
 class CDXUndoCommand
 {
@@ -34,19 +35,19 @@ class CDXUndoStack : public std::vector<CDXUndoCommandPtr>
 public:
 	CDXUndoStack();
 
-	SInt32 Undo(bool doUpdate);
-	SInt32 Redo(bool doUpdate);
-	SInt32 GoTo(SInt32 index, bool doUpdate);
-	SInt32 Push(CDXUndoCommandPtr action);
-	SInt32 GetIndex() const { return m_index; }
+	std::int32_t Undo(bool doUpdate);
+	std::int32_t Redo(bool doUpdate);
+	std::int32_t GoTo(std::int32_t index, bool doUpdate);
+	std::int32_t Push(CDXUndoCommandPtr action);
+	std::int32_t GetIndex() const { return m_index; }
 
-	UInt32 GetLimit() const { return m_maxStack; }
+	std::uint32_t GetLimit() const { return m_maxStack; }
 
 	void Release();
 
 protected:
-	SInt32	m_index;
-	UInt32	m_maxStack;
+	std::int32_t	m_index;
+	std::uint32_t	m_maxStack;
 };
 
 extern CDXUndoStack	g_undoStack;

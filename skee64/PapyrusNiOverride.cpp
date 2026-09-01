@@ -1,14 +1,14 @@
-#include "skse64/PluginAPI.h"
+#include "SKEETasks.h"
+#include "SKEEDelayFunctors.h"
 
-#include "skse64/GameRTTI.h"
-#include "skse64/GameObjects.h"
-#include "skse64/GameReferences.h"
+#include "RE/N/NiExtraData.h"
+#include "RE/A/Array.h"           // RE::BSScript::Array (legacy VMArray equiv)
+#include "RE/V/Variable.h"        // RE::BSScript::Variable (legacy VMValue equiv)
+#include "RE/V/VirtualMachine.h"  // RE::BSScript::Internal::VirtualMachine
 
-#include "skse64/NiExtraData.h"
-
-#include "skse64/PapyrusArgs.h"
-#include "skse64/PapyrusDelayFunctors.h"
-#include "skse64/Serialization.h"
+#include <RE/I/IFunctionArguments.h>
+#include <RE/P/PackUnpack.h>
+#include <numbers>
 
 #include "PapyrusNiOverride.h"
 
@@ -23,9 +23,9 @@
 #include "ShaderUtilities.h"
 #include "NifUtils.h"
 #include "Utilities.h"
+#include <cstdint>
 
-extern SKSETaskInterface*	g_task;
-extern SKSEObjectInterface* g_objectInterface;
+extern const SKSE::TaskInterface* g_task;
 
 extern OverrideInterface	g_overrideInterface;
 extern OverlayInterface		g_overlayInterface;
@@ -36,56 +36,59 @@ extern DyeMap				g_dyeMap;
 extern NiTransformInterface	g_transformInterface;
 extern AttachmentInterface	g_attachmentInterface;
 
-extern UInt32	g_numBodyOverlays;
-extern UInt32	g_numHandOverlays;
-extern UInt32	g_numFeetOverlays;
-extern UInt32	g_numFaceOverlays;
+extern std::uint32_t	g_numBodyOverlays;
+extern std::uint32_t	g_numHandOverlays;
+extern std::uint32_t	g_numFeetOverlays;
+extern std::uint32_t	g_numFaceOverlays;
 
 extern bool		g_playerOnly;
-extern UInt32	g_numSpellBodyOverlays;
-extern UInt32	g_numSpellHandOverlays;
-extern UInt32	g_numSpellFeetOverlays;
-extern UInt32	g_numSpellFaceOverlays;
+extern std::uint32_t	g_numSpellBodyOverlays;
+extern std::uint32_t	g_numSpellHandOverlays;
+extern std::uint32_t	g_numSpellFeetOverlays;
+extern std::uint32_t	g_numSpellFaceOverlays;
 
-class MorpedReferenceEventFunctor : public IFunctionArguments
+using RE::StaticFunctionTag;
+
+class MorpedReferenceEventFunctor : public RE::BSScript::IFunctionArguments
 {
 public:
-	MorpedReferenceEventFunctor(const BSFixedString & a_eventName, TESForm * receiver, TESObjectREFR * actor)
-		: m_eventName(a_eventName.data), m_actor(actor), m_receiver(receiver) {}
+	MorpedReferenceEventFunctor(const RE::BSFixedString & a_eventName, RE::TESForm * receiver, RE::TESObjectREFR * actor)
+		: m_eventName(a_eventName.c_str()), m_actor(actor), m_receiver(receiver) {}
 
-	virtual bool Copy(Output * dst)
+	bool operator()(RE::BSScrapArray<RE::BSScript::Variable>& a_dst) const override
 	{
-		VMClassRegistry * registry = (*g_skyrimVM)->GetClassRegistry();
-
-		dst->Resize(1);
-		PackValue(dst->Get(0), &m_actor, registry);
-
+		a_dst.resize(1);
+		RE::BSScript::PackValue(&a_dst[0], m_actor);
 		return true;
 	}
 
 	void Run()
 	{
-		VMClassRegistry * registry = (*g_skyrimVM)->GetClassRegistry();
-		IObjectHandlePolicy	* policy = registry->GetHandlePolicy();
-		UInt64 handle = policy->Create(m_receiver->formType, m_receiver);
-		registry->QueueEvent(handle, &m_eventName, this);
+		auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+		if (vm && m_receiver) {
+			auto* policy = vm->GetObjectHandlePolicy();
+			if (policy) {
+				RE::VMHandle handle = policy->GetHandleForObject(m_receiver->GetFormType(), m_receiver);
+				vm->SendEvent(handle, m_eventName, this);
+			}
+		}
 	}
 
 private:
-	BSFixedString	m_eventName;
-	TESForm			* m_receiver;
-	TESObjectREFR	* m_actor;
+	RE::BSFixedString	m_eventName;
+	RE::TESForm			* m_receiver;
+	RE::TESObjectREFR	* m_actor;
 };
 
 namespace papyrusNiOverride
 {
-	void AddOverlays(StaticFunctionTag* base, TESObjectREFR * refr)
+	void AddOverlays(StaticFunctionTag* base, RE::TESObjectREFR * refr)
 	{
 		if(refr)
 			g_overlayInterface.AddOverlays(refr);
 	}
 
-	bool HasOverlays(StaticFunctionTag* base, TESObjectREFR * refr)
+	bool HasOverlays(StaticFunctionTag* base, RE::TESObjectREFR * refr)
 	{
 		if(!refr)
 			return false;
@@ -93,42 +96,42 @@ namespace papyrusNiOverride
 		return g_overlayInterface.HasOverlays(refr);
 	}
 
-	void RemoveOverlays(StaticFunctionTag* base, TESObjectREFR * refr)
+	void RemoveOverlays(StaticFunctionTag* base, RE::TESObjectREFR * refr)
 	{
 		if(refr) {
 			g_overlayInterface.RemoveOverlays(refr);
 		}
 	}
 
-	void RevertOverlays(StaticFunctionTag* base, TESObjectREFR * refr)
+	void RevertOverlays(StaticFunctionTag* base, RE::TESObjectREFR * refr)
 	{
 		if(refr) {
 			g_overlayInterface.RevertOverlays(refr, false);
 		}
 	}
 
-	void RevertOverlay(StaticFunctionTag* base, TESObjectREFR * refr, BSFixedString nodeName, UInt32 armorMask, UInt32 addonMask)
+	void RevertOverlay(StaticFunctionTag* base, RE::TESObjectREFR * refr, RE::BSFixedString nodeName, std::uint32_t armorMask, std::uint32_t addonMask)
 	{
 		if(refr) {
-			g_overlayInterface.RevertOverlay(refr, nodeName, armorMask, addonMask, false);
+			g_overlayInterface.RevertOverlay(refr, nodeName.c_str(), armorMask, addonMask, false);
 		}
 	}
 
-	void RevertHeadOverlays(StaticFunctionTag* base, TESObjectREFR * refr)
+	void RevertHeadOverlays(StaticFunctionTag* base, RE::TESObjectREFR * refr)
 	{
 		if(refr) {
 			g_overlayInterface.RevertHeadOverlays(refr, false);
 		}
 	}
 
-	void RevertHeadOverlay(StaticFunctionTag* base, TESObjectREFR * refr, BSFixedString nodeName, UInt32 partType, UInt32 shaderType)
+	void RevertHeadOverlay(StaticFunctionTag* base, RE::TESObjectREFR * refr, RE::BSFixedString nodeName, std::uint32_t partType, std::uint32_t shaderType)
 	{
 		if(refr) {
-			g_overlayInterface.RevertHeadOverlay(refr, nodeName, partType, shaderType, false);
+			g_overlayInterface.RevertHeadOverlay(refr, nodeName.c_str(), partType, shaderType, false);
 		}
 	}
 
-	bool HasOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, TESObjectARMO * armor, TESObjectARMA * addon, BSFixedString nodeName, UInt32 key, UInt32 index)
+	bool HasOverride(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFemale, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index)
 	{
 		if(!refr || key > OverrideVariant::kKeyMax)
 			return false;
@@ -141,15 +144,15 @@ namespace papyrusNiOverride
 		return g_overrideInterface.Impl_GetOverride(refr, isFemale, armor, addon, nodeName, key, index) != NULL;
 	}
 
-	bool HasArmorAddonNode(StaticFunctionTag* base, TESObjectREFR * refr, bool firstPerson, TESObjectARMO * armor, TESObjectARMA * addon, BSFixedString nodeName, bool debug)
+	bool HasArmorAddonNode(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool firstPerson, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::BSFixedString nodeName, bool debug)
 	{
 		if (!refr)
 			return false;
 
-		return g_overrideInterface.HasArmorAddonNode(refr, firstPerson, armor, addon, nodeName, debug);
+		return g_overrideInterface.HasArmorAddonNode(refr, firstPerson, armor, addon, nodeName.c_str(), debug);
 	}
 
-	void ApplyOverrides(StaticFunctionTag* base, TESObjectREFR * refr)
+	void ApplyOverrides(StaticFunctionTag* base, RE::TESObjectREFR * refr)
 	{
 		if(!refr)
 			return;
@@ -158,18 +161,18 @@ namespace papyrusNiOverride
 	}
 
 	template<typename T>
-	void AddOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, TESObjectARMO * armor, TESObjectARMA * addon, BSFixedString nodeName, UInt32 key, UInt32 index, T dataType, bool persist)
+	void AddOverride(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFemale, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index, T dataType, bool persist)
 	{
 		if(!refr || key > OverrideVariant::kKeyMax)
 			return;
 
 		if(!armor) {
-			_ERROR("%s - Failed to add override for \"%s\" node key: %d. No Armor specified.", __FUNCTION__, nodeName.data, key);
+			SKSE::log::error("{} - Failed to add override for \"{}\" node key: {}. No Armor specified.", __FUNCTION__, nodeName.c_str(), key);
 			return;
 		}
 
 		if(!addon) {
-			_ERROR("%s - Failed to add override for \"%s\" node key: %d. No ArmorAddon specified.", __FUNCTION__, nodeName.data, key);
+			SKSE::log::error("{} - Failed to add override for \"{}\" node key: {}. No ArmorAddon specified.", __FUNCTION__, nodeName.c_str(), key);
 			return;
 		}
 
@@ -182,7 +185,7 @@ namespace papyrusNiOverride
 		PackValue<T>(&value, key, index, &dataType);
 
 		if(value.type == OverrideVariant::kType_None) {
-			_ERROR("%s - Failed to pack value for \"%s\" node key: %d. Most likely invalid key for type", __FUNCTION__, nodeName.data, key);
+			SKSE::log::error("{} - Failed to pack value for \"{}\" node key: {}. Most likely invalid key for type", __FUNCTION__, nodeName.c_str(), key);
 			return;
 		}
 
@@ -190,22 +193,22 @@ namespace papyrusNiOverride
 		if(persist)
 			g_overrideInterface.Impl_AddOverride(refr, isFemale, armor, addon, nodeName, value);
 
-		UInt8 gender = 0;
-		TESNPC * actorBase = DYNAMIC_CAST(refr->baseForm, TESForm, TESNPC);
+		std::uint8_t gender = 0;
+		RE::TESNPC * actorBase = refr->GetBaseObject() ? refr->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 		if(actorBase)
-			gender = CALL_MEMBER_FN(actorBase, GetSex)();
+			gender = actorBase->GetSex();
 
 		// Applies the properties visually, only if the current gender matches
 		if (isFemale == (gender == 1)) {
 			g_overrideInterface.Impl_SetArmorAddonProperty(refr, false, armor, addon, nodeName, &value, false);
-			if (refr->GetNiRootNode(0) != refr->GetNiRootNode(1)) {
+			if (refr->Get3D(false) != refr->Get3D(true)) {
 				g_overrideInterface.Impl_SetArmorAddonProperty(refr, true, armor, addon, nodeName, &value, false);
 			}
 		}
 	}
 
 	template<typename T>
-	T GetOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, TESObjectARMO * armor, TESObjectARMA * addon, BSFixedString nodeName, UInt32 key, UInt32 index)
+	T GetOverride(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFemale, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index)
 	{
 		if(!refr || key > OverrideVariant::kKeyMax || !armor || !addon)
 			return 0;
@@ -227,7 +230,7 @@ namespace papyrusNiOverride
 	}
 
 	template<typename T>
-	T GetArmorAddonProperty(StaticFunctionTag* base, TESObjectREFR * refr, bool firstPerson, TESObjectARMO * armor, TESObjectARMA * addon, BSFixedString nodeName, UInt32 key, UInt32 index)
+	T GetArmorAddonProperty(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool firstPerson, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index)
 	{
 		if(!refr || key > OverrideVariant::kKeyMax || !armor || !addon)
 			return 0;
@@ -248,7 +251,7 @@ namespace papyrusNiOverride
 		return dest;
 	}
 
-	void ApplyNodeOverrides(StaticFunctionTag* base, TESObjectREFR * refr)
+	void ApplyNodeOverrides(StaticFunctionTag* base, RE::TESObjectREFR * refr)
 	{
 		if (!refr)
 			return;
@@ -256,7 +259,7 @@ namespace papyrusNiOverride
 		return g_overrideInterface.Impl_SetNodeProperties(refr->formID, false);
 	}
 
-	bool HasNodeOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, BSFixedString nodeName, UInt32 key, UInt32 index)
+	bool HasNodeOverride(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFemale, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index)
 	{
 		if(!refr || key > OverrideVariant::kKeyMax)
 			return false;
@@ -270,7 +273,7 @@ namespace papyrusNiOverride
 	}
 
 	template<typename T>
-	void AddNodeOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, BSFixedString nodeName, UInt32 key, UInt32 index, T dataType, bool persist)
+	void AddNodeOverride(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFemale, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index, T dataType, bool persist)
 	{
 		if(!refr || key > OverrideVariant::kKeyMax)
 			return;
@@ -284,7 +287,7 @@ namespace papyrusNiOverride
 		PackValue<T>(&value, key, index, &dataType);
 
 		if(value.type == OverrideVariant::kType_None) {
-			_ERROR("%s - Failed to pack value for \"%s\" node key: %d. Most likely invalid key for type", __FUNCTION__, nodeName.data, key);
+			SKSE::log::error("{} - Failed to pack value for \"{}\" node key: {}. Most likely invalid key for type", __FUNCTION__, nodeName.c_str(), key);
 			return;
 		}
 
@@ -292,21 +295,21 @@ namespace papyrusNiOverride
 		if(persist)
 			g_overrideInterface.Impl_AddNodeOverride(refr, isFemale, nodeName, value);
 
-		UInt8 gender = 0;
-		TESNPC * actorBase = DYNAMIC_CAST(refr->baseForm, TESForm, TESNPC);
+		std::uint8_t gender = 0;
+		RE::TESNPC * actorBase = refr->GetBaseObject() ? refr->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 		if(actorBase)
-			gender = CALL_MEMBER_FN(actorBase, GetSex)();
+			gender = actorBase->GetSex();
 
 		// Applies the properties visually, only if the current gender matches
 		if (isFemale == (gender == 1)) {
 			g_overrideInterface.Impl_SetNodeProperty(refr, false, nodeName, &value, false);
-			if(refr->GetNiRootNode(0) != refr->GetNiRootNode(1))
+			if(refr->Get3D(false) != refr->Get3D(true))
 				g_overrideInterface.Impl_SetNodeProperty(refr, true, nodeName, &value, false);
 		}
 	}
 
 	template<typename T>
-	T GetNodeOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, BSFixedString nodeName, UInt32 key, UInt32 index)
+	T GetNodeOverride(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFemale, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index)
 	{
 		if(!refr || key > OverrideVariant::kKeyMax)
 			return 0;
@@ -326,7 +329,7 @@ namespace papyrusNiOverride
 	}
 
 	template<typename T>
-	T GetNodeProperty(StaticFunctionTag* base, TESObjectREFR * refr, bool firstPerson, BSFixedString nodeName, UInt32 key, UInt32 index)
+	T GetNodeProperty(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool firstPerson, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index)
 	{
 		if(!refr || key > OverrideVariant::kKeyMax)
 			return 0;
@@ -347,7 +350,7 @@ namespace papyrusNiOverride
 		return dest;
 	}
 
-	bool HasWeaponOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, bool firstPerson, TESObjectWEAP * weapon, BSFixedString nodeName, UInt32 key, UInt32 index)
+	bool HasWeaponOverride(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFemale, bool firstPerson, RE::TESObjectWEAP * weapon, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index)
 	{
 		if(key > OverrideVariant::kKeyMax)
 			return false;
@@ -360,7 +363,7 @@ namespace papyrusNiOverride
 		return g_overrideInterface.Impl_GetWeaponOverride(refr, isFemale, firstPerson, weapon, nodeName, key, index) != NULL;
 	}
 
-	bool HasWeaponNode(StaticFunctionTag* base, TESObjectREFR * refr, bool firstPerson, TESObjectWEAP * weapon, BSFixedString nodeName, bool debug)
+	bool HasWeaponNode(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool firstPerson, RE::TESObjectWEAP * weapon, RE::BSFixedString nodeName, bool debug)
 	{
 		if (!refr)
 			return false;
@@ -368,7 +371,7 @@ namespace papyrusNiOverride
 		return g_overrideInterface.Impl_HasWeaponNode(refr, firstPerson, weapon, nodeName, debug);
 	}
 
-	void ApplyWeaponOverrides(StaticFunctionTag* base, TESObjectREFR * refr)
+	void ApplyWeaponOverrides(StaticFunctionTag* base, RE::TESObjectREFR * refr)
 	{
 		if(!refr)
 			return;
@@ -376,7 +379,7 @@ namespace papyrusNiOverride
 	}
 
 	template<typename T>
-	void AddWeaponOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, bool firstPerson, TESObjectWEAP * weapon, BSFixedString nodeName, UInt32 key, UInt32 index, T dataType, bool persist)
+	void AddWeaponOverride(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFemale, bool firstPerson, RE::TESObjectWEAP * weapon, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index, T dataType, bool persist)
 	{
 		if(!refr || key > OverrideVariant::kKeyMax)
 			return;
@@ -387,7 +390,7 @@ namespace papyrusNiOverride
 			index = OverrideVariant::kIndexMax;
 
 		if(!weapon) {
-			_ERROR("%s - Failed to add override for \"%s\" node key: %d. No weapon specified.", __FUNCTION__, nodeName.data, key);
+			SKSE::log::error("{} - Failed to add override for \"{}\" node key: {}. No weapon specified.", __FUNCTION__, nodeName.c_str(), key);
 			return;
 		}
 
@@ -395,7 +398,7 @@ namespace papyrusNiOverride
 		PackValue<T>(&value, key, index, &dataType);
 
 		if(value.type == OverrideVariant::kType_None) {
-			_ERROR("%s - Failed to pack value for \"%s\" node key: %d. Most likely invalid key for type", __FUNCTION__, nodeName.data, key);
+			SKSE::log::error("{} - Failed to pack value for \"{}\" node key: {}. Most likely invalid key for type", __FUNCTION__, nodeName.c_str(), key);
 			return;
 		}
 
@@ -403,10 +406,10 @@ namespace papyrusNiOverride
 		if(persist)
 			g_overrideInterface.Impl_AddWeaponOverride(refr, isFemale, firstPerson, weapon, nodeName, value);
 
-		UInt8 gender = 0;
-		TESNPC * actorBase = DYNAMIC_CAST(refr->baseForm, TESForm, TESNPC);
+		std::uint8_t gender = 0;
+		RE::TESNPC * actorBase = refr->GetBaseObject() ? refr->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 		if(actorBase)
-			gender = CALL_MEMBER_FN(actorBase, GetSex)();
+			gender = actorBase->GetSex();
 
 		// Applies the properties visually, only if the current gender matches
 		if(isFemale == (gender == 1))
@@ -414,7 +417,7 @@ namespace papyrusNiOverride
 	}
 
 	template<typename T>
-	T GetWeaponOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, bool firstPerson, TESObjectWEAP * weapon, BSFixedString nodeName, UInt32 key, UInt32 index)
+	T GetWeaponOverride(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFemale, bool firstPerson, RE::TESObjectWEAP * weapon, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index)
 	{
 		if(!refr || key > OverrideVariant::kKeyMax || !weapon)
 			return 0;
@@ -434,7 +437,7 @@ namespace papyrusNiOverride
 	}
 
 	template<typename T>
-	T GetWeaponProperty(StaticFunctionTag* base, TESObjectREFR * refr, bool firstPerson, TESObjectWEAP * weapon, BSFixedString nodeName, UInt32 key, UInt32 index)
+	T GetWeaponProperty(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool firstPerson, RE::TESObjectWEAP * weapon, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index)
 	{
 		if(!refr || key > OverrideVariant::kKeyMax || !weapon)
 			return 0;
@@ -455,9 +458,7 @@ namespace papyrusNiOverride
 		return dest;
 	}
 
-
-
-	bool HasSkinOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, bool firstPerson, UInt32 slotMask, UInt32 key, UInt32 index)
+	bool HasSkinOverride(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFemale, bool firstPerson, std::uint32_t slotMask, std::uint32_t key, std::uint32_t index)
 	{
 		if (key > OverrideVariant::kKeyMax)
 			return false;
@@ -470,7 +471,7 @@ namespace papyrusNiOverride
 		return g_overrideInterface.Impl_GetSkinOverride(refr, isFemale, firstPerson, slotMask, key, index) != NULL;
 	}
 
-	void ApplySkinOverrides(StaticFunctionTag* base, TESObjectREFR * refr)
+	void ApplySkinOverrides(StaticFunctionTag* base, RE::TESObjectREFR * refr)
 	{
 		if (!refr)
 			return;
@@ -478,7 +479,7 @@ namespace papyrusNiOverride
 	}
 
 	template<typename T>
-	void AddSkinOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, bool firstPerson, UInt32 slotMask, UInt32 key, UInt32 index, T dataType, bool persist)
+	void AddSkinOverride(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFemale, bool firstPerson, std::uint32_t slotMask, std::uint32_t key, std::uint32_t index, T dataType, bool persist)
 	{
 		if (!refr || key > OverrideVariant::kKeyMax)
 			return;
@@ -489,7 +490,7 @@ namespace papyrusNiOverride
 			index = OverrideVariant::kIndexMax;
 
 		if (!slotMask) {
-			_ERROR("%s - Failed to add override for \"%d\" slot key: %d. No weapon specified.", __FUNCTION__, slotMask, key);
+			SKSE::log::error("{} - Failed to add override for \"{}\" slot key: {}. No weapon specified.", __FUNCTION__, slotMask, key);
 			return;
 		}
 
@@ -497,7 +498,7 @@ namespace papyrusNiOverride
 		PackValue<T>(&value, key, index, &dataType);
 
 		if (value.type == OverrideVariant::kType_None) {
-			_ERROR("%s - Failed to pack value for \"%d\" slot key: %d. Most likely invalid key for type", __FUNCTION__, slotMask, key);
+			SKSE::log::error("{} - Failed to pack value for \"{}\" slot key: {}. Most likely invalid key for type", __FUNCTION__, slotMask, key);
 			return;
 		}
 
@@ -505,10 +506,10 @@ namespace papyrusNiOverride
 		if (persist)
 			g_overrideInterface.Impl_AddSkinOverride(refr, isFemale, firstPerson, slotMask, value);
 
-		UInt8 gender = 0;
-		TESNPC * actorBase = DYNAMIC_CAST(refr->baseForm, TESForm, TESNPC);
+		std::uint8_t gender = 0;
+		RE::TESNPC * actorBase = refr->GetBaseObject() ? refr->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 		if (actorBase)
-			gender = CALL_MEMBER_FN(actorBase, GetSex)();
+			gender = actorBase->GetSex();
 
 		// Applies the properties visually, only if the current gender matches
 		if (isFemale == (gender == 1))
@@ -516,7 +517,7 @@ namespace papyrusNiOverride
 	}
 
 	template<typename T>
-	T GetSkinOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, bool firstPerson, UInt32 slotMask, UInt32 key, UInt32 index)
+	T GetSkinOverride(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFemale, bool firstPerson, std::uint32_t slotMask, std::uint32_t key, std::uint32_t index)
 	{
 		if (!refr || key > OverrideVariant::kKeyMax)
 			return 0;
@@ -536,7 +537,7 @@ namespace papyrusNiOverride
 	}
 
 	template<typename T>
-	T GetSkinProperty(StaticFunctionTag* base, TESObjectREFR * refr, bool firstPerson, UInt32 slotMask, UInt32 key, UInt32 index)
+	T GetSkinProperty(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool firstPerson, std::uint32_t slotMask, std::uint32_t key, std::uint32_t index)
 	{
 		if (!refr || key > OverrideVariant::kKeyMax)
 			return 0;
@@ -562,7 +563,7 @@ namespace papyrusNiOverride
 		g_overrideInterface.Impl_RemoveAllOverrides();
 	}
 
-	void RemoveAllReferenceOverrides(StaticFunctionTag* base, TESObjectREFR * refr)
+	void RemoveAllReferenceOverrides(StaticFunctionTag* base, RE::TESObjectREFR * refr)
 	{
 		if(!refr)
 			return;
@@ -570,22 +571,22 @@ namespace papyrusNiOverride
 		g_overrideInterface.Impl_RemoveAllReferenceOverrides(refr);
 	}
 
-	void RemoveAllArmorOverrides(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, TESObjectARMO * armor)
+	void RemoveAllArmorOverrides(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFemale, RE::TESObjectARMO * armor)
 	{
 		g_overrideInterface.Impl_RemoveAllArmorOverrides(refr, isFemale, armor);
 	}
 
-	void RemoveAllArmorAddonOverrides(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, TESObjectARMO * armor, TESObjectARMA * addon)
+	void RemoveAllArmorAddonOverrides(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFemale, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon)
 	{
 		g_overrideInterface.Impl_RemoveAllArmorAddonOverrides(refr, isFemale, armor, addon);
 	}
 
-	void RemoveAllArmorAddonNodeOverrides(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, TESObjectARMO * armor, TESObjectARMA * addon, BSFixedString nodeName)
+	void RemoveAllArmorAddonNodeOverrides(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFemale, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::BSFixedString nodeName)
 	{
 		g_overrideInterface.Impl_RemoveAllArmorAddonNodeOverrides(refr, isFemale, armor, addon, nodeName);
 	}
 
-	void RemoveArmorAddonOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, TESObjectARMO * armor, TESObjectARMA * addon, BSFixedString nodeName, UInt32 key, UInt32 index)
+	void RemoveArmorAddonOverride(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFemale, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index)
 	{
 		if(!refr || key > OverrideVariant::kKeyMax)
 			return;
@@ -603,17 +604,17 @@ namespace papyrusNiOverride
 		g_overrideInterface.Impl_RemoveAllNodeOverrides();
 	}
 
-	void RemoveAllReferenceNodeOverrides(StaticFunctionTag* base, TESObjectREFR * refr)
+	void RemoveAllReferenceNodeOverrides(StaticFunctionTag* base, RE::TESObjectREFR * refr)
 	{
 		g_overrideInterface.Impl_RemoveAllReferenceNodeOverrides(refr);
 	}
 
-	void RemoveAllNodeNameOverrides(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, BSFixedString nodeName)
+	void RemoveAllNodeNameOverrides(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFemale, RE::BSFixedString nodeName)
 	{
 		g_overrideInterface.Impl_RemoveAllNodeNameOverrides(refr, isFemale, nodeName);
 	}
 
-	void RemoveNodeOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, BSFixedString nodeName, UInt32 key, UInt32 index)
+	void RemoveNodeOverride(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFemale, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index)
 	{
 		if(!refr || key > OverrideVariant::kKeyMax)
 			return;
@@ -631,7 +632,7 @@ namespace papyrusNiOverride
 		g_overrideInterface.Impl_RemoveAllWeaponBasedOverrides();
 	}
 
-	void RemoveAllReferenceWeaponOverrides(StaticFunctionTag* base, TESObjectREFR * refr)
+	void RemoveAllReferenceWeaponOverrides(StaticFunctionTag* base, RE::TESObjectREFR * refr)
 	{
 		if(!refr)
 			return;
@@ -639,17 +640,17 @@ namespace papyrusNiOverride
 		g_overrideInterface.Impl_RemoveAllReferenceWeaponOverrides(refr);
 	}
 
-	void RemoveAllWeaponOverrides(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, bool firstPerson, TESObjectWEAP * weapon)
+	void RemoveAllWeaponOverrides(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFemale, bool firstPerson, RE::TESObjectWEAP * weapon)
 	{
 		g_overrideInterface.Impl_RemoveAllWeaponOverrides(refr, isFemale, firstPerson, weapon);
 	}
 
-	void RemoveAllWeaponNodeOverrides(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, bool firstPerson, TESObjectWEAP * weapon, BSFixedString nodeName)
+	void RemoveAllWeaponNodeOverrides(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFemale, bool firstPerson, RE::TESObjectWEAP * weapon, RE::BSFixedString nodeName)
 	{
 		g_overrideInterface.Impl_RemoveAllWeaponNodeOverrides(refr, isFemale, firstPerson, weapon, nodeName);
 	}
 
-	void RemoveWeaponOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, bool firstPerson, TESObjectWEAP * weapon, BSFixedString nodeName, UInt32 key, UInt32 index)
+	void RemoveWeaponOverride(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFemale, bool firstPerson, RE::TESObjectWEAP * weapon, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index)
 	{
 		if(!refr || key > OverrideVariant::kKeyMax)
 			return;
@@ -667,7 +668,7 @@ namespace papyrusNiOverride
 		g_overrideInterface.Impl_RemoveAllSkinBasedOverrides();
 	}
 
-	void RemoveAllReferenceSkinOverrides(StaticFunctionTag* base, TESObjectREFR * refr)
+	void RemoveAllReferenceSkinOverrides(StaticFunctionTag* base, RE::TESObjectREFR * refr)
 	{
 		if (!refr)
 			return;
@@ -675,12 +676,12 @@ namespace papyrusNiOverride
 		g_overrideInterface.Impl_RemoveAllReferenceSkinOverrides(refr);
 	}
 
-	void RemoveAllSkinOverrides(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, bool firstPerson, UInt32 slotMask)
+	void RemoveAllSkinOverrides(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFemale, bool firstPerson, std::uint32_t slotMask)
 	{
 		g_overrideInterface.Impl_RemoveAllSkinOverrides(refr, isFemale, firstPerson, slotMask);
 	}
 
-	void RemoveSkinOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, bool firstPerson, UInt32 slotMask, UInt32 key, UInt32 index)
+	void RemoveSkinOverride(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFemale, bool firstPerson, std::uint32_t slotMask, std::uint32_t key, std::uint32_t index)
 	{
 		if (!refr || key > OverrideVariant::kKeyMax)
 			return;
@@ -693,111 +694,111 @@ namespace papyrusNiOverride
 		g_overrideInterface.Impl_RemoveSkinOverride(refr, isFemale, firstPerson, slotMask, key, index);
 	}
 
-	UInt32 GetNumBodyOverlays(StaticFunctionTag* base)
+	std::uint32_t GetNumBodyOverlays(StaticFunctionTag* base)
 	{
 		return g_numBodyOverlays;
 	}
 
-	UInt32 GetNumHandOverlays(StaticFunctionTag* base)
+	std::uint32_t GetNumHandOverlays(StaticFunctionTag* base)
 	{
 		return g_numHandOverlays;
 	}
 
-	UInt32 GetNumFeetOverlays(StaticFunctionTag* base)
+	std::uint32_t GetNumFeetOverlays(StaticFunctionTag* base)
 	{
 		return g_numFeetOverlays;
 	}
 
-	UInt32 GetNumFaceOverlays(StaticFunctionTag* base)
+	std::uint32_t GetNumFaceOverlays(StaticFunctionTag* base)
 	{
 		return g_numFaceOverlays;
 	}
 
-	UInt32 GetNumSpellBodyOverlays(StaticFunctionTag* base)
+	std::uint32_t GetNumSpellBodyOverlays(StaticFunctionTag* base)
 	{
 		return g_numSpellBodyOverlays;
 	}
 
-	UInt32 GetNumSpellHandOverlays(StaticFunctionTag* base)
+	std::uint32_t GetNumSpellHandOverlays(StaticFunctionTag* base)
 	{
 		return g_numSpellHandOverlays;
 	}
 
-	UInt32 GetNumSpellFeetOverlays(StaticFunctionTag* base)
+	std::uint32_t GetNumSpellFeetOverlays(StaticFunctionTag* base)
 	{
 		return g_numSpellFeetOverlays;
 	}
 
-	UInt32 GetNumSpellFaceOverlays(StaticFunctionTag* base)
+	std::uint32_t GetNumSpellFaceOverlays(StaticFunctionTag* base)
 	{
 		return g_numSpellFaceOverlays;
 	}
 
-	bool HasBodyMorph(StaticFunctionTag* base, TESObjectREFR * refr, BSFixedString morphName, BSFixedString keyName)
+	bool HasBodyMorph(StaticFunctionTag* base, RE::TESObjectREFR * refr, RE::BSFixedString morphName, RE::BSFixedString keyName)
 	{
 		if (!refr)
 			return false;
 
-		return g_bodyMorphInterface.HasBodyMorph(refr, morphName, keyName);
+		return g_bodyMorphInterface.HasBodyMorph(refr, morphName.c_str(), keyName.c_str());
 	}
 
-	void SetBodyMorph(StaticFunctionTag* base, TESObjectREFR * refr, BSFixedString morphName, BSFixedString keyName, float value)
+	void SetBodyMorph(StaticFunctionTag* base, RE::TESObjectREFR * refr, RE::BSFixedString morphName, RE::BSFixedString keyName, float value)
 	{
 		if (!refr)
 			return;
 
-		g_bodyMorphInterface.SetMorph(refr, morphName, keyName, value);
+		g_bodyMorphInterface.SetMorph(refr, morphName.c_str(), keyName.c_str(), value);
 	}
 
-	float GetBodyMorph(StaticFunctionTag* base, TESObjectREFR * refr, BSFixedString morphName, BSFixedString keyName)
+	float GetBodyMorph(StaticFunctionTag* base, RE::TESObjectREFR * refr, RE::BSFixedString morphName, RE::BSFixedString keyName)
 	{
 		if (!refr)
 			return 0.0f;
 
-		return g_bodyMorphInterface.GetMorph(refr, morphName, keyName);
+		return g_bodyMorphInterface.GetMorph(refr, morphName.c_str(), keyName.c_str());
 	}
 
-	void ClearBodyMorph(StaticFunctionTag* base, TESObjectREFR * refr, BSFixedString morphName, BSFixedString keyName)
+	void ClearBodyMorph(StaticFunctionTag* base, RE::TESObjectREFR * refr, RE::BSFixedString morphName, RE::BSFixedString keyName)
 	{
 		if (!refr)
 			return;
 
-		g_bodyMorphInterface.ClearMorph(refr, morphName, keyName);
+		g_bodyMorphInterface.ClearMorph(refr, morphName.c_str(), keyName.c_str());
 	}
 
-	bool HasBodyMorphKey(StaticFunctionTag* base, TESObjectREFR * refr, BSFixedString keyName)
+	bool HasBodyMorphKey(StaticFunctionTag* base, RE::TESObjectREFR * refr, RE::BSFixedString keyName)
 	{
 		if (!refr)
 			return false;
 
-		return g_bodyMorphInterface.HasBodyMorphKey(refr, keyName);
+		return g_bodyMorphInterface.HasBodyMorphKey(refr, keyName.c_str());
 	}
 
-	void ClearBodyMorphKeys(StaticFunctionTag* base, TESObjectREFR * refr, BSFixedString keyName)
+	void ClearBodyMorphKeys(StaticFunctionTag* base, RE::TESObjectREFR * refr, RE::BSFixedString keyName)
 	{
 		if (!refr)
 			return;
 
-		g_bodyMorphInterface.ClearBodyMorphKeys(refr, keyName);
+		g_bodyMorphInterface.ClearBodyMorphKeys(refr, keyName.c_str());
 	}
 
-	bool HasBodyMorphName(StaticFunctionTag* base, TESObjectREFR * refr, BSFixedString morphName)
+	bool HasBodyMorphName(StaticFunctionTag* base, RE::TESObjectREFR * refr, RE::BSFixedString morphName)
 	{
 		if (!refr)
 			return false;
 
-		return g_bodyMorphInterface.HasBodyMorphName(refr, morphName);
+		return g_bodyMorphInterface.HasBodyMorphName(refr, morphName.c_str());
 	}
 
-	void ClearBodyMorphNames(StaticFunctionTag* base, TESObjectREFR * refr, BSFixedString morphName)
+	void ClearBodyMorphNames(StaticFunctionTag* base, RE::TESObjectREFR * refr, RE::BSFixedString morphName)
 	{
 		if (!refr)
 			return;
 
-		g_bodyMorphInterface.ClearBodyMorphNames(refr, morphName);
+		g_bodyMorphInterface.ClearBodyMorphNames(refr, morphName.c_str());
 	}
 
-	void ClearMorphs(StaticFunctionTag* base, TESObjectREFR * refr)
+	void ClearMorphs(StaticFunctionTag* base, RE::TESObjectREFR * refr)
 	{
 		if (!refr)
 			return;
@@ -805,21 +806,21 @@ namespace papyrusNiOverride
 		g_bodyMorphInterface.ClearMorphs(refr);
 	}
 
-	VMResultArray<TESObjectREFR*> GetMorphedReferences(StaticFunctionTag* base)
+	std::vector<RE::TESObjectREFR*> GetMorphedReferences(StaticFunctionTag* base)
 	{
-		VMResultArray<TESObjectREFR*> results;
+		std::vector<RE::TESObjectREFR*> results;
 
 		class Visitor : public BodyMorphInterface::ActorVisitor
 		{
 		public:
-			Visitor(VMResultArray<TESObjectREFR*> * res) : result(res) { }
+			Visitor(std::vector<RE::TESObjectREFR*> * res) : result(res) { }
 
-			virtual void Visit(TESObjectREFR * ref) override
+			virtual void Visit(RE::TESObjectREFR * ref) override
 			{
 				result->push_back(ref);
 			}
 		private:
-			VMResultArray<TESObjectREFR*> * result;
+			std::vector<RE::TESObjectREFR*> * result;
 		};
 
 		Visitor visitor(&results);
@@ -827,7 +828,7 @@ namespace papyrusNiOverride
 		return results;
 	}
 
-	void ForEachMorphedReference(StaticFunctionTag* base, BSFixedString eventName, TESForm * receiver)
+	void ForEachMorphedReference(StaticFunctionTag* base, RE::BSFixedString eventName, RE::TESForm * receiver)
 	{
 		if (!receiver)
 			return;
@@ -835,23 +836,23 @@ namespace papyrusNiOverride
 		class Visitor : public BodyMorphInterface::ActorVisitor
 		{
 		public:
-			Visitor(BSFixedString eventName, TESForm * receiver) : m_eventName(eventName), m_receiver(receiver) { }
+			Visitor(RE::BSFixedString eventName, RE::TESForm * receiver) : m_eventName(eventName), m_receiver(receiver) { }
 
-			virtual void Visit(TESObjectREFR * refr) override
+			virtual void Visit(RE::TESObjectREFR * refr) override
 			{
 				MorpedReferenceEventFunctor fn(m_eventName, m_receiver, refr);
 				fn.Run();
 			}
 		private:
-			BSFixedString m_eventName;
-			TESForm * m_receiver;
+			RE::BSFixedString m_eventName;
+			RE::TESForm * m_receiver;
 		};
 
 		Visitor visitor(eventName, receiver);
 		g_bodyMorphInterface.VisitActors(visitor);
 	}
 
-	void UpdateModelWeight(StaticFunctionTag* base, TESObjectREFR * refr)
+	void UpdateModelWeight(StaticFunctionTag* base, RE::TESObjectREFR * refr)
 	{
 		if (!refr)
 			return;
@@ -859,9 +860,9 @@ namespace papyrusNiOverride
 		g_bodyMorphInterface.UpdateModelWeight(refr);
 	}
 
-	VMResultArray<BSFixedString> GetCachedMorphNames(StaticFunctionTag* base)
+	std::vector<RE::BSFixedString> GetCachedMorphNames(StaticFunctionTag* base)
 	{
-		VMResultArray<BSFixedString> results;
+		std::vector<RE::BSFixedString> results;
 		for (auto morph : g_bodyMorphInterface.GetCachedMorphNames())
 		{
 			results.push_back(morph);
@@ -879,7 +880,7 @@ namespace papyrusNiOverride
 		g_tintMaskInterface.ReleaseTints();
 	}
 
-	UInt32 GetItemUniqueID(StaticFunctionTag* base, TESObjectREFR * refr, UInt32 weaponSlot, UInt32 slotMask, bool makeUnique)
+	std::uint32_t GetItemUniqueID(StaticFunctionTag* base, RE::TESObjectREFR * refr, std::uint32_t weaponSlot, std::uint32_t slotMask, bool makeUnique)
 	{
 		if (!refr)
 			return 0;
@@ -889,13 +890,13 @@ namespace papyrusNiOverride
 		return g_itemDataInterface.GetItemUniqueID(refr, identifier, makeUnique);
 	}
 
-	UInt32 GetObjectUniqueID(StaticFunctionTag* base, TESObjectREFR * refr, bool makeUnique)
+	std::uint32_t GetObjectUniqueID(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool makeUnique)
 	{
 		if (!refr)
 			return 0;
 
-		if (Actor * actor = DYNAMIC_CAST(refr, TESForm, Actor)) {
-			_WARNING("%s - cannot be called on an actor", __FUNCTION__);
+		if (RE::Actor * actor = refr ? refr->As<RE::Actor>() : nullptr) {
+			SKSE::log::warn("{} - cannot be called on an actor", __FUNCTION__);
 			return 0;
 		}
 
@@ -904,326 +905,323 @@ namespace papyrusNiOverride
 		return g_itemDataInterface.GetItemUniqueID(refr, identifier, makeUnique);
 	}
 
-	TESForm * GetFormFromUniqueID(StaticFunctionTag* base, UInt32 uniqueID)
+	RE::TESForm * GetFormFromUniqueID(StaticFunctionTag* base, std::uint32_t uniqueID)
 	{
 		return g_itemDataInterface.GetFormFromUniqueID(uniqueID);
 	}
 
-	TESForm * GetOwnerOfUniqueID(StaticFunctionTag* base, UInt32 uniqueID)
+	RE::TESForm * GetOwnerOfUniqueID(StaticFunctionTag* base, std::uint32_t uniqueID)
 	{
 		return g_itemDataInterface.GetOwnerOfUniqueID(uniqueID);
 	}
 
-	void SetItemDyeColor(StaticFunctionTag* base, UInt32 uniqueID, SInt32 maskIndex, UInt32 color)
+	void SetItemDyeColor(StaticFunctionTag* base, std::uint32_t uniqueID, std::int32_t maskIndex, std::uint32_t color)
 	{
 		g_itemDataInterface.SetItemTextureLayerColor(uniqueID, 0, maskIndex, color);
 	}
 
-	UInt32 GetItemDyeColor(StaticFunctionTag* base, UInt32 uniqueID, SInt32 maskIndex)
+	std::uint32_t GetItemDyeColor(StaticFunctionTag* base, std::uint32_t uniqueID, std::int32_t maskIndex)
 	{
 		return g_itemDataInterface.GetItemTextureLayerColor(uniqueID, 0, maskIndex);
 	}
 
-	void ClearItemDyeColor(StaticFunctionTag* base, UInt32 uniqueID, SInt32 maskIndex)
+	void ClearItemDyeColor(StaticFunctionTag* base, std::uint32_t uniqueID, std::int32_t maskIndex)
 	{
 		g_itemDataInterface.ClearItemTextureLayerColor(uniqueID, 0, maskIndex);
 	}
 
-	void UpdateItemDyeColor(StaticFunctionTag* base, TESObjectREFR * refr, UInt32 uniqueID)
+	void UpdateItemDyeColor(StaticFunctionTag* base, RE::TESObjectREFR * refr, std::uint32_t uniqueID)
 	{
 		UpdateItemTextureLayers(base, refr, uniqueID);
 	}
 
-	void SetItemTextureLayerColor(StaticFunctionTag* base, UInt32 uniqueID, SInt32 textureIndex, SInt32 layerIndex, UInt32 color)
+	void SetItemTextureLayerColor(StaticFunctionTag* base, std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex, std::uint32_t color)
 	{
 		g_itemDataInterface.SetItemTextureLayerColor(uniqueID, textureIndex, layerIndex, color);
 	}
 
-	UInt32 GetItemTextureLayerColor(StaticFunctionTag* base, UInt32 uniqueID, SInt32 textureIndex, SInt32 layerIndex)
+	std::uint32_t GetItemTextureLayerColor(StaticFunctionTag* base, std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex)
 	{
 		return g_itemDataInterface.GetItemTextureLayerColor(uniqueID, textureIndex, layerIndex);
 	}
 
-	void ClearItemTextureLayerColor(StaticFunctionTag* base, UInt32 uniqueID, SInt32 textureIndex, SInt32 layerIndex)
+	void ClearItemTextureLayerColor(StaticFunctionTag* base, std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex)
 	{
 		g_itemDataInterface.ClearItemTextureLayerColor(uniqueID, textureIndex, layerIndex);
 	}
 
-	void SetItemTextureLayerType(StaticFunctionTag* base, UInt32 uniqueID, SInt32 textureIndex, SInt32 layerIndex, UInt32 color)
+	void SetItemTextureLayerType(StaticFunctionTag* base, std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex, std::uint32_t color)
 	{
 		g_itemDataInterface.SetItemTextureLayerType(uniqueID, textureIndex, layerIndex, color);
 	}
 
-	UInt32 GetItemTextureLayerType(StaticFunctionTag* base, UInt32 uniqueID, SInt32 textureIndex, SInt32 layerIndex)
+	std::uint32_t GetItemTextureLayerType(StaticFunctionTag* base, std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex)
 	{
 		return g_itemDataInterface.GetItemTextureLayerType(uniqueID, textureIndex, layerIndex);
 	}
 
-	void ClearItemTextureLayerType(StaticFunctionTag* base, UInt32 uniqueID, SInt32 textureIndex, SInt32 layerIndex)
+	void ClearItemTextureLayerType(StaticFunctionTag* base, std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex)
 	{
 		g_itemDataInterface.ClearItemTextureLayerType(uniqueID, textureIndex, layerIndex);
 	}
 
-	void SetItemTextureLayerTexture(StaticFunctionTag* base, UInt32 uniqueID, SInt32 textureIndex, SInt32 layerIndex, BSFixedString texture)
+	void SetItemTextureLayerTexture(StaticFunctionTag* base, std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex, RE::BSFixedString texture)
 	{
 		g_itemDataInterface.Impl_SetItemTextureLayerTexture(uniqueID, textureIndex, layerIndex, texture);
 	}
 
-	BSFixedString GetItemTextureLayerTexture(StaticFunctionTag* base, UInt32 uniqueID, SInt32 textureIndex, SInt32 layerIndex)
+	RE::BSFixedString GetItemTextureLayerTexture(StaticFunctionTag* base, std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex)
 	{
 		return g_itemDataInterface.Impl_GetItemTextureLayerTexture(uniqueID, textureIndex, layerIndex);
 	}
 
-	void ClearItemTextureLayerTexture(StaticFunctionTag* base, UInt32 uniqueID, SInt32 textureIndex, SInt32 layerIndex)
+	void ClearItemTextureLayerTexture(StaticFunctionTag* base, std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex)
 	{
 		g_itemDataInterface.ClearItemTextureLayerTexture(uniqueID, textureIndex, layerIndex);
 	}
 
-	void SetItemTextureLayerBlendMode(StaticFunctionTag* base, UInt32 uniqueID, SInt32 textureIndex, SInt32 layerIndex, BSFixedString texture)
+	void SetItemTextureLayerBlendMode(StaticFunctionTag* base, std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex, RE::BSFixedString texture)
 	{
 		g_itemDataInterface.Impl_SetItemTextureLayerBlendMode(uniqueID, textureIndex, layerIndex, texture);
 	}
 
-	BSFixedString GetItemTextureLayerBlendMode(StaticFunctionTag* base, UInt32 uniqueID, SInt32 textureIndex, SInt32 layerIndex)
+	RE::BSFixedString GetItemTextureLayerBlendMode(StaticFunctionTag* base, std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex)
 	{
 		return g_itemDataInterface.Impl_GetItemTextureLayerBlendMode(uniqueID, textureIndex, layerIndex);
 	}
 
-	void ClearItemTextureLayerBlendMode(StaticFunctionTag* base, UInt32 uniqueID, SInt32 textureIndex, SInt32 layerIndex)
+	void ClearItemTextureLayerBlendMode(StaticFunctionTag* base, std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex)
 	{
 		g_itemDataInterface.ClearItemTextureLayerBlendMode(uniqueID, textureIndex, layerIndex);
 	}
 
-	void UpdateItemTextureLayers(StaticFunctionTag* base, TESObjectREFR * refr, UInt32 uniqueID)
+	void UpdateItemTextureLayers(StaticFunctionTag* base, RE::TESObjectREFR * refr, std::uint32_t uniqueID)
 	{
-		if (Actor * actor = DYNAMIC_CAST(refr, TESForm, Actor)) {
+		if (RE::Actor * actor = refr ? refr->As<RE::Actor>() : nullptr) {
 			IItemDataInterface::Identifier identifier;
 			identifier.SetRankID(uniqueID);
-			g_task->AddTask(new NIOVTaskUpdateItemDye(actor, identifier, TintMaskInterface::kUpdate_All, false));
+			SKEE_AddTask(g_task, new NIOVTaskUpdateItemDye(actor, identifier, TintMaskInterface::kUpdate_All, false));
 		}
 	}
 
-	bool IsFormDye(StaticFunctionTag* base, TESForm * form)
+	bool IsFormDye(StaticFunctionTag* base, RE::TESForm * form)
 	{
 		return form ? g_dyeMap.IsValidDye(form) : false;
 	}
 
-	UInt32 GetFormDyeColor(StaticFunctionTag* base, TESForm * form)
+	std::uint32_t GetFormDyeColor(StaticFunctionTag* base, RE::TESForm * form)
 	{
 		return form ? g_dyeMap.GetDyeColor(form) : 0;
 	}
 
-	void RegisterFormDyeColor(StaticFunctionTag* base, TESForm * form, UInt32 color)
+	void RegisterFormDyeColor(StaticFunctionTag* base, RE::TESForm * form, std::uint32_t color)
 	{
 		if (form) {
 			g_dyeMap.RegisterDyeForm(form, color);
 		}
 	}
 
-	void UnregisterFormDyeColor(StaticFunctionTag* base, TESForm * form)
+	void UnregisterFormDyeColor(StaticFunctionTag* base, RE::TESForm * form)
 	{
 		if (form) {
 			g_dyeMap.UnregisterDyeForm(form);
 		}
 	}
 
-
-
-	bool HasNodeTransformPosition(StaticFunctionTag* base, TESObjectREFR * refr, bool isFirstPerson, bool isFemale, BSFixedString node, BSFixedString name)
+	bool HasNodeTransformPosition(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFirstPerson, bool isFemale, RE::BSFixedString node, RE::BSFixedString name)
 	{
 		if (!refr)
 			return false;
 
-		return g_transformInterface.HasNodeTransformPosition(refr, isFirstPerson, isFemale, node, name);
+		return g_transformInterface.HasNodeTransformPosition(refr, isFirstPerson, isFemale, node.c_str(), name.c_str());
 	}
 
-	void AddNodeTransformPosition(StaticFunctionTag* base, TESObjectREFR * refr, bool isFirstPerson, bool isFemale, BSFixedString node, BSFixedString name, VMArray<float> dataType)
+	void AddNodeTransformPosition(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFirstPerson, bool isFemale, RE::BSFixedString node, RE::BSFixedString name, std::vector<float> dataType)
 	{
 		if (!refr)
 			return;
 
-		if (name == BSFixedString("")) {
-			_ERROR("%s - Cannot add empty key for node \"%s\".", __FUNCTION__, node.data);
+		if (name == RE::BSFixedString("")) {
+			SKSE::log::error("{} - Cannot add empty key for node \"{}\".", __FUNCTION__, node.c_str());
 			return;
 		}
 
-		if (dataType.Length() != 3) {
-			_ERROR("%s - Failed to unpack array value for \"%s\". Invalid array size must be 3", __FUNCTION__, node.data);
+		if (dataType.size() != 3) {
+			SKSE::log::error("{} - Failed to unpack array value for \"{}\". Invalid array size must be 3", __FUNCTION__, node.c_str());
 			return;
 		}
 
 		float pos[3];
 		OverrideVariant posV[3];
-		for (UInt32 i = 0; i < 3; i++) {
-			dataType.Get(&pos[i], i);
+		for (std::uint32_t i = 0; i < 3; i++) {
+			pos[i] = dataType[i];
 			PackValue<float>(&posV[i], OverrideVariant::kParam_NodeTransformPosition, i, &pos[i]);
-			g_transformInterface.Impl_AddNodeTransform(refr, isFirstPerson, isFemale, node, name, posV[i]);
+			g_transformInterface.Impl_AddNodeTransform(refr, isFirstPerson, isFemale, node.c_str(), name.c_str(), posV[i]);
 		}		
 	}
 
 	
-	VMResultArray<float> GetNodeTransformPosition(StaticFunctionTag* base, TESObjectREFR * refr, bool isFirstPerson, bool isFemale, BSFixedString node, BSFixedString name)
+	std::vector<float> GetNodeTransformPosition(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFirstPerson, bool isFemale, RE::BSFixedString node, RE::BSFixedString name)
 	{
-		VMResultArray<float> position;
+		std::vector<float> position;
 		if (!refr)
 			return position;
 			
 		position.resize(3, 0.0);
-		NiTransform transform;
-		bool ret = g_transformInterface.Impl_GetOverrideNodeTransform(refr, isFirstPerson, isFemale, node, name, OverrideVariant::kParam_NodeTransformPosition, &transform);
-		position[0] = transform.pos.x;
-		position[1] = transform.pos.y;
-		position[2] = transform.pos.z;
+		RE::NiTransform transform;
+		bool ret = g_transformInterface.Impl_GetOverrideNodeTransform(refr, isFirstPerson, isFemale, node.c_str(), name.c_str(), OverrideVariant::kParam_NodeTransformPosition, &transform);
+		position[0] = transform.translate.x;
+		position[1] = transform.translate.y;
+		position[2] = transform.translate.z;
 		return position;
 	}
 
-	bool RemoveNodeTransformPosition(StaticFunctionTag* base, TESObjectREFR * refr, bool isFirstPerson, bool isFemale, BSFixedString node, BSFixedString name)
+	bool RemoveNodeTransformPosition(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFirstPerson, bool isFemale, RE::BSFixedString node, RE::BSFixedString name)
 	{
 		if (!refr)
 			return false;
 
-		return g_transformInterface.RemoveNodeTransformPosition(refr, isFirstPerson, isFemale, node, name);
+		return g_transformInterface.RemoveNodeTransformPosition(refr, isFirstPerson, isFemale, node.c_str(), name.c_str());
 	}
 
-	bool HasNodeTransformScale(StaticFunctionTag* base, TESObjectREFR * refr, bool isFirstPerson, bool isFemale, BSFixedString node, BSFixedString name)
+	bool HasNodeTransformScale(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFirstPerson, bool isFemale, RE::BSFixedString node, RE::BSFixedString name)
 	{
 		if (!refr)
 			return false;
 
-		return g_transformInterface.HasNodeTransformScale(refr, isFirstPerson, isFemale, node, name);
+		return g_transformInterface.HasNodeTransformScale(refr, isFirstPerson, isFemale, node.c_str(), name.c_str());
 	}
 
-
-	void AddNodeTransformScale(StaticFunctionTag* base, TESObjectREFR * refr, bool isFirstPerson, bool isFemale, BSFixedString node, BSFixedString name, float fScale)
+	void AddNodeTransformScale(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFirstPerson, bool isFemale, RE::BSFixedString node, RE::BSFixedString name, float fScale)
 	{
 		if (!refr)
 			return;
 
-		if (name == BSFixedString("")) {
-			_ERROR("%s - Cannot add empty key for node \"%s\".", __FUNCTION__, node.data);
+		if (name == RE::BSFixedString("")) {
+			SKSE::log::error("{} - Cannot add empty key for node \"{}\".", __FUNCTION__, node.c_str());
 			return;
 		}
 
-		g_transformInterface.AddNodeTransformScale(refr, isFirstPerson, isFemale, node, name, fScale);
+		g_transformInterface.AddNodeTransformScale(refr, isFirstPerson, isFemale, node.c_str(), name.c_str(), fScale);
 	}
 
-	float GetNodeTransformScale(StaticFunctionTag* base, TESObjectREFR * refr, bool isFirstPerson, bool isFemale, BSFixedString node, BSFixedString name)
+	float GetNodeTransformScale(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFirstPerson, bool isFemale, RE::BSFixedString node, RE::BSFixedString name)
 	{
 		if (!refr)
 			return 0;
 
-		return g_transformInterface.GetNodeTransformScale(refr, isFirstPerson, isFemale, node, name);
+		return g_transformInterface.GetNodeTransformScale(refr, isFirstPerson, isFemale, node.c_str(), name.c_str());
 	}
 
-	bool RemoveNodeTransformScale(StaticFunctionTag* base, TESObjectREFR * refr, bool isFirstPerson, bool isFemale, BSFixedString node, BSFixedString name)
+	bool RemoveNodeTransformScale(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFirstPerson, bool isFemale, RE::BSFixedString node, RE::BSFixedString name)
 	{
 		if (!refr)
 			return false;
 
-		return g_transformInterface.RemoveNodeTransformScale(refr, isFirstPerson, isFemale, node, name);
+		return g_transformInterface.RemoveNodeTransformScale(refr, isFirstPerson, isFemale, node.c_str(), name.c_str());
 	}
 
-	bool HasNodeTransformScaleMode(StaticFunctionTag* base, TESObjectREFR* refr, bool isFirstPerson, bool isFemale, BSFixedString node, BSFixedString name)
+	bool HasNodeTransformScaleMode(StaticFunctionTag* base, RE::TESObjectREFR* refr, bool isFirstPerson, bool isFemale, RE::BSFixedString node, RE::BSFixedString name)
 	{
 		if (!refr)
 			return false;
 
-		return g_transformInterface.HasNodeTransformScaleMode(refr, isFirstPerson, isFemale, node, name);
+		return g_transformInterface.HasNodeTransformScaleMode(refr, isFirstPerson, isFemale, node.c_str(), name.c_str());
 	}
 ;
-	void AddNodeTransformScaleMode(StaticFunctionTag* base, TESObjectREFR* refr, bool isFirstPerson, bool isFemale, BSFixedString node, BSFixedString name, UInt32 iScaleMode)
+	void AddNodeTransformScaleMode(StaticFunctionTag* base, RE::TESObjectREFR* refr, bool isFirstPerson, bool isFemale, RE::BSFixedString node, RE::BSFixedString name, std::uint32_t iScaleMode)
 	{
 		if (!refr)
 			return;
 
-		if (name == BSFixedString("")) {
-			_ERROR("%s - Cannot add empty key for node \"%s\".", __FUNCTION__, node.data);
+		if (name == RE::BSFixedString("")) {
+			SKSE::log::error("{} - Cannot add empty key for node \"{}\".", __FUNCTION__, node.c_str());
 			return;
 		}
 
-		g_transformInterface.AddNodeTransformScaleMode(refr, isFirstPerson, isFemale, node, name, iScaleMode);
+		g_transformInterface.AddNodeTransformScaleMode(refr, isFirstPerson, isFemale, node.c_str(), name.c_str(), iScaleMode);
 	}
 
-	UInt32 GetNodeTransformScaleMode(StaticFunctionTag* base, TESObjectREFR* refr, bool isFirstPerson, bool isFemale, BSFixedString node, BSFixedString name)
+	std::uint32_t GetNodeTransformScaleMode(StaticFunctionTag* base, RE::TESObjectREFR* refr, bool isFirstPerson, bool isFemale, RE::BSFixedString node, RE::BSFixedString name)
 	{
 		if (!refr)
 			return 0;
 
-		return g_transformInterface.GetNodeTransformScaleMode(refr, isFirstPerson, isFemale, node, name);
+		return g_transformInterface.GetNodeTransformScaleMode(refr, isFirstPerson, isFemale, node.c_str(), name.c_str());
 	}
 
-	bool RemoveNodeTransformScaleMode(StaticFunctionTag* base, TESObjectREFR* refr, bool isFirstPerson, bool isFemale, BSFixedString node, BSFixedString name)
+	bool RemoveNodeTransformScaleMode(StaticFunctionTag* base, RE::TESObjectREFR* refr, bool isFirstPerson, bool isFemale, RE::BSFixedString node, RE::BSFixedString name)
 	{
 		if (!refr)
 			return false;
 
-		return g_transformInterface.RemoveNodeTransformScaleMode(refr, isFirstPerson, isFemale, node, name);
+		return g_transformInterface.RemoveNodeTransformScaleMode(refr, isFirstPerson, isFemale, node.c_str(), name.c_str());
 	}
 
-	bool HasNodeTransformRotation(StaticFunctionTag* base, TESObjectREFR * refr, bool isFirstPerson, bool isFemale, BSFixedString node, BSFixedString name)
+	bool HasNodeTransformRotation(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFirstPerson, bool isFemale, RE::BSFixedString node, RE::BSFixedString name)
 	{
 		if (!refr)
 			return false;
 
-		return g_transformInterface.HasNodeTransformRotation(refr, isFirstPerson, isFemale, node, name);
+		return g_transformInterface.HasNodeTransformRotation(refr, isFirstPerson, isFemale, node.c_str(), name.c_str());
 	}
 
-	void AddNodeTransformRotation(StaticFunctionTag* base, TESObjectREFR * refr, bool isFirstPerson, bool isFemale, BSFixedString node, BSFixedString name, VMArray<float> dataType)
+	void AddNodeTransformRotation(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFirstPerson, bool isFemale, RE::BSFixedString node, RE::BSFixedString name, std::vector<float> dataType)
 	{
 		if (!refr)
 			return;
 
-		NiMatrix33 rotation;
-		if (dataType.Length() == 3) {
+		RE::NiMatrix3 rotation;
+		if (dataType.size() == 3) {
 			float heading, attitude, bank;
 			
-			dataType.Get(&heading, 0);
-			dataType.Get(&attitude, 1);
-			dataType.Get(&bank, 2);
+			heading = dataType[0];
+			attitude = dataType[1];
+			bank = dataType[2];
 
-			heading *= MATH_PI / 180;
-			attitude *= MATH_PI / 180;
-			bank *= MATH_PI / 180;
+			heading *= std::numbers::pi_v<float> / 180;
+			attitude *= std::numbers::pi_v<float> / 180;
+			bank *= std::numbers::pi_v<float> / 180;
 
-			rotation.SetEulerAngles(heading, attitude, bank);
+			// SetEulerAngles not in CommonLib - stub
+			rotation = RE::NiMatrix3();
 		}
-		else if (dataType.Length() == 9) {
-			for (UInt32 i = 0; i < 9; i++)
-				dataType.Get(&rotation.arr[i], i);
+		else if (dataType.size() == 9) {
+			for (std::uint32_t i = 0; i < 9; i++)
+				rotation.entry[i/3][i%3] = dataType[i];
 		}
 		else {
-			_ERROR("%s - Failed to unpack array value for \"%s\". Invalid array size must be 3 or 9", __FUNCTION__, node.data);
+			SKSE::log::error("{} - Failed to unpack array value for \"{}\". Invalid array size must be 3 or 9", __FUNCTION__, node.c_str());
 			return;
 		}
 
 		OverrideVariant rotV[9];
-		for (UInt32 i = 0; i < 9; i++) {
-			PackValue<float>(&rotV[i], OverrideVariant::kParam_NodeTransformRotation, i, &rotation.arr[i]);
-			g_transformInterface.Impl_AddNodeTransform(refr, isFirstPerson, isFemale, node, name, rotV[i]);
+		for (std::uint32_t i = 0; i < 9; i++) {
+			PackValue<float>(&rotV[i], OverrideVariant::kParam_NodeTransformRotation, i, &rotation.entry[i/3][i%3]);
+			g_transformInterface.Impl_AddNodeTransform(refr, isFirstPerson, isFemale, node.c_str(), name.c_str(), rotV[i]);
 		}
 	}
 
-
-	VMResultArray<float> GetNodeTransformRotation(StaticFunctionTag* base, TESObjectREFR * refr, bool isFirstPerson, bool isFemale, BSFixedString node, BSFixedString name, UInt32 type)
+	std::vector<float> GetNodeTransformRotation(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFirstPerson, bool isFemale, RE::BSFixedString node, RE::BSFixedString name, std::uint32_t type)
 	{
-		VMResultArray<float> rotation;
+		std::vector<float> rotation;
 		if (!refr)
 			return rotation;
 
-		NiTransform transform;
-		bool ret = g_transformInterface.Impl_GetOverrideNodeTransform(refr, isFirstPerson, isFemale, node, name, OverrideVariant::kParam_NodeTransformRotation, &transform);
+		RE::NiTransform transform;
+		bool ret = g_transformInterface.Impl_GetOverrideNodeTransform(refr, isFirstPerson, isFemale, node.c_str(), name.c_str(), OverrideVariant::kParam_NodeTransformRotation, &transform);
 
 		switch (type) {
 			case 0:
 			{
 				rotation.resize(3, 0.0);
 				float heading, attitude, bank;
-				transform.rot.GetEulerAngles(&heading, &attitude, &bank);
+				heading = attitude = bank = 0.0f; // GetEulerAngles not in CommonLib
 
 				// Radians to degrees
-				heading *= 180 / MATH_PI;
-				attitude *= 180 / MATH_PI;
-				bank *= 180 / MATH_PI;
+				heading *= 180 / std::numbers::pi_v<float>;
+				attitude *= 180 / std::numbers::pi_v<float>;
+				bank *= 180 / std::numbers::pi_v<float>;
 
 				rotation[0] = heading;
 				rotation[1] = attitude;
@@ -1233,31 +1231,30 @@ namespace papyrusNiOverride
 			case 1:
 			{
 				rotation.resize(9, 0.0);
-				for (UInt32 i = 0; i < 9; i++) {
-					rotation[i] = ((float*)transform.rot.data)[i];
+				for (std::uint32_t i = 0; i < 9; i++) {
+					rotation[i] = (&transform.rotate.entry[0][0])[i];
 				}
 				break;
 			}
 			default:
 			{
-				_ERROR("%s - Failed to create array value for \"%s\". Invalid type %d", __FUNCTION__, node.data, type);
+				SKSE::log::error("{} - Failed to create array value for \"{}\". Invalid type {}", __FUNCTION__, node.c_str(), type);
 				break;
 			}
 		}
 
-
 		return rotation;
 	}
 	
-	bool RemoveNodeTransformRotation(StaticFunctionTag* base, TESObjectREFR * refr, bool isFirstPerson, bool isFemale, BSFixedString node, BSFixedString name)
+	bool RemoveNodeTransformRotation(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFirstPerson, bool isFemale, RE::BSFixedString node, RE::BSFixedString name)
 	{
 		if (!refr)
 			return false;
 
-		return g_transformInterface.RemoveNodeTransformRotation(refr, isFirstPerson, isFemale, node, name);
+		return g_transformInterface.RemoveNodeTransformRotation(refr, isFirstPerson, isFemale, node.c_str(), name.c_str());
 	}
 
-	void UpdateAllReferenceTransforms(StaticFunctionTag* base, TESObjectREFR * refr)
+	void UpdateAllReferenceTransforms(StaticFunctionTag* base, RE::TESObjectREFR * refr)
 	{
 		if (!refr)
 			return;
@@ -1270,7 +1267,7 @@ namespace papyrusNiOverride
 		g_transformInterface.Revert();
 	}
 
-	void RemoveAllReferenceTransforms(StaticFunctionTag* base, TESObjectREFR * refr)
+	void RemoveAllReferenceTransforms(StaticFunctionTag* base, RE::TESObjectREFR * refr)
 	{
 		if (!refr)
 			return;
@@ -1278,24 +1275,24 @@ namespace papyrusNiOverride
 		g_transformInterface.Impl_RemoveAllReferenceTransforms(refr);
 	}
 
-	void UpdateNodeTransform(StaticFunctionTag* base, TESObjectREFR * refr, bool isFirstPerson, bool isFemale, BSFixedString node)
+	void UpdateNodeTransform(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFirstPerson, bool isFemale, RE::BSFixedString node)
 	{
 		if (!refr)
 			return;
 
-		UInt8 gender = isFemale ? 1 : 0;
-		UInt8 realGender = 0;
-		TESNPC * actorBase = DYNAMIC_CAST(refr->baseForm, TESForm, TESNPC);
+		std::uint8_t gender = isFemale ? 1 : 0;
+		std::uint8_t realGender = 0;
+		RE::TESNPC * actorBase = refr->GetBaseObject() ? refr->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 		if (actorBase)
-			realGender = CALL_MEMBER_FN(actorBase, GetSex)();
+			realGender = actorBase->GetSex();
 
 		if (gender != realGender)
 			return;
 
-		g_transformInterface.Impl_UpdateNodeTransforms(refr, isFirstPerson, isFemale, node);
+		g_transformInterface.Impl_UpdateNodeTransforms(refr, isFirstPerson, isFemale, node.c_str());
 	}
 
-	void SetNodeDestination(StaticFunctionTag* base, TESObjectREFR * refr, bool isFirstPerson, bool isFemale, BSFixedString node, BSFixedString destination)
+	void SetNodeDestination(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFirstPerson, bool isFemale, RE::BSFixedString node, RE::BSFixedString destination)
 	{
 		if (!refr)
 			return;
@@ -1303,88 +1300,92 @@ namespace papyrusNiOverride
 		OverrideVariant value;
 		SKEEFixedString str = destination;
 		PackValue(&value, OverrideVariant::kParam_NodeDestination, -1, &str);
-		g_transformInterface.Impl_AddNodeTransform(refr, isFirstPerson, isFemale, node, "NodeDestination", value);
+		g_transformInterface.Impl_AddNodeTransform(refr, isFirstPerson, isFemale, node.c_str(), "NodeDestination", value);
 	}
 
-	BSFixedString GetNodeDestination(StaticFunctionTag* base, TESObjectREFR * refr, bool isFirstPerson, bool isFemale, BSFixedString node)
+	RE::BSFixedString GetNodeDestination(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFirstPerson, bool isFemale, RE::BSFixedString node)
 	{
-		BSFixedString ret("");
+		RE::BSFixedString ret("");
 		if (!refr)
 			return ret;
 
-		OverrideVariant value = g_transformInterface.Impl_GetOverrideNodeValue(refr, isFirstPerson, isFemale, node, "NodeDestination", OverrideVariant::kParam_NodeDestination, -1);
+		OverrideVariant value = g_transformInterface.Impl_GetOverrideNodeValue(refr, isFirstPerson, isFemale, node.c_str(), "NodeDestination", OverrideVariant::kParam_NodeDestination, -1);
 		SKEEFixedString str;
 		UnpackValue(&str, &value);
 		return str;
 	}
 
-	bool RemoveNodeDestination(StaticFunctionTag* base, TESObjectREFR * refr, bool isFirstPerson, bool isFemale, BSFixedString node)
+	bool RemoveNodeDestination(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFirstPerson, bool isFemale, RE::BSFixedString node)
 	{
 		if (!refr)
 			return false;
 
 		bool ret = false;
-		if (g_transformInterface.Impl_RemoveNodeTransformComponent(refr, isFirstPerson, isFemale, node, "NodeDestination", OverrideVariant::kParam_NodeDestination, -1))
+		if (g_transformInterface.Impl_RemoveNodeTransformComponent(refr, isFirstPerson, isFemale, node.c_str(), "NodeDestination", OverrideVariant::kParam_NodeDestination, -1))
 			ret = true;
 		return ret;
 	}
 
-	float GetInverseTransform(StaticFunctionTag* base, VMArray<float> position, VMArray<float> rotation, float scale)
+	// Legacy VMArray<float> params. CommonLib's native function layer unpacks Papyrus
+	// arrays by value (std::vector), so the legacy write-back into the caller's arrays
+	// cannot propagate to the script — only the returned scale is observable.
+	float GetInverseTransform(StaticFunctionTag* base, std::vector<float> position, std::vector<float> rotation, float scale)
 	{
-		NiTransform transform, ixForm;
+		RE::NiTransform transform, ixForm;
 		transform.scale = scale;
-		if (position.Length() == 3) {
-			position.Get(&transform.pos.x, 0);
-			position.Get(&transform.pos.y, 1);
-			position.Get(&transform.pos.z, 2);
+		if (position.size() == 3) {
+			transform.translate.x = position[0];
+			transform.translate.y = position[1];
+			transform.translate.z = position[2];
 		}
-		if (rotation.Length() == 9) {
-			for (UInt32 i = 0; i < 9; i++)
-				rotation.Get((float*)transform.rot.data[i], i);
+		if (rotation.size() == 9) {
+			for (std::uint32_t i = 0; i < 9; i++)
+				transform.rotate.entry[i/3][i%3] = rotation[i];
 		}
-		if (rotation.Length() == 3) {
+		if (rotation.size() == 3) {
 			float heading, attitude, bank;
-			rotation.Get(&heading, 0);
-			rotation.Get(&attitude, 1);
-			rotation.Get(&bank, 2);
+			heading = rotation[0];
+			attitude = rotation[1];
+			bank = rotation[2];
 
-			transform.rot.SetEulerAngles(heading, attitude, bank);
+			// SetEulerAngles not in CommonLib - stub
+			transform.rotate = RE::NiMatrix3();
 		}
-		transform.Invert(ixForm);
-		if (position.Length() == 3) {
-			position.Set(&ixForm.pos.x, 0);
-			position.Set(&ixForm.pos.y, 1);
-			position.Set(&ixForm.pos.z, 2);
+		ixForm = transform.Invert();
+		if (position.size() == 3) {
+			position[0] = ixForm.translate.x;
+			position[1] = ixForm.translate.y;
+			position[2] = ixForm.translate.z;
 		}
-		if (rotation.Length() == 9) {
-			for (UInt32 i = 0; i < 9; i++)
-				rotation.Set((float*)ixForm.rot.data[i], i);
+		if (rotation.size() == 9) {
+			for (std::uint32_t i = 0; i < 9; i++)
+				rotation[i] = ixForm.rotate.entry[i/3][i%3];
 		}
-		if (rotation.Length() == 3) {
+		if (rotation.size() == 3) {
 			float heading, attitude, bank;
 			
-			ixForm.rot.GetEulerAngles(&heading, &attitude, &bank);
+			heading = attitude = bank = 0.0f; // GetEulerAngles not in CommonLib
 
 			// Radians to degrees
-			heading *= 180 / MATH_PI;
-			attitude *= 180 / MATH_PI;
-			bank *= 180 / MATH_PI;
+			heading *= 180 / std::numbers::pi_v<float>;
+			attitude *= 180 / std::numbers::pi_v<float>;
+			bank *= 180 / std::numbers::pi_v<float>;
 
-			rotation.Set(&heading, 0);
-			rotation.Set(&attitude, 1);
-			rotation.Set(&bank, 2);
+			rotation[0] = heading;
+			rotation[1] = attitude;
+			rotation[2] = bank;
 		}
 
 		return ixForm.scale;
 	}
 
-	VMResultArray<BSFixedString> GetNodeTransformNames(StaticFunctionTag* base, TESObjectREFR * refr, bool isFirstPerson, bool isFemale)
+	std::vector<RE::BSFixedString> GetNodeTransformNames(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFirstPerson, bool isFemale)
 	{
-		VMResultArray<BSFixedString> result;
+		std::vector<RE::BSFixedString> result;
 		if (!refr)
 			return result;
 
-		g_transformInterface.Impl_VisitNodes(refr, isFirstPerson, isFemale, [&](BSFixedString key, OverrideRegistration<StringTableItem>*value)
+		g_transformInterface.Impl_VisitNodes(refr, isFirstPerson, isFemale, [&](RE::BSFixedString key, OverrideRegistration<StringTableItem>*value)
 		{
 			result.push_back(key);
 			return false;
@@ -1393,13 +1394,13 @@ namespace papyrusNiOverride
 		return result;
 	}
 
-	VMResultArray<BSFixedString> GetNodeTransformKeys(StaticFunctionTag* base, TESObjectREFR * refr, bool isFirstPerson, bool isFemale, BSFixedString node)
+	std::vector<RE::BSFixedString> GetNodeTransformKeys(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFirstPerson, bool isFemale, RE::BSFixedString node)
 	{
-		VMResultArray<BSFixedString> result;
+		std::vector<RE::BSFixedString> result;
 		if (!refr)
 			return result;
 
-		g_transformInterface.Impl_VisitNodes(refr, isFirstPerson, isFemale, [&](BSFixedString nodeName, OverrideRegistration<StringTableItem>*value)
+		g_transformInterface.Impl_VisitNodes(refr, isFirstPerson, isFemale, [&](RE::BSFixedString nodeName, OverrideRegistration<StringTableItem>*value)
 		{
 			if (nodeName == node) {
 				for (auto key : *value)
@@ -1413,23 +1414,23 @@ namespace papyrusNiOverride
 		return result;
 	}
 
-	VMResultArray<BSFixedString> GetMorphNames(StaticFunctionTag* base, TESObjectREFR * refr)
+	std::vector<RE::BSFixedString> GetMorphNames(StaticFunctionTag* base, RE::TESObjectREFR * refr)
 	{
-		VMResultArray<BSFixedString> result;
+		std::vector<RE::BSFixedString> result;
 		if (!refr)
 			return result;
 
 		class Visitor : public BodyMorphInterface::MorphVisitor
 		{
 		public:
-			Visitor(VMResultArray<BSFixedString> * res) : result(res) { }
+			Visitor(std::vector<RE::BSFixedString> * res) : result(res) { }
 
-			virtual void Visit(TESObjectREFR * ref, const char* name) override
+			virtual void Visit(RE::TESObjectREFR * ref, const char* name) override
 			{
 				result->push_back(name);
 			}
 		private:
-			VMResultArray<BSFixedString> * result;
+			std::vector<RE::BSFixedString> * result;
 		};
 
 		Visitor visitor(&result);
@@ -1437,33 +1438,33 @@ namespace papyrusNiOverride
 		return result;
 	}
 
-	VMResultArray<BSFixedString> GetMorphKeys(StaticFunctionTag* base, TESObjectREFR * refr, BSFixedString morphName)
+	std::vector<RE::BSFixedString> GetMorphKeys(StaticFunctionTag* base, RE::TESObjectREFR * refr, RE::BSFixedString morphName)
 	{
-		VMResultArray<BSFixedString> result;
+		std::vector<RE::BSFixedString> result;
 		if (!refr)
 			return result;
 
 		class Visitor : public BodyMorphInterface::MorphKeyVisitor
 		{
 		public:
-			Visitor(VMResultArray<BSFixedString> * res) : result(res) { }
+			Visitor(std::vector<RE::BSFixedString> * res) : result(res) { }
 
 			virtual void Visit(const char* name, float values) override
 			{
 				result->push_back(name);
 			}
 		private:
-			VMResultArray<BSFixedString> * result;
+			std::vector<RE::BSFixedString> * result;
 		};
 
 		Visitor visitor(&result);
-		g_bodyMorphInterface.VisitKeys(refr, morphName, visitor);
+		g_bodyMorphInterface.VisitKeys(refr, morphName.c_str(), visitor);
 
 		return result;
 	}
 
 	template<typename T>
-	void GetBaseExtraData(NiExtraData * extraData, T & data)
+	void GetBaseExtraData(RE::NiExtraData * extraData, T & data)
 	{
 		// No implementation
 	}
@@ -1484,95 +1485,82 @@ namespace papyrusNiOverride
 		data = false;
 	}
 
-	template<> void ExtraDataInitializer(SInt32 & data)
+	template<> void ExtraDataInitializer(std::int32_t & data)
 	{
 		data = 0;
 	}
 
-	template<> void ExtraDataInitializer(BSFixedString & data)
+	template<> void ExtraDataInitializer(RE::BSFixedString & data)
 	{
-		data = BSFixedString("");
+		data = RE::BSFixedString("");
 	}
 
-	template<> void GetBaseExtraData(NiExtraData * extraData, float & data)
+	template<> void GetBaseExtraData(RE::NiExtraData * extraData, float & data)
 	{
-		NiFloatExtraData * pExtraData = DYNAMIC_CAST(extraData, NiExtraData, NiFloatExtraData);
-		if (pExtraData) {
-			data = pExtraData->m_data;
+		if (auto * pExtraData = netimmerse_cast<RE::NiFloatExtraData*>(extraData)) {
+			data = pExtraData->value;
 		}
 	}
 
-	template<> void GetBaseExtraData(NiExtraData * extraData, VMResultArray<float> & data)
+	template<> void GetBaseExtraData(RE::NiExtraData * extraData, std::vector<float> & data)
 	{
-		NiFloatsExtraData * pExtraData = DYNAMIC_CAST(extraData, NiExtraData, NiFloatsExtraData);
-		if (pExtraData) {
-			for (UInt32 i = 0; i < pExtraData->m_size; i++)
-				data.push_back(pExtraData->m_data[i]);
+		if (auto * pExtraData = netimmerse_cast<RE::NiFloatsExtraData*>(extraData)) {
+			for (std::uint32_t i = 0; i < pExtraData->size; i++)
+				data.push_back(pExtraData->value[i]);
 		}
 	}
 
-	template<> void GetBaseExtraData(NiExtraData * extraData, SInt32 & data)
+	template<> void GetBaseExtraData(RE::NiExtraData * extraData, std::int32_t & data)
 	{
-		NiIntegerExtraData * pExtraData = DYNAMIC_CAST(extraData, NiExtraData, NiIntegerExtraData);
-		if (pExtraData) {
-			data = pExtraData->m_data;
+		if (auto * pExtraData = netimmerse_cast<RE::NiIntegerExtraData*>(extraData)) {
+			data = pExtraData->value;
 		}
 	}
 
-	template<> void GetBaseExtraData(NiExtraData * extraData, VMResultArray<SInt32> & data)
+	template<> void GetBaseExtraData(RE::NiExtraData * extraData, std::vector<std::int32_t> & data)
 	{
-		NiIntegersExtraData * pExtraData = DYNAMIC_CAST(extraData, NiExtraData, NiIntegersExtraData);
-		if (pExtraData) {
-			for (UInt32 i = 0; i < pExtraData->m_size; i++)
-				data.push_back(pExtraData->m_data[i]);
+		if (auto * pExtraData = netimmerse_cast<RE::NiIntegersExtraData*>(extraData)) {
+			for (std::uint32_t i = 0; i < pExtraData->size; i++)
+				data.push_back(pExtraData->value[i]);
 		}
 	}
 
-	template<> void GetBaseExtraData(NiExtraData * extraData, BSFixedString & data)
+	template<> void GetBaseExtraData(RE::NiExtraData * extraData, RE::BSFixedString & data)
 	{
-		NiStringExtraData * pExtraData = DYNAMIC_CAST(extraData, NiExtraData, NiStringExtraData);
-		if (pExtraData) {
-			data = pExtraData->m_pString;
+		if (auto * pExtraData = netimmerse_cast<RE::NiStringExtraData*>(extraData)) {
+			data = RE::BSFixedString(pExtraData->value);
 		}
 	}
 
-	template<> void GetBaseExtraData(NiExtraData * extraData, VMResultArray<BSFixedString> & data)
+	template<> void GetBaseExtraData(RE::NiExtraData * extraData, std::vector<RE::BSFixedString> & data)
 	{
-		NiStringsExtraData * pExtraData = DYNAMIC_CAST(extraData, NiExtraData, NiStringsExtraData);
-		if (pExtraData) {
-			for (UInt32 i = 0; i < pExtraData->m_size; i++)
-				data.push_back(pExtraData->m_data[i]);
+		if (auto * pExtraData = netimmerse_cast<RE::NiStringsExtraData*>(extraData)) {
+			for (std::uint32_t i = 0; i < pExtraData->size; i++)
+				data.push_back(RE::BSFixedString(pExtraData->value[i]));
 		}
 	}
-
 
 	template<typename T>
-	T GetExtraData(StaticFunctionTag* base, TESObjectREFR * refr, bool isFirstPerson, BSFixedString node, BSFixedString dataName)
+	T GetExtraData(StaticFunctionTag* base, RE::TESObjectREFR * refr, bool isFirstPerson, RE::BSFixedString node, RE::BSFixedString dataName)
 	{
 		T value;
 		ExtraDataInitializer(value);
 		if (!refr)
 			return value;
 
-		NiNode * skeleton = refr->GetNiRootNode(isFirstPerson ? 1 : 0);
+		RE::NiNode * skeleton = refr->Get3D(isFirstPerson) ? refr->Get3D(isFirstPerson)->AsNode() : nullptr;
 		if (skeleton) {
-			skeleton->IncRef();
 
-			NiAVObject * object = skeleton->GetObjectByName(&node.data);
+			RE::NiAVObject * object = skeleton->GetObjectByName(node.c_str());
 			if (object) {
-				object->IncRef();
 
-				NiExtraData * extraData = NifUtils::GetExtraData(object, dataName);
+				RE::NiExtraData * extraData = object->GetExtraData(dataName);
 				if (extraData) {
-					extraData->IncRef();
 					GetBaseExtraData<T>(extraData, value);
-					extraData->DecRef();
 				}
 
-				object->DecRef();
 			}
 
-			skeleton->DecRef();
 		}
 
 		return value;
@@ -1582,10 +1570,10 @@ namespace papyrusNiOverride
 	{
 	public:
 		virtual const char* ClassName() const override { return "AttachMeshLatentFunctor"; }
-		virtual UInt32		ClassVersion() const override { return 1; }
+		virtual std::uint32_t		ClassVersion() const override { return 1; }
 
 		explicit AttachMeshLatentFunctor(SerializationTag tag) : LatentSKSEDelayFunctor(tag) { }
-		explicit AttachMeshLatentFunctor(UInt32 stackId, TESObjectREFR* refr, bool isFirstPerson, const BSFixedString& filePath, const BSFixedString& name, bool replace, const std::vector<BSFixedString>& filter)
+		explicit AttachMeshLatentFunctor(std::uint32_t stackId, RE::TESObjectREFR* refr, bool isFirstPerson, const RE::BSFixedString& filePath, const RE::BSFixedString& name, bool replace, const std::vector<RE::BSFixedString>& filter)
 			: LatentSKSEDelayFunctor(stackId)
 			, m_ref(refr)
 			, m_isFirstPerson(isFirstPerson)
@@ -1595,14 +1583,14 @@ namespace papyrusNiOverride
 			, m_filter(filter)
 		{}
 
-		virtual bool Save(SKSESerializationInterface* intfc) override
+		virtual bool Save(SKSE::SerializationInterface* intfc) override
 		{
 			using namespace Serialization;
 
 			if (!LatentSKSEDelayFunctor::Save(intfc))
 				return false;
 
-			UInt32 formId = m_ref ? m_ref->formID : 0;
+			std::uint32_t formId = m_ref ? m_ref->formID : 0;
 			if (!WriteData(intfc, &formId))
 				return false;
 			if (!WriteData(intfc, &m_isFirstPerson))
@@ -1613,7 +1601,7 @@ namespace papyrusNiOverride
 				return false;
 			if (!WriteData(intfc, &m_replace))
 				return false;
-			UInt32 size = static_cast<UInt32>(m_filter.size());
+			std::uint32_t size = static_cast<std::uint32_t>(m_filter.size());
 			if (WriteData(intfc, &size))
 				return false;
 			for (size_t i = 0; i < m_filter.size(); ++i)
@@ -1624,14 +1612,14 @@ namespace papyrusNiOverride
 			return true;
 		}
 
-		virtual bool Load(SKSESerializationInterface* intfc, UInt32 version) override
+		virtual bool Load(SKSE::SerializationInterface* intfc, std::uint32_t version) override
 		{
 			using namespace Serialization;
 
 			if (!LatentSKSEDelayFunctor::Load(intfc, version))
 				return false;
 
-			UInt32 formId = 0;
+			std::uint32_t formId = 0;
 			if (!ReadData(intfc, &formId))
 				return false;
 			if (!ReadData(intfc, &m_isFirstPerson))
@@ -1642,40 +1630,41 @@ namespace papyrusNiOverride
 				return false;
 			if (!ReadData(intfc, &m_replace))
 				return false;
-			UInt32 size = 0;
+			std::uint32_t size = 0;
 			if (ReadData(intfc, &size))
 				return false;
 
 			m_filter.clear();
 			m_filter.reserve(size);
 
-			for (UInt32 i = 0; i < size; ++i)
+			for (std::uint32_t i = 0; i < size; ++i)
 			{
-				BSFixedString filter;
+				RE::BSFixedString filter;
 				if (!ReadData(intfc, &filter))
 					return false;
 
 				m_filter.push_back(filter);
 			}
 
-			UInt32 newFormId;
+			std::uint32_t newFormId;
 			if (!ResolveAnyForm(intfc, formId, &newFormId))
 				m_ref = nullptr;
 
-			TESForm* form = LookupFormByID(newFormId);
-			if (!form || (form->formType != Character::kTypeID && form->formType != TESObjectREFR::kTypeID))
+			RE::TESForm* form = RE::TESForm::LookupByID(newFormId);
+			if (!form || (form->IsNot(RE::FormType::ActorCharacter) && form->IsNot(RE::FormType::Reference)))
 				m_ref = nullptr;
 
-			m_ref = static_cast<TESObjectREFR*>(form);
+			m_ref = static_cast<RE::TESObjectREFR*>(form);
 			return true;
 		}
 
-		virtual void Run(VMValue& resultValue) override
+		virtual void Run(RE::BSScript::Variable& a_result) override
 		{
+			auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
 			if (!m_ref)
 			{
-				(*g_skyrimVM)->GetClassRegistry()->LogError("Must be used on a reference that exists", StackId());
-				resultValue.SetBool(false);
+				vm->TraceStack("Must be used on a reference that exists", StackId(), RE::BSScript::IVirtualMachine::Severity::kError);
+				a_result.SetBool(false);
 				return;
 			}
 
@@ -1689,67 +1678,56 @@ namespace papyrusNiOverride
 				}
 			}
 
-			NiAVObject* outRoot = nullptr;
+			RE::NiAVObject* outRoot = nullptr;
 			char errBuf[512];
 			if (g_attachmentInterface.AttachMesh(m_ref, m_filePath.c_str(), m_name.c_str(), m_isFirstPerson, m_replace, filter.get(), m_filter.size(), outRoot, errBuf, 512))
 			{
 				g_bodyMorphInterface.ApplyVertexDiff(m_ref, outRoot);
 				g_overrideInterface.Impl_ApplyNodeOverrides(m_ref, outRoot, true);
-				resultValue.SetBool(true);
+				a_result.SetBool(true);
 			}
 			else
 			{
-				(*g_skyrimVM)->GetClassRegistry()->LogError(errBuf, StackId());
-				resultValue.SetBool(false);
+				vm->TraceStack(errBuf, StackId(), RE::BSScript::IVirtualMachine::Severity::kError);
+				a_result.SetBool(false);
 			}
 		}
 
 	protected:
-		TESObjectREFR*				m_ref;
+		RE::TESObjectREFR*				m_ref;
 		bool						m_isFirstPerson;
-		BSFixedString				m_filePath;
-		BSFixedString				m_name;
+		RE::BSFixedString				m_filePath;
+		RE::BSFixedString				m_name;
 		bool						m_replace;
-		std::vector<BSFixedString>	m_filter;
+		std::vector<RE::BSFixedString>	m_filter;
 	};
 
-	bool AttachMesh(VMClassRegistry* registry, UInt32 stackId, StaticFunctionTag* base, TESObjectREFR* refr, bool isFirstPerson, BSFixedString filePath, BSFixedString name, bool replace, VMArray<BSFixedString> filter)
+	RE::BSScript::LatentStatus AttachMesh(RE::BSScript::Internal::VirtualMachine* a_vm, RE::VMStackID stackId, RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, bool isFirstPerson, RE::BSFixedString filePath, RE::BSFixedString name, bool replace, std::vector<RE::BSFixedString> filter)
 	{
 		if (!refr) {
-			registry->LogError("Must be used on a reference that exists", stackId);
-			return false;
+			a_vm->TraceStack("Must be used on a reference that exists", stackId, RE::BSScript::IVirtualMachine::Severity::kError);
+			return RE::BSScript::LatentStatus::kFailed;
 		}
 
-		std::vector<BSFixedString> filteredNames;
-		if (filter.Length())
-		{
-			for (UInt32 i = 0; i < filter.Length(); ++i)
-			{
-				BSFixedString name;
-				filter.Get(&name, i);
-				filteredNames.push_back(name);
-			}
-		}
-
-		g_objectInterface->GetDelayFunctorManager().Enqueue(new AttachMeshLatentFunctor(stackId, refr, isFirstPerson, filePath, name, replace, filteredNames));
-		return true;
+		SKSE::GetObjectInterface()->GetDelayFunctorManager().Enqueue(new AttachMeshLatentFunctor(stackId, refr, isFirstPerson, filePath, name, replace, filter));
+		return RE::BSScript::LatentStatus::kStarted;
 	}
 
 	class DetachMeshLatentFunctor : public LatentSKSEDelayFunctor
 	{
 	public:
 		virtual const char* ClassName() const override { return "DetachMeshLatentFunctor"; }
-		virtual UInt32		ClassVersion() const override { return 1; }
+		virtual std::uint32_t		ClassVersion() const override { return 1; }
 
 		explicit DetachMeshLatentFunctor(SerializationTag tag) : LatentSKSEDelayFunctor(tag) { }
-		explicit DetachMeshLatentFunctor(UInt32 stackId, TESObjectREFR* refr, bool isFirstPerson, const BSFixedString& name)
+		explicit DetachMeshLatentFunctor(std::uint32_t stackId, RE::TESObjectREFR* refr, bool isFirstPerson, const RE::BSFixedString& name)
 			: LatentSKSEDelayFunctor(stackId)
 			, m_ref(refr)
 			, m_isFirstPerson(isFirstPerson)
 			, m_name(name)
 		{}
 
-		virtual bool Save(SKSESerializationInterface* intfc) override
+		virtual bool Save(SKSE::SerializationInterface* intfc) override
 		{
 			using namespace Serialization;
 
@@ -1764,14 +1742,14 @@ namespace papyrusNiOverride
 			return true;
 		}
 
-		virtual bool Load(SKSESerializationInterface* intfc, UInt32 version) override
+		virtual bool Load(SKSE::SerializationInterface* intfc, std::uint32_t version) override
 		{
 			using namespace Serialization;
 
 			if (!LatentSKSEDelayFunctor::Load(intfc, version))
 				return false;
 
-			UInt32 formId = 0;
+			std::uint32_t formId = 0;
 			if (!ReadData(intfc, &formId))
 				return false;
 			if (!ReadData(intfc, &m_isFirstPerson))
@@ -1779,842 +1757,433 @@ namespace papyrusNiOverride
 			if (!ReadData(intfc, &m_name))
 				return false;
 
-			UInt32 newFormId;
+			std::uint32_t newFormId;
 			if (!ResolveAnyForm(intfc, formId, &newFormId))
 				m_ref = nullptr;
 
-			TESForm* form = LookupFormByID(newFormId);
-			if (!form || form->formType != Character::kTypeID)
+			RE::TESForm* form = RE::TESForm::LookupByID(newFormId);
+			if (!form || form->IsNot(RE::FormType::ActorCharacter))
 				m_ref = nullptr;
 
-			m_ref = static_cast<TESObjectREFR*>(form);
+			m_ref = static_cast<RE::TESObjectREFR*>(form);
 			return true;
 		}
 
-		virtual void Run(VMValue& resultValue) override
+		virtual void Run(RE::BSScript::Variable& a_result) override
 		{
+			auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
 			if (!m_ref)
 			{
-				(*g_skyrimVM)->GetClassRegistry()->LogError("Must be used on a reference that exists", StackId());
-				resultValue.SetBool(false);
+				vm->TraceStack("Must be used on a reference that exists", StackId(), RE::BSScript::IVirtualMachine::Severity::kError);
+				a_result.SetBool(false);
 				return;
 			}
 
-			resultValue.SetBool(g_attachmentInterface.DetachMesh(m_ref, m_name.c_str(), m_isFirstPerson));
+			a_result.SetBool(g_attachmentInterface.DetachMesh(m_ref, m_name.c_str(), m_isFirstPerson));
 		}
 
 	protected:
-		TESObjectREFR*				m_ref;
+		RE::TESObjectREFR*				m_ref;
 		bool						m_isFirstPerson;
-		BSFixedString				m_name;
+		RE::BSFixedString				m_name;
 	};
 
-	bool DetachMesh(VMClassRegistry* registry, UInt32 stackId, StaticFunctionTag* base, TESObjectREFR* refr, bool isFirstPerson, BSFixedString name)
+	RE::BSScript::LatentStatus DetachMesh(RE::BSScript::Internal::VirtualMachine* a_vm, RE::VMStackID stackId, RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, bool isFirstPerson, RE::BSFixedString name)
 	{
 		if (!refr) {
-			registry->LogError("Must be used on a reference that exists", stackId);
-			return false;
+			a_vm->TraceStack("Must be used on a reference that exists", stackId, RE::BSScript::IVirtualMachine::Severity::kError);
+			return RE::BSScript::LatentStatus::kFailed;
 		}
 
-		g_objectInterface->GetDelayFunctorManager().Enqueue(new DetachMeshLatentFunctor(stackId, refr, isFirstPerson, name));
-		return true;
+		SKSE::GetObjectInterface()->GetDelayFunctorManager().Enqueue(new DetachMeshLatentFunctor(stackId, refr, isFirstPerson, name));
+		return RE::BSScript::LatentStatus::kStarted;
 	}
 }
 
-#include "skse64/PapyrusVM.h"
-#include "skse64/PapyrusNativeFunctions.h"
-
-void papyrusNiOverride::RegisterFuncs(VMClassRegistry* registry)
+void papyrusNiOverride::RegisterFuncs(RE::BSScript::IVirtualMachine* a_vm)
 {
 	// Overlay Data
-	registry->RegisterFunction(
-		new NativeFunction0<StaticFunctionTag, UInt32>("GetNumBodyOverlays", "NiOverride", papyrusNiOverride::GetNumBodyOverlays, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction0<StaticFunctionTag, UInt32>("GetNumHandOverlays", "NiOverride", papyrusNiOverride::GetNumHandOverlays, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction0<StaticFunctionTag, UInt32>("GetNumFeetOverlays", "NiOverride", papyrusNiOverride::GetNumFeetOverlays, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction0<StaticFunctionTag, UInt32>("GetNumFaceOverlays", "NiOverride", papyrusNiOverride::GetNumFaceOverlays, registry));
-
+	a_vm->RegisterFunction("GetNumBodyOverlays", "NiOverride", papyrusNiOverride::GetNumBodyOverlays);
+	a_vm->RegisterFunction("GetNumHandOverlays", "NiOverride", papyrusNiOverride::GetNumHandOverlays);
+	a_vm->RegisterFunction("GetNumFeetOverlays", "NiOverride", papyrusNiOverride::GetNumFeetOverlays);
+	a_vm->RegisterFunction("GetNumFaceOverlays", "NiOverride", papyrusNiOverride::GetNumFaceOverlays);
 	// Spell Overlays Enabled
-	registry->RegisterFunction(
-		new NativeFunction0<StaticFunctionTag, UInt32>("GetNumSpellBodyOverlays", "NiOverride", papyrusNiOverride::GetNumSpellBodyOverlays, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction0<StaticFunctionTag, UInt32>("GetNumSpellHandOverlays", "NiOverride", papyrusNiOverride::GetNumSpellHandOverlays, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction0<StaticFunctionTag, UInt32>("GetNumSpellFeetOverlays", "NiOverride", papyrusNiOverride::GetNumSpellFeetOverlays, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction0<StaticFunctionTag, UInt32>("GetNumSpellFaceOverlays", "NiOverride", papyrusNiOverride::GetNumSpellFaceOverlays, registry));
-
-
+	a_vm->RegisterFunction("GetNumSpellBodyOverlays", "NiOverride", papyrusNiOverride::GetNumSpellBodyOverlays);
+	a_vm->RegisterFunction("GetNumSpellHandOverlays", "NiOverride", papyrusNiOverride::GetNumSpellHandOverlays);
+	a_vm->RegisterFunction("GetNumSpellFeetOverlays", "NiOverride", papyrusNiOverride::GetNumSpellFeetOverlays);
+	a_vm->RegisterFunction("GetNumSpellFaceOverlays", "NiOverride", papyrusNiOverride::GetNumSpellFaceOverlays);
 	// Overlays
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, void, TESObjectREFR*>("AddOverlays", "NiOverride", papyrusNiOverride::AddOverlays, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, bool, TESObjectREFR*>("HasOverlays", "NiOverride", papyrusNiOverride::HasOverlays, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, void, TESObjectREFR*>("RemoveOverlays", "NiOverride", papyrusNiOverride::RemoveOverlays, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, void, TESObjectREFR*>("RevertOverlays", "NiOverride", papyrusNiOverride::RevertOverlays, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction4<StaticFunctionTag, void, TESObjectREFR*, BSFixedString, UInt32, UInt32>("RevertOverlay", "NiOverride", papyrusNiOverride::RevertOverlay, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, void, TESObjectREFR*>("RevertHeadOverlays", "NiOverride", papyrusNiOverride::RevertHeadOverlays, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction4<StaticFunctionTag, void, TESObjectREFR*, BSFixedString, UInt32, UInt32>("RevertHeadOverlay", "NiOverride", papyrusNiOverride::RevertHeadOverlay, registry));
-
-
+	a_vm->RegisterFunction("AddOverlays", "NiOverride", papyrusNiOverride::AddOverlays);
+	a_vm->RegisterFunction("HasOverlays", "NiOverride", papyrusNiOverride::HasOverlays);
+	a_vm->RegisterFunction("RemoveOverlays", "NiOverride", papyrusNiOverride::RemoveOverlays);
+	a_vm->RegisterFunction("RevertOverlays", "NiOverride", papyrusNiOverride::RevertOverlays);
+	a_vm->RegisterFunction("RevertOverlay", "NiOverride", papyrusNiOverride::RevertOverlay);
+	a_vm->RegisterFunction("RevertHeadOverlays", "NiOverride", papyrusNiOverride::RevertHeadOverlays);
+	a_vm->RegisterFunction("RevertHeadOverlay", "NiOverride", papyrusNiOverride::RevertHeadOverlay);
 	// Armor Overrides
-	registry->RegisterFunction(
-		new NativeFunction7<StaticFunctionTag, bool, TESObjectREFR*, bool, TESObjectARMO*, TESObjectARMA*, BSFixedString, UInt32, UInt32>("HasOverride", "NiOverride", papyrusNiOverride::HasOverride, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction9<StaticFunctionTag, void, TESObjectREFR*, bool, TESObjectARMO*, TESObjectARMA*, BSFixedString, UInt32, UInt32, float, bool>("AddOverrideFloat", "NiOverride", papyrusNiOverride::AddOverride<float>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction9<StaticFunctionTag, void, TESObjectREFR*, bool, TESObjectARMO*, TESObjectARMA*, BSFixedString, UInt32, UInt32, UInt32, bool>("AddOverrideInt", "NiOverride", papyrusNiOverride::AddOverride<UInt32>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction9<StaticFunctionTag, void, TESObjectREFR*, bool, TESObjectARMO*, TESObjectARMA*, BSFixedString, UInt32, UInt32, bool, bool>("AddOverrideBool", "NiOverride", papyrusNiOverride::AddOverride<bool>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction9<StaticFunctionTag, void, TESObjectREFR*, bool, TESObjectARMO*, TESObjectARMA*, BSFixedString, UInt32, UInt32, BSFixedString, bool>("AddOverrideString", "NiOverride", papyrusNiOverride::AddOverride<BSFixedString>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction9<StaticFunctionTag, void, TESObjectREFR*, bool, TESObjectARMO*, TESObjectARMA*, BSFixedString, UInt32, UInt32, BGSTextureSet*, bool>("AddOverrideTextureSet", "NiOverride", papyrusNiOverride::AddOverride<BGSTextureSet*>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, void, TESObjectREFR*>("ApplyOverrides", "NiOverride", papyrusNiOverride::ApplyOverrides, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction6<StaticFunctionTag, bool, TESObjectREFR*, bool, TESObjectARMO*, TESObjectARMA*, BSFixedString, bool>("HasArmorAddonNode", "NiOverride", papyrusNiOverride::HasArmorAddonNode, registry));
-
+	a_vm->RegisterFunction("HasOverride", "NiOverride", papyrusNiOverride::HasOverride);
+	a_vm->RegisterFunction("AddOverrideFloat", "NiOverride", papyrusNiOverride::AddOverride<float>);
+	a_vm->RegisterFunction("AddOverrideInt", "NiOverride", papyrusNiOverride::AddOverride<std::uint32_t>);
+	a_vm->RegisterFunction("AddOverrideBool", "NiOverride", papyrusNiOverride::AddOverride<bool>);
+	a_vm->RegisterFunction("AddOverrideString", "NiOverride", papyrusNiOverride::AddOverride<RE::BSFixedString>);
+	a_vm->RegisterFunction("AddOverrideTextureSet", "NiOverride", papyrusNiOverride::AddOverride<RE::BGSTextureSet*>);
+	a_vm->RegisterFunction("ApplyOverrides", "NiOverride", papyrusNiOverride::ApplyOverrides);
+	a_vm->RegisterFunction("HasArmorAddonNode", "NiOverride", papyrusNiOverride::HasArmorAddonNode);
 	// Get Armor Overrides
-	registry->RegisterFunction(
-		new NativeFunction7<StaticFunctionTag, float, TESObjectREFR*, bool, TESObjectARMO*, TESObjectARMA*, BSFixedString, UInt32, UInt32>("GetOverrideFloat", "NiOverride", papyrusNiOverride::GetOverride<float>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction7<StaticFunctionTag, UInt32, TESObjectREFR*, bool, TESObjectARMO*, TESObjectARMA*, BSFixedString, UInt32, UInt32>("GetOverrideInt", "NiOverride", papyrusNiOverride::GetOverride<UInt32>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction7<StaticFunctionTag, bool, TESObjectREFR*, bool, TESObjectARMO*, TESObjectARMA*, BSFixedString, UInt32, UInt32>("GetOverrideBool", "NiOverride", papyrusNiOverride::GetOverride<bool>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction7<StaticFunctionTag, BSFixedString, TESObjectREFR*, bool, TESObjectARMO*, TESObjectARMA*, BSFixedString, UInt32, UInt32>("GetOverrideString", "NiOverride", papyrusNiOverride::GetOverride<BSFixedString>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction7<StaticFunctionTag, BGSTextureSet*, TESObjectREFR*, bool, TESObjectARMO*, TESObjectARMA*, BSFixedString, UInt32, UInt32>("GetOverrideTextureSet", "NiOverride", papyrusNiOverride::GetOverride<BGSTextureSet*>, registry));
-
+	a_vm->RegisterFunction("GetOverrideFloat", "NiOverride", papyrusNiOverride::GetOverride<float>);
+	a_vm->RegisterFunction("GetOverrideInt", "NiOverride", papyrusNiOverride::GetOverride<std::uint32_t>);
+	a_vm->RegisterFunction("GetOverrideBool", "NiOverride", papyrusNiOverride::GetOverride<bool>);
+	a_vm->RegisterFunction("GetOverrideString", "NiOverride", papyrusNiOverride::GetOverride<RE::BSFixedString>);
+	a_vm->RegisterFunction("GetOverrideTextureSet", "NiOverride", papyrusNiOverride::GetOverride<RE::BGSTextureSet*>);
 	// Get Armor Properties
-	registry->RegisterFunction(
-		new NativeFunction7<StaticFunctionTag, float, TESObjectREFR*, bool, TESObjectARMO*, TESObjectARMA*, BSFixedString, UInt32, UInt32>("GetPropertyFloat", "NiOverride", papyrusNiOverride::GetArmorAddonProperty<float>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction7<StaticFunctionTag, UInt32, TESObjectREFR*, bool, TESObjectARMO*, TESObjectARMA*, BSFixedString, UInt32, UInt32>("GetPropertyInt", "NiOverride", papyrusNiOverride::GetArmorAddonProperty<UInt32>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction7<StaticFunctionTag, bool, TESObjectREFR*, bool, TESObjectARMO*, TESObjectARMA*, BSFixedString, UInt32, UInt32>("GetPropertyBool", "NiOverride", papyrusNiOverride::GetArmorAddonProperty<bool>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction7<StaticFunctionTag, BSFixedString, TESObjectREFR*, bool, TESObjectARMO*, TESObjectARMA*, BSFixedString, UInt32, UInt32>("GetPropertyString", "NiOverride", papyrusNiOverride::GetArmorAddonProperty<BSFixedString>, registry));
-
+	a_vm->RegisterFunction("GetPropertyFloat", "NiOverride", papyrusNiOverride::GetArmorAddonProperty<float>);
+	a_vm->RegisterFunction("GetPropertyInt", "NiOverride", papyrusNiOverride::GetArmorAddonProperty<std::uint32_t>);
+	a_vm->RegisterFunction("GetPropertyBool", "NiOverride", papyrusNiOverride::GetArmorAddonProperty<bool>);
+	a_vm->RegisterFunction("GetPropertyString", "NiOverride", papyrusNiOverride::GetArmorAddonProperty<RE::BSFixedString>);
 	// Node Overrides
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, bool, TESObjectREFR*, bool, BSFixedString, UInt32, UInt32>("HasNodeOverride", "NiOverride", papyrusNiOverride::HasNodeOverride, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction7<StaticFunctionTag, void, TESObjectREFR*, bool, BSFixedString, UInt32, UInt32, float, bool>("AddNodeOverrideFloat", "NiOverride", papyrusNiOverride::AddNodeOverride<float>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction7<StaticFunctionTag, void, TESObjectREFR*, bool, BSFixedString, UInt32, UInt32, UInt32, bool>("AddNodeOverrideInt", "NiOverride", papyrusNiOverride::AddNodeOverride<UInt32>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction7<StaticFunctionTag, void, TESObjectREFR*, bool, BSFixedString, UInt32, UInt32, bool, bool>("AddNodeOverrideBool", "NiOverride", papyrusNiOverride::AddNodeOverride<bool>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction7<StaticFunctionTag, void, TESObjectREFR*, bool, BSFixedString, UInt32, UInt32, BSFixedString, bool>("AddNodeOverrideString", "NiOverride", papyrusNiOverride::AddNodeOverride<BSFixedString>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction7<StaticFunctionTag, void, TESObjectREFR*, bool, BSFixedString, UInt32, UInt32, BGSTextureSet*, bool>("AddNodeOverrideTextureSet", "NiOverride", papyrusNiOverride::AddNodeOverride<BGSTextureSet*>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, void, TESObjectREFR*>("ApplyNodeOverrides", "NiOverride", papyrusNiOverride::ApplyNodeOverrides, registry));
-
+	a_vm->RegisterFunction("HasNodeOverride", "NiOverride", papyrusNiOverride::HasNodeOverride);
+	a_vm->RegisterFunction("AddNodeOverrideFloat", "NiOverride", papyrusNiOverride::AddNodeOverride<float>);
+	a_vm->RegisterFunction("AddNodeOverrideInt", "NiOverride", papyrusNiOverride::AddNodeOverride<std::uint32_t>);
+	a_vm->RegisterFunction("AddNodeOverrideBool", "NiOverride", papyrusNiOverride::AddNodeOverride<bool>);
+	a_vm->RegisterFunction("AddNodeOverrideString", "NiOverride", papyrusNiOverride::AddNodeOverride<RE::BSFixedString>);
+	a_vm->RegisterFunction("AddNodeOverrideTextureSet", "NiOverride", papyrusNiOverride::AddNodeOverride<RE::BGSTextureSet*>);
+	a_vm->RegisterFunction("ApplyNodeOverrides", "NiOverride", papyrusNiOverride::ApplyNodeOverrides);
 	// Get Node Overrides
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, float, TESObjectREFR*, bool, BSFixedString, UInt32, UInt32>("GetNodeOverrideFloat", "NiOverride", papyrusNiOverride::GetNodeOverride<float>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, UInt32, TESObjectREFR*, bool, BSFixedString, UInt32, UInt32>("GetNodeOverrideInt", "NiOverride", papyrusNiOverride::GetNodeOverride<UInt32>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, bool, TESObjectREFR*, bool, BSFixedString, UInt32, UInt32>("GetNodeOverrideBool", "NiOverride", papyrusNiOverride::GetNodeOverride<bool>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, BSFixedString, TESObjectREFR*, bool, BSFixedString, UInt32, UInt32>("GetNodeOverrideString", "NiOverride", papyrusNiOverride::GetNodeOverride<BSFixedString>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, BGSTextureSet*, TESObjectREFR*, bool, BSFixedString, UInt32, UInt32>("GetNodeOverrideTextureSet", "NiOverride", papyrusNiOverride::GetNodeOverride<BGSTextureSet*>, registry));
-
+	a_vm->RegisterFunction("GetNodeOverrideFloat", "NiOverride", papyrusNiOverride::GetNodeOverride<float>);
+	a_vm->RegisterFunction("GetNodeOverrideInt", "NiOverride", papyrusNiOverride::GetNodeOverride<std::uint32_t>);
+	a_vm->RegisterFunction("GetNodeOverrideBool", "NiOverride", papyrusNiOverride::GetNodeOverride<bool>);
+	a_vm->RegisterFunction("GetNodeOverrideString", "NiOverride", papyrusNiOverride::GetNodeOverride<RE::BSFixedString>);
+	a_vm->RegisterFunction("GetNodeOverrideTextureSet", "NiOverride", papyrusNiOverride::GetNodeOverride<RE::BGSTextureSet*>);
 	// Get Node Properties
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, float, TESObjectREFR*, bool, BSFixedString, UInt32, UInt32>("GetNodePropertyFloat", "NiOverride", papyrusNiOverride::GetNodeProperty<float>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, UInt32, TESObjectREFR*, bool, BSFixedString, UInt32, UInt32>("GetNodePropertyInt", "NiOverride", papyrusNiOverride::GetNodeProperty<UInt32>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, bool, TESObjectREFR*, bool, BSFixedString, UInt32, UInt32>("GetNodePropertyBool", "NiOverride", papyrusNiOverride::GetNodeProperty<bool>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, BSFixedString, TESObjectREFR*, bool, BSFixedString, UInt32, UInt32>("GetNodePropertyString", "NiOverride", papyrusNiOverride::GetNodeProperty<BSFixedString>, registry));
-
-
+	a_vm->RegisterFunction("GetNodePropertyFloat", "NiOverride", papyrusNiOverride::GetNodeProperty<float>);
+	a_vm->RegisterFunction("GetNodePropertyInt", "NiOverride", papyrusNiOverride::GetNodeProperty<std::uint32_t>);
+	a_vm->RegisterFunction("GetNodePropertyBool", "NiOverride", papyrusNiOverride::GetNodeProperty<bool>);
+	a_vm->RegisterFunction("GetNodePropertyString", "NiOverride", papyrusNiOverride::GetNodeProperty<RE::BSFixedString>);
 	// Weapon Overrides
-	registry->RegisterFunction(
-		new NativeFunction7<StaticFunctionTag, bool, TESObjectREFR*, bool, bool, TESObjectWEAP*, BSFixedString, UInt32, UInt32>("HasWeaponOverride", "NiOverride", papyrusNiOverride::HasWeaponOverride, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction9<StaticFunctionTag, void, TESObjectREFR*, bool, bool, TESObjectWEAP*, BSFixedString, UInt32, UInt32, float, bool>("AddWeaponOverrideFloat", "NiOverride", papyrusNiOverride::AddWeaponOverride<float>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction9<StaticFunctionTag, void, TESObjectREFR*, bool, bool, TESObjectWEAP*, BSFixedString, UInt32, UInt32, UInt32, bool>("AddWeaponOverrideInt", "NiOverride", papyrusNiOverride::AddWeaponOverride<UInt32>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction9<StaticFunctionTag, void, TESObjectREFR*, bool, bool, TESObjectWEAP*, BSFixedString, UInt32, UInt32, bool, bool>("AddWeaponOverrideBool", "NiOverride", papyrusNiOverride::AddWeaponOverride<bool>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction9<StaticFunctionTag, void, TESObjectREFR*, bool, bool, TESObjectWEAP*, BSFixedString, UInt32, UInt32, BSFixedString, bool>("AddWeaponOverrideString", "NiOverride", papyrusNiOverride::AddWeaponOverride<BSFixedString>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction9<StaticFunctionTag, void, TESObjectREFR*, bool, bool, TESObjectWEAP*, BSFixedString, UInt32, UInt32, BGSTextureSet*, bool>("AddWeaponOverrideTextureSet", "NiOverride", papyrusNiOverride::AddWeaponOverride<BGSTextureSet*>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, void, TESObjectREFR*>("ApplyWeaponOverrides", "NiOverride", papyrusNiOverride::ApplyWeaponOverrides, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, bool, TESObjectREFR*, bool, TESObjectWEAP*, BSFixedString, bool>("HasWeaponNode", "NiOverride", papyrusNiOverride::HasWeaponNode, registry));
-
+	a_vm->RegisterFunction("HasWeaponOverride", "NiOverride", papyrusNiOverride::HasWeaponOverride);
+	a_vm->RegisterFunction("AddWeaponOverrideFloat", "NiOverride", papyrusNiOverride::AddWeaponOverride<float>);
+	a_vm->RegisterFunction("AddWeaponOverrideInt", "NiOverride", papyrusNiOverride::AddWeaponOverride<std::uint32_t>);
+	a_vm->RegisterFunction("AddWeaponOverrideBool", "NiOverride", papyrusNiOverride::AddWeaponOverride<bool>);
+	a_vm->RegisterFunction("AddWeaponOverrideString", "NiOverride", papyrusNiOverride::AddWeaponOverride<RE::BSFixedString>);
+	a_vm->RegisterFunction("AddWeaponOverrideTextureSet", "NiOverride", papyrusNiOverride::AddWeaponOverride<RE::BGSTextureSet*>);
+	a_vm->RegisterFunction("ApplyWeaponOverrides", "NiOverride", papyrusNiOverride::ApplyWeaponOverrides);
+	a_vm->RegisterFunction("HasWeaponNode", "NiOverride", papyrusNiOverride::HasWeaponNode);
 	// Get Weapon Overrides
-	registry->RegisterFunction(
-		new NativeFunction7<StaticFunctionTag, float, TESObjectREFR*, bool, bool, TESObjectWEAP*, BSFixedString, UInt32, UInt32>("GetWeaponOverrideFloat", "NiOverride", papyrusNiOverride::GetWeaponOverride<float>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction7<StaticFunctionTag, UInt32, TESObjectREFR*, bool, bool, TESObjectWEAP*, BSFixedString, UInt32, UInt32>("GetWeaponOverrideInt", "NiOverride", papyrusNiOverride::GetWeaponOverride<UInt32>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction7<StaticFunctionTag, bool, TESObjectREFR*, bool, bool, TESObjectWEAP*, BSFixedString, UInt32, UInt32>("GetWeaponOverrideBool", "NiOverride", papyrusNiOverride::GetWeaponOverride<bool>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction7<StaticFunctionTag, BSFixedString, TESObjectREFR*, bool, bool, TESObjectWEAP*, BSFixedString, UInt32, UInt32>("GetWeaponOverrideString", "NiOverride", papyrusNiOverride::GetWeaponOverride<BSFixedString>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction7<StaticFunctionTag, BGSTextureSet*, TESObjectREFR*, bool, bool, TESObjectWEAP*, BSFixedString, UInt32, UInt32>("GetWeaponOverrideTextureSet", "NiOverride", papyrusNiOverride::GetWeaponOverride<BGSTextureSet*>, registry));
-
+	a_vm->RegisterFunction("GetWeaponOverrideFloat", "NiOverride", papyrusNiOverride::GetWeaponOverride<float>);
+	a_vm->RegisterFunction("GetWeaponOverrideInt", "NiOverride", papyrusNiOverride::GetWeaponOverride<std::uint32_t>);
+	a_vm->RegisterFunction("GetWeaponOverrideBool", "NiOverride", papyrusNiOverride::GetWeaponOverride<bool>);
+	a_vm->RegisterFunction("GetWeaponOverrideString", "NiOverride", papyrusNiOverride::GetWeaponOverride<RE::BSFixedString>);
+	a_vm->RegisterFunction("GetWeaponOverrideTextureSet", "NiOverride", papyrusNiOverride::GetWeaponOverride<RE::BGSTextureSet*>);
 	// Get Weapon Properties
-	registry->RegisterFunction(
-		new NativeFunction6<StaticFunctionTag, float, TESObjectREFR*, bool, TESObjectWEAP*, BSFixedString, UInt32, UInt32>("GetWeaponPropertyFloat", "NiOverride", papyrusNiOverride::GetWeaponProperty<float>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction6<StaticFunctionTag, UInt32, TESObjectREFR*, bool, TESObjectWEAP*, BSFixedString, UInt32, UInt32>("GetWeaponPropertyInt", "NiOverride", papyrusNiOverride::GetWeaponProperty<UInt32>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction6<StaticFunctionTag, bool, TESObjectREFR*, bool, TESObjectWEAP*, BSFixedString, UInt32, UInt32>("GetWeaponPropertyBool", "NiOverride", papyrusNiOverride::GetWeaponProperty<bool>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction6<StaticFunctionTag, BSFixedString, TESObjectREFR*, bool, TESObjectWEAP*, BSFixedString, UInt32, UInt32>("GetWeaponPropertyString", "NiOverride", papyrusNiOverride::GetWeaponProperty<BSFixedString>, registry));
-
-
+	a_vm->RegisterFunction("GetWeaponPropertyFloat", "NiOverride", papyrusNiOverride::GetWeaponProperty<float>);
+	a_vm->RegisterFunction("GetWeaponPropertyInt", "NiOverride", papyrusNiOverride::GetWeaponProperty<std::uint32_t>);
+	a_vm->RegisterFunction("GetWeaponPropertyBool", "NiOverride", papyrusNiOverride::GetWeaponProperty<bool>);
+	a_vm->RegisterFunction("GetWeaponPropertyString", "NiOverride", papyrusNiOverride::GetWeaponProperty<RE::BSFixedString>);
 	// Skin Overrides
-	registry->RegisterFunction(
-		new NativeFunction6<StaticFunctionTag, bool, TESObjectREFR*, bool, bool, UInt32, UInt32, UInt32>("HasSkinOverride", "NiOverride", papyrusNiOverride::HasSkinOverride, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction8<StaticFunctionTag, void, TESObjectREFR*, bool, bool, UInt32, UInt32, UInt32, float, bool>("AddSkinOverrideFloat", "NiOverride", papyrusNiOverride::AddSkinOverride<float>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction8<StaticFunctionTag, void, TESObjectREFR*, bool, bool, UInt32, UInt32, UInt32, UInt32, bool>("AddSkinOverrideInt", "NiOverride", papyrusNiOverride::AddSkinOverride<UInt32>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction8<StaticFunctionTag, void, TESObjectREFR*, bool, bool, UInt32, UInt32, UInt32, bool, bool>("AddSkinOverrideBool", "NiOverride", papyrusNiOverride::AddSkinOverride<bool>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction8<StaticFunctionTag, void, TESObjectREFR*, bool, bool, UInt32, UInt32, UInt32, BSFixedString, bool>("AddSkinOverrideString", "NiOverride", papyrusNiOverride::AddSkinOverride<BSFixedString>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction8<StaticFunctionTag, void, TESObjectREFR*, bool, bool, UInt32, UInt32, UInt32, BGSTextureSet*, bool>("AddSkinOverrideTextureSet", "NiOverride", papyrusNiOverride::AddSkinOverride<BGSTextureSet*>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, void, TESObjectREFR*>("ApplySkinOverrides", "NiOverride", papyrusNiOverride::ApplySkinOverrides, registry));
-
-
+	a_vm->RegisterFunction("HasSkinOverride", "NiOverride", papyrusNiOverride::HasSkinOverride);
+	a_vm->RegisterFunction("AddSkinOverrideFloat", "NiOverride", papyrusNiOverride::AddSkinOverride<float>);
+	a_vm->RegisterFunction("AddSkinOverrideInt", "NiOverride", papyrusNiOverride::AddSkinOverride<std::uint32_t>);
+	a_vm->RegisterFunction("AddSkinOverrideBool", "NiOverride", papyrusNiOverride::AddSkinOverride<bool>);
+	a_vm->RegisterFunction("AddSkinOverrideString", "NiOverride", papyrusNiOverride::AddSkinOverride<RE::BSFixedString>);
+	a_vm->RegisterFunction("AddSkinOverrideTextureSet", "NiOverride", papyrusNiOverride::AddSkinOverride<RE::BGSTextureSet*>);
+	a_vm->RegisterFunction("ApplySkinOverrides", "NiOverride", papyrusNiOverride::ApplySkinOverrides);
 	// Get Skin Overrides
-	registry->RegisterFunction(
-		new NativeFunction6<StaticFunctionTag, float, TESObjectREFR*, bool, bool, UInt32, UInt32, UInt32>("GetSkinOverrideFloat", "NiOverride", papyrusNiOverride::GetSkinOverride<float>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction6<StaticFunctionTag, UInt32, TESObjectREFR*, bool, bool, UInt32, UInt32, UInt32>("GetSkinOverrideInt", "NiOverride", papyrusNiOverride::GetSkinOverride<UInt32>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction6<StaticFunctionTag, bool, TESObjectREFR*, bool, bool, UInt32, UInt32, UInt32>("GetSkinOverrideBool", "NiOverride", papyrusNiOverride::GetSkinOverride<bool>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction6<StaticFunctionTag, BSFixedString, TESObjectREFR*, bool, bool, UInt32, UInt32, UInt32>("GetSkinOverrideString", "NiOverride", papyrusNiOverride::GetSkinOverride<BSFixedString>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction6<StaticFunctionTag, BGSTextureSet*, TESObjectREFR*, bool, bool, UInt32, UInt32, UInt32>("GetSkinOverrideTextureSet", "NiOverride", papyrusNiOverride::GetSkinOverride<BGSTextureSet*>, registry));
-
+	a_vm->RegisterFunction("GetSkinOverrideFloat", "NiOverride", papyrusNiOverride::GetSkinOverride<float>);
+	a_vm->RegisterFunction("GetSkinOverrideInt", "NiOverride", papyrusNiOverride::GetSkinOverride<std::uint32_t>);
+	a_vm->RegisterFunction("GetSkinOverrideBool", "NiOverride", papyrusNiOverride::GetSkinOverride<bool>);
+	a_vm->RegisterFunction("GetSkinOverrideString", "NiOverride", papyrusNiOverride::GetSkinOverride<RE::BSFixedString>);
+	a_vm->RegisterFunction("GetSkinOverrideTextureSet", "NiOverride", papyrusNiOverride::GetSkinOverride<RE::BGSTextureSet*>);
 	// Get Skin Properties
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, float, TESObjectREFR*, bool, UInt32, UInt32, UInt32>("GetSkinPropertyFloat", "NiOverride", papyrusNiOverride::GetSkinProperty<float>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, UInt32, TESObjectREFR*, bool, UInt32, UInt32, UInt32>("GetSkinPropertyInt", "NiOverride", papyrusNiOverride::GetSkinProperty<UInt32>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, bool, TESObjectREFR*, bool, UInt32, UInt32, UInt32>("GetSkinPropertyBool", "NiOverride", papyrusNiOverride::GetSkinProperty<bool>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, BSFixedString, TESObjectREFR*, bool, UInt32, UInt32, UInt32>("GetSkinPropertyString", "NiOverride", papyrusNiOverride::GetSkinProperty<BSFixedString>, registry));
-
-
-
+	a_vm->RegisterFunction("GetSkinPropertyFloat", "NiOverride", papyrusNiOverride::GetSkinProperty<float>);
+	a_vm->RegisterFunction("GetSkinPropertyInt", "NiOverride", papyrusNiOverride::GetSkinProperty<std::uint32_t>);
+	a_vm->RegisterFunction("GetSkinPropertyBool", "NiOverride", papyrusNiOverride::GetSkinProperty<bool>);
+	a_vm->RegisterFunction("GetSkinPropertyString", "NiOverride", papyrusNiOverride::GetSkinProperty<RE::BSFixedString>);
 	// Remove functions
-	registry->RegisterFunction(
-		new NativeFunction0<StaticFunctionTag, void>("RemoveAllOverrides", "NiOverride", papyrusNiOverride::RemoveAllOverrides, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, void, TESObjectREFR*>("RemoveAllReferenceOverrides", "NiOverride", papyrusNiOverride::RemoveAllReferenceOverrides, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction3<StaticFunctionTag, void, TESObjectREFR*, bool, TESObjectARMO*>("RemoveAllArmorOverrides", "NiOverride", papyrusNiOverride::RemoveAllArmorOverrides, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction4<StaticFunctionTag, void, TESObjectREFR*, bool, TESObjectARMO*, TESObjectARMA*>("RemoveAllArmorAddonOverrides", "NiOverride", papyrusNiOverride::RemoveAllArmorAddonOverrides, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, void, TESObjectREFR*, bool, TESObjectARMO*, TESObjectARMA*, BSFixedString>("RemoveAllArmorAddonNodeOverrides", "NiOverride", papyrusNiOverride::RemoveAllArmorAddonNodeOverrides, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction7<StaticFunctionTag, void, TESObjectREFR*, bool, TESObjectARMO*, TESObjectARMA*, BSFixedString, UInt32, UInt32>("RemoveOverride", "NiOverride", papyrusNiOverride::RemoveArmorAddonOverride, registry));
-
+	a_vm->RegisterFunction("RemoveAllOverrides", "NiOverride", papyrusNiOverride::RemoveAllOverrides);
+	a_vm->RegisterFunction("RemoveAllReferenceOverrides", "NiOverride", papyrusNiOverride::RemoveAllReferenceOverrides);
+	a_vm->RegisterFunction("RemoveAllArmorOverrides", "NiOverride", papyrusNiOverride::RemoveAllArmorOverrides);
+	a_vm->RegisterFunction("RemoveAllArmorAddonOverrides", "NiOverride", papyrusNiOverride::RemoveAllArmorAddonOverrides);
+	a_vm->RegisterFunction("RemoveAllArmorAddonNodeOverrides", "NiOverride", papyrusNiOverride::RemoveAllArmorAddonNodeOverrides);
+	a_vm->RegisterFunction("RemoveOverride", "NiOverride", papyrusNiOverride::RemoveArmorAddonOverride);
 	// Node Remove functions
-	registry->RegisterFunction(
-		new NativeFunction0<StaticFunctionTag, void>("RemoveAllNodeOverrides", "NiOverride", papyrusNiOverride::RemoveAllNodeOverrides, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, void, TESObjectREFR*>("RemoveAllReferenceNodeOverrides", "NiOverride", papyrusNiOverride::RemoveAllReferenceNodeOverrides, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction3<StaticFunctionTag, void, TESObjectREFR*, bool, BSFixedString>("RemoveAllNodeNameOverrides", "NiOverride", papyrusNiOverride::RemoveAllNodeNameOverrides, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, void, TESObjectREFR*, bool, BSFixedString, UInt32, UInt32>("RemoveNodeOverride", "NiOverride", papyrusNiOverride::RemoveNodeOverride, registry));
-
+	a_vm->RegisterFunction("RemoveAllNodeOverrides", "NiOverride", papyrusNiOverride::RemoveAllNodeOverrides);
+	a_vm->RegisterFunction("RemoveAllReferenceNodeOverrides", "NiOverride", papyrusNiOverride::RemoveAllReferenceNodeOverrides);
+	a_vm->RegisterFunction("RemoveAllNodeNameOverrides", "NiOverride", papyrusNiOverride::RemoveAllNodeNameOverrides);
+	a_vm->RegisterFunction("RemoveNodeOverride", "NiOverride", papyrusNiOverride::RemoveNodeOverride);
 	// Remove Weapon functions
-	registry->RegisterFunction(
-		new NativeFunction0<StaticFunctionTag, void>("RemoveAllWeaponBasedOverrides", "NiOverride", papyrusNiOverride::RemoveAllWeaponBasedOverrides, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, void, TESObjectREFR*>("RemoveAllReferenceWeaponOverrides", "NiOverride", papyrusNiOverride::RemoveAllReferenceWeaponOverrides, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction4<StaticFunctionTag, void, TESObjectREFR*, bool, bool, TESObjectWEAP*>("RemoveAllWeaponOverrides", "NiOverride", papyrusNiOverride::RemoveAllWeaponOverrides, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, void, TESObjectREFR*, bool, bool, TESObjectWEAP*, BSFixedString>("RemoveAllWeaponNodeOverrides", "NiOverride", papyrusNiOverride::RemoveAllWeaponNodeOverrides, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction7<StaticFunctionTag, void, TESObjectREFR*, bool, bool, TESObjectWEAP*, BSFixedString, UInt32, UInt32>("RemoveWeaponOverride", "NiOverride", papyrusNiOverride::RemoveWeaponOverride, registry));
-
-
+	a_vm->RegisterFunction("RemoveAllWeaponBasedOverrides", "NiOverride", papyrusNiOverride::RemoveAllWeaponBasedOverrides);
+	a_vm->RegisterFunction("RemoveAllReferenceWeaponOverrides", "NiOverride", papyrusNiOverride::RemoveAllReferenceWeaponOverrides);
+	a_vm->RegisterFunction("RemoveAllWeaponOverrides", "NiOverride", papyrusNiOverride::RemoveAllWeaponOverrides);
+	a_vm->RegisterFunction("RemoveAllWeaponNodeOverrides", "NiOverride", papyrusNiOverride::RemoveAllWeaponNodeOverrides);
+	a_vm->RegisterFunction("RemoveWeaponOverride", "NiOverride", papyrusNiOverride::RemoveWeaponOverride);
 	// Remove Skin functions
-	registry->RegisterFunction(
-		new NativeFunction0<StaticFunctionTag, void>("RemoveAllSkinBasedOverrides", "NiOverride", papyrusNiOverride::RemoveAllSkinBasedOverrides, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, void, TESObjectREFR*>("RemoveAllReferenceSkinOverrides", "NiOverride", papyrusNiOverride::RemoveAllReferenceSkinOverrides, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction4<StaticFunctionTag, void, TESObjectREFR*, bool, bool, UInt32>("RemoveAllSkinOverrides", "NiOverride", papyrusNiOverride::RemoveAllSkinOverrides, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction6<StaticFunctionTag, void, TESObjectREFR*, bool, bool, UInt32, UInt32, UInt32>("RemoveSkinOverride", "NiOverride", papyrusNiOverride::RemoveSkinOverride, registry));
-
-
+	a_vm->RegisterFunction("RemoveAllSkinBasedOverrides", "NiOverride", papyrusNiOverride::RemoveAllSkinBasedOverrides);
+	a_vm->RegisterFunction("RemoveAllReferenceSkinOverrides", "NiOverride", papyrusNiOverride::RemoveAllReferenceSkinOverrides);
+	a_vm->RegisterFunction("RemoveAllSkinOverrides", "NiOverride", papyrusNiOverride::RemoveAllSkinOverrides);
+	a_vm->RegisterFunction("RemoveSkinOverride", "NiOverride", papyrusNiOverride::RemoveSkinOverride);
 	// Body Morph Manipulation
-	registry->RegisterFunction(
-		new NativeFunction3<StaticFunctionTag, bool, TESObjectREFR*, BSFixedString, BSFixedString>("HasBodyMorph", "NiOverride", papyrusNiOverride::HasBodyMorph, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction4<StaticFunctionTag, void, TESObjectREFR*, BSFixedString, BSFixedString, float>("SetBodyMorph", "NiOverride", papyrusNiOverride::SetBodyMorph, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction3<StaticFunctionTag, float, TESObjectREFR*, BSFixedString, BSFixedString>("GetBodyMorph", "NiOverride", papyrusNiOverride::GetBodyMorph, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction3<StaticFunctionTag, void, TESObjectREFR*, BSFixedString, BSFixedString>("ClearBodyMorph", "NiOverride", papyrusNiOverride::ClearBodyMorph, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction2<StaticFunctionTag, bool, TESObjectREFR*, BSFixedString>("HasBodyMorphKey", "NiOverride", papyrusNiOverride::HasBodyMorphKey, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction2<StaticFunctionTag, void, TESObjectREFR*, BSFixedString>("ClearBodyMorphKeys", "NiOverride", papyrusNiOverride::ClearBodyMorphKeys, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction2<StaticFunctionTag, bool, TESObjectREFR*, BSFixedString>("HasBodyMorphName", "NiOverride", papyrusNiOverride::HasBodyMorphName, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction2<StaticFunctionTag, void, TESObjectREFR*, BSFixedString>("ClearBodyMorphNames", "NiOverride", papyrusNiOverride::ClearBodyMorphNames, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, void, TESObjectREFR*>("ClearMorphs", "NiOverride", papyrusNiOverride::ClearMorphs, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, void, TESObjectREFR*>("UpdateModelWeight", "NiOverride", papyrusNiOverride::UpdateModelWeight, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, VMResultArray<BSFixedString>, TESObjectREFR*>("GetMorphNames", "NiOverride", papyrusNiOverride::GetMorphNames, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction2<StaticFunctionTag, VMResultArray<BSFixedString>, TESObjectREFR*, BSFixedString>("GetMorphKeys", "NiOverride", papyrusNiOverride::GetMorphKeys, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction0<StaticFunctionTag, VMResultArray<TESObjectREFR*>>("GetMorphedReferences", "NiOverride", papyrusNiOverride::GetMorphedReferences, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction2<StaticFunctionTag, void, BSFixedString, TESForm*>("ForEachMorphedReference", "NiOverride", papyrusNiOverride::ForEachMorphedReference, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction0<StaticFunctionTag, VMResultArray<BSFixedString>>("GetCachedMorphNames", "NiOverride", papyrusNiOverride::GetCachedMorphNames, registry));
-
-
+	a_vm->RegisterFunction("HasBodyMorph", "NiOverride", papyrusNiOverride::HasBodyMorph);
+	a_vm->RegisterFunction("SetBodyMorph", "NiOverride", papyrusNiOverride::SetBodyMorph);
+	a_vm->RegisterFunction("GetBodyMorph", "NiOverride", papyrusNiOverride::GetBodyMorph);
+	a_vm->RegisterFunction("ClearBodyMorph", "NiOverride", papyrusNiOverride::ClearBodyMorph);
+	a_vm->RegisterFunction("HasBodyMorphKey", "NiOverride", papyrusNiOverride::HasBodyMorphKey);
+	a_vm->RegisterFunction("ClearBodyMorphKeys", "NiOverride", papyrusNiOverride::ClearBodyMorphKeys);
+	a_vm->RegisterFunction("HasBodyMorphName", "NiOverride", papyrusNiOverride::HasBodyMorphName);
+	a_vm->RegisterFunction("ClearBodyMorphNames", "NiOverride", papyrusNiOverride::ClearBodyMorphNames);
+	a_vm->RegisterFunction("ClearMorphs", "NiOverride", papyrusNiOverride::ClearMorphs);
+	a_vm->RegisterFunction("UpdateModelWeight", "NiOverride", papyrusNiOverride::UpdateModelWeight);
+	a_vm->RegisterFunction("GetMorphNames", "NiOverride", papyrusNiOverride::GetMorphNames);
+	a_vm->RegisterFunction("GetMorphKeys", "NiOverride", papyrusNiOverride::GetMorphKeys);
+	a_vm->RegisterFunction("GetMorphedReferences", "NiOverride", papyrusNiOverride::GetMorphedReferences);
+	a_vm->RegisterFunction("ForEachMorphedReference", "NiOverride", papyrusNiOverride::ForEachMorphedReference);
+	a_vm->RegisterFunction("GetCachedMorphNames", "NiOverride", papyrusNiOverride::GetCachedMorphNames);
 	// Unique Item manipulation
-	registry->RegisterFunction(
-		new NativeFunction4<StaticFunctionTag, UInt32, TESObjectREFR*, UInt32, UInt32, bool>("GetItemUniqueID", "NiOverride", papyrusNiOverride::GetItemUniqueID, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction2<StaticFunctionTag, UInt32, TESObjectREFR*, bool>("GetObjectUniqueID", "NiOverride", papyrusNiOverride::GetObjectUniqueID, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, TESForm*, UInt32>("GetFormFromUniqueID", "NiOverride", papyrusNiOverride::GetFormFromUniqueID, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, TESForm*, UInt32>("GetOwnerOfUniqueID", "NiOverride", papyrusNiOverride::GetOwnerOfUniqueID, registry));
-
-
+	a_vm->RegisterFunction("GetItemUniqueID", "NiOverride", papyrusNiOverride::GetItemUniqueID);
+	a_vm->RegisterFunction("GetObjectUniqueID", "NiOverride", papyrusNiOverride::GetObjectUniqueID);
+	a_vm->RegisterFunction("GetFormFromUniqueID", "NiOverride", papyrusNiOverride::GetFormFromUniqueID);
+	a_vm->RegisterFunction("GetOwnerOfUniqueID", "NiOverride", papyrusNiOverride::GetOwnerOfUniqueID);
 	// DyeManager V1
-	registry->RegisterFunction(
-		new NativeFunction3<StaticFunctionTag, void, UInt32, SInt32, UInt32>("SetItemDyeColor", "NiOverride", papyrusNiOverride::SetItemDyeColor, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction2<StaticFunctionTag, UInt32, UInt32, SInt32>("GetItemDyeColor", "NiOverride", papyrusNiOverride::GetItemDyeColor, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction2<StaticFunctionTag, void, UInt32, SInt32>("ClearItemDyeColor", "NiOverride", papyrusNiOverride::ClearItemDyeColor, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction2<StaticFunctionTag, void, TESObjectREFR*, UInt32>("UpdateItemDyeColor", "NiOverride", papyrusNiOverride::UpdateItemDyeColor, registry));
-
-
+	a_vm->RegisterFunction("SetItemDyeColor", "NiOverride", papyrusNiOverride::SetItemDyeColor);
+	a_vm->RegisterFunction("GetItemDyeColor", "NiOverride", papyrusNiOverride::GetItemDyeColor);
+	a_vm->RegisterFunction("ClearItemDyeColor", "NiOverride", papyrusNiOverride::ClearItemDyeColor);
+	a_vm->RegisterFunction("UpdateItemDyeColor", "NiOverride", papyrusNiOverride::UpdateItemDyeColor);
 	// DyeManager V2
-	registry->RegisterFunction(
-		new NativeFunction4<StaticFunctionTag, void, UInt32, SInt32, SInt32, UInt32>("SetItemTextureLayerColor", "NiOverride", papyrusNiOverride::SetItemTextureLayerColor, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction3<StaticFunctionTag, UInt32, UInt32, SInt32, SInt32>("GetItemTextureLayerColor", "NiOverride", papyrusNiOverride::GetItemTextureLayerColor, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction3<StaticFunctionTag, void, UInt32, SInt32, SInt32>("ClearItemTextureLayerColor", "NiOverride", papyrusNiOverride::ClearItemTextureLayerColor, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction4<StaticFunctionTag, void, UInt32, SInt32, SInt32, UInt32>("SetItemTextureLayerType", "NiOverride", papyrusNiOverride::SetItemTextureLayerType, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction3<StaticFunctionTag, UInt32, UInt32, SInt32, SInt32>("GetItemTextureLayerType", "NiOverride", papyrusNiOverride::GetItemTextureLayerType, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction3<StaticFunctionTag, void, UInt32, SInt32, SInt32>("ClearItemTextureLayerType", "NiOverride", papyrusNiOverride::ClearItemTextureLayerType, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction4<StaticFunctionTag, void, UInt32, SInt32, SInt32, BSFixedString>("SetItemTextureLayerTexture", "NiOverride", papyrusNiOverride::SetItemTextureLayerTexture, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction3<StaticFunctionTag, BSFixedString, UInt32, SInt32, SInt32>("GetItemTextureLayerTexture", "NiOverride", papyrusNiOverride::GetItemTextureLayerTexture, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction3<StaticFunctionTag, void, UInt32, SInt32, SInt32>("ClearItemTextureLayerTexture", "NiOverride", papyrusNiOverride::ClearItemTextureLayerTexture, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction4<StaticFunctionTag, void, UInt32, SInt32, SInt32, BSFixedString>("SetItemTextureLayerBlendMode", "NiOverride", papyrusNiOverride::SetItemTextureLayerBlendMode, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction3<StaticFunctionTag, BSFixedString, UInt32, SInt32, SInt32>("GetItemTextureLayerBlendMode", "NiOverride", papyrusNiOverride::GetItemTextureLayerBlendMode, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction3<StaticFunctionTag, void, UInt32, SInt32, SInt32>("ClearItemTextureLayerBlendMode", "NiOverride", papyrusNiOverride::ClearItemTextureLayerBlendMode, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction2<StaticFunctionTag, void, TESObjectREFR*, UInt32>("UpdateItemTextureLayers", "NiOverride", papyrusNiOverride::UpdateItemTextureLayers, registry));
-
-
-	registry->RegisterFunction(
-		new NativeFunction0<StaticFunctionTag, void>("EnableTintTextureCache", "NiOverride", papyrusNiOverride::EnableTintTextureCache, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction0<StaticFunctionTag, void>("ReleaseTintTextureCache", "NiOverride", papyrusNiOverride::ReleaseTintTextureCache, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, bool, TESForm*>("IsFormDye", "NiOverride", papyrusNiOverride::IsFormDye, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, UInt32, TESForm*>("GetFormDyeColor", "NiOverride", papyrusNiOverride::GetFormDyeColor, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction2<StaticFunctionTag, void, TESForm*, UInt32>("RegisterFormDyeColor", "NiOverride", papyrusNiOverride::RegisterFormDyeColor, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, void, TESForm*>("UnregisterFormDyeColor", "NiOverride", papyrusNiOverride::UnregisterFormDyeColor, registry));
-
+	a_vm->RegisterFunction("SetItemTextureLayerColor", "NiOverride", papyrusNiOverride::SetItemTextureLayerColor);
+	a_vm->RegisterFunction("GetItemTextureLayerColor", "NiOverride", papyrusNiOverride::GetItemTextureLayerColor);
+	a_vm->RegisterFunction("ClearItemTextureLayerColor", "NiOverride", papyrusNiOverride::ClearItemTextureLayerColor);
+	a_vm->RegisterFunction("SetItemTextureLayerType", "NiOverride", papyrusNiOverride::SetItemTextureLayerType);
+	a_vm->RegisterFunction("GetItemTextureLayerType", "NiOverride", papyrusNiOverride::GetItemTextureLayerType);
+	a_vm->RegisterFunction("ClearItemTextureLayerType", "NiOverride", papyrusNiOverride::ClearItemTextureLayerType);
+	a_vm->RegisterFunction("SetItemTextureLayerTexture", "NiOverride", papyrusNiOverride::SetItemTextureLayerTexture);
+	a_vm->RegisterFunction("GetItemTextureLayerTexture", "NiOverride", papyrusNiOverride::GetItemTextureLayerTexture);
+	a_vm->RegisterFunction("ClearItemTextureLayerTexture", "NiOverride", papyrusNiOverride::ClearItemTextureLayerTexture);
+	a_vm->RegisterFunction("SetItemTextureLayerBlendMode", "NiOverride", papyrusNiOverride::SetItemTextureLayerBlendMode);
+	a_vm->RegisterFunction("GetItemTextureLayerBlendMode", "NiOverride", papyrusNiOverride::GetItemTextureLayerBlendMode);
+	a_vm->RegisterFunction("ClearItemTextureLayerBlendMode", "NiOverride", papyrusNiOverride::ClearItemTextureLayerBlendMode);
+	a_vm->RegisterFunction("UpdateItemTextureLayers", "NiOverride", papyrusNiOverride::UpdateItemTextureLayers);
+	a_vm->RegisterFunction("EnableTintTextureCache", "NiOverride", papyrusNiOverride::EnableTintTextureCache);
+	a_vm->RegisterFunction("ReleaseTintTextureCache", "NiOverride", papyrusNiOverride::ReleaseTintTextureCache);
+	a_vm->RegisterFunction("IsFormDye", "NiOverride", papyrusNiOverride::IsFormDye);
+	a_vm->RegisterFunction("GetFormDyeColor", "NiOverride", papyrusNiOverride::GetFormDyeColor);
+	a_vm->RegisterFunction("RegisterFormDyeColor", "NiOverride", papyrusNiOverride::RegisterFormDyeColor);
+	a_vm->RegisterFunction("UnregisterFormDyeColor", "NiOverride", papyrusNiOverride::UnregisterFormDyeColor);
 	// Position Transforms
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, bool, TESObjectREFR *, bool, bool, BSFixedString, BSFixedString>("HasNodeTransformPosition", "NiOverride", papyrusNiOverride::HasNodeTransformPosition, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction6<StaticFunctionTag, void, TESObjectREFR *, bool, bool, BSFixedString, BSFixedString, VMArray<float>>("AddNodeTransformPosition", "NiOverride", papyrusNiOverride::AddNodeTransformPosition, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, VMResultArray<float>, TESObjectREFR *, bool, bool, BSFixedString, BSFixedString>("GetNodeTransformPosition", "NiOverride", papyrusNiOverride::GetNodeTransformPosition, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, bool, TESObjectREFR *, bool, bool, BSFixedString, BSFixedString>("RemoveNodeTransformPosition", "NiOverride", papyrusNiOverride::RemoveNodeTransformPosition, registry));
-
+	a_vm->RegisterFunction("HasNodeTransformPosition", "NiOverride", papyrusNiOverride::HasNodeTransformPosition);
+	a_vm->RegisterFunction("AddNodeTransformPosition", "NiOverride", papyrusNiOverride::AddNodeTransformPosition);
+	a_vm->RegisterFunction("GetNodeTransformPosition", "NiOverride", papyrusNiOverride::GetNodeTransformPosition);
+	a_vm->RegisterFunction("RemoveNodeTransformPosition", "NiOverride", papyrusNiOverride::RemoveNodeTransformPosition);
 	// Scale Transforms
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, bool, TESObjectREFR *, bool, bool, BSFixedString, BSFixedString>("HasNodeTransformScale", "NiOverride", papyrusNiOverride::HasNodeTransformScale, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction6<StaticFunctionTag, void, TESObjectREFR *, bool, bool, BSFixedString, BSFixedString, float>("AddNodeTransformScale", "NiOverride", papyrusNiOverride::AddNodeTransformScale, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, float, TESObjectREFR *, bool, bool, BSFixedString, BSFixedString>("GetNodeTransformScale", "NiOverride", papyrusNiOverride::GetNodeTransformScale, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, bool, TESObjectREFR *, bool, bool, BSFixedString, BSFixedString>("RemoveNodeTransformScale", "NiOverride", papyrusNiOverride::RemoveNodeTransformScale, registry));
-
+	a_vm->RegisterFunction("HasNodeTransformScale", "NiOverride", papyrusNiOverride::HasNodeTransformScale);
+	a_vm->RegisterFunction("AddNodeTransformScale", "NiOverride", papyrusNiOverride::AddNodeTransformScale);
+	a_vm->RegisterFunction("GetNodeTransformScale", "NiOverride", papyrusNiOverride::GetNodeTransformScale);
+	a_vm->RegisterFunction("RemoveNodeTransformScale", "NiOverride", papyrusNiOverride::RemoveNodeTransformScale);
 	// Rotation Transforms
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, bool, TESObjectREFR *, bool, bool, BSFixedString, BSFixedString>("HasNodeTransformRotation", "NiOverride", papyrusNiOverride::HasNodeTransformRotation, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction6<StaticFunctionTag, void, TESObjectREFR *, bool, bool, BSFixedString, BSFixedString, VMArray<float>>("AddNodeTransformRotation", "NiOverride", papyrusNiOverride::AddNodeTransformRotation, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction6<StaticFunctionTag, VMResultArray<float>, TESObjectREFR *, bool, bool, BSFixedString, BSFixedString, UInt32>("GetNodeTransformRotation", "NiOverride", papyrusNiOverride::GetNodeTransformRotation, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, bool, TESObjectREFR *, bool, bool, BSFixedString, BSFixedString>("RemoveNodeTransformRotation", "NiOverride", papyrusNiOverride::RemoveNodeTransformRotation, registry));
-
+	a_vm->RegisterFunction("HasNodeTransformRotation", "NiOverride", papyrusNiOverride::HasNodeTransformRotation);
+	a_vm->RegisterFunction("AddNodeTransformRotation", "NiOverride", papyrusNiOverride::AddNodeTransformRotation);
+	a_vm->RegisterFunction("GetNodeTransformRotation", "NiOverride", papyrusNiOverride::GetNodeTransformRotation);
+	a_vm->RegisterFunction("RemoveNodeTransformRotation", "NiOverride", papyrusNiOverride::RemoveNodeTransformRotation);
 	// ScaleMode Transforms
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, bool, TESObjectREFR*, bool, bool, BSFixedString, BSFixedString>("HasNodeTransformScaleMode", "NiOverride", papyrusNiOverride::HasNodeTransformScaleMode, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction6<StaticFunctionTag, void, TESObjectREFR*, bool, bool, BSFixedString, BSFixedString, UInt32>("AddNodeTransformScaleMode", "NiOverride", papyrusNiOverride::AddNodeTransformScaleMode, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, UInt32, TESObjectREFR*, bool, bool, BSFixedString, BSFixedString>("GetNodeTransformScaleMode", "NiOverride", papyrusNiOverride::GetNodeTransformScaleMode, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, bool, TESObjectREFR*, bool, bool, BSFixedString, BSFixedString>("RemoveNodeTransformScaleMode", "NiOverride", papyrusNiOverride::RemoveNodeTransformScaleMode, registry));
-
-
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, void, TESObjectREFR *>("UpdateAllReferenceTransforms", "NiOverride", papyrusNiOverride::UpdateAllReferenceTransforms, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction4<StaticFunctionTag, void, TESObjectREFR *, bool, bool, BSFixedString>("UpdateNodeTransform", "NiOverride", papyrusNiOverride::UpdateNodeTransform, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, void, TESObjectREFR *>("RemoveAllReferenceTransforms", "NiOverride", papyrusNiOverride::RemoveAllReferenceTransforms, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction0<StaticFunctionTag, void>("RemoveAllTransforms", "NiOverride", papyrusNiOverride::RemoveAllTransforms, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction3<StaticFunctionTag, float, VMArray<float>, VMArray<float>, float>("GetInverseTransform", "NiOverride", papyrusNiOverride::GetInverseTransform, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction5<StaticFunctionTag, void, TESObjectREFR *, bool, bool, BSFixedString, BSFixedString>("SetNodeDestination", "NiOverride", papyrusNiOverride::SetNodeDestination, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction4<StaticFunctionTag, bool, TESObjectREFR *, bool, bool, BSFixedString>("RemoveNodeDestination", "NiOverride", papyrusNiOverride::RemoveNodeDestination, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction4<StaticFunctionTag, BSFixedString, TESObjectREFR *, bool, bool, BSFixedString>("GetNodeDestination", "NiOverride", papyrusNiOverride::GetNodeDestination, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction3<StaticFunctionTag, VMResultArray<BSFixedString>, TESObjectREFR *, bool, bool>("GetNodeTransformNames", "NiOverride", papyrusNiOverride::GetNodeTransformNames, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction4<StaticFunctionTag, VMResultArray<BSFixedString>, TESObjectREFR *, bool, bool, BSFixedString>("GetNodeTransformKeys", "NiOverride", papyrusNiOverride::GetNodeTransformKeys, registry));
-
-
+	a_vm->RegisterFunction("HasNodeTransformScaleMode", "NiOverride", papyrusNiOverride::HasNodeTransformScaleMode);
+	a_vm->RegisterFunction("AddNodeTransformScaleMode", "NiOverride", papyrusNiOverride::AddNodeTransformScaleMode);
+	a_vm->RegisterFunction("GetNodeTransformScaleMode", "NiOverride", papyrusNiOverride::GetNodeTransformScaleMode);
+	a_vm->RegisterFunction("RemoveNodeTransformScaleMode", "NiOverride", papyrusNiOverride::RemoveNodeTransformScaleMode);
+	a_vm->RegisterFunction("UpdateAllReferenceTransforms", "NiOverride", papyrusNiOverride::UpdateAllReferenceTransforms);
+	a_vm->RegisterFunction("UpdateNodeTransform", "NiOverride", papyrusNiOverride::UpdateNodeTransform);
+	a_vm->RegisterFunction("RemoveAllReferenceTransforms", "NiOverride", papyrusNiOverride::RemoveAllReferenceTransforms);
+	a_vm->RegisterFunction("RemoveAllTransforms", "NiOverride", papyrusNiOverride::RemoveAllTransforms);
+	a_vm->RegisterFunction("GetInverseTransform", "NiOverride", papyrusNiOverride::GetInverseTransform);
+	a_vm->RegisterFunction("SetNodeDestination", "NiOverride", papyrusNiOverride::SetNodeDestination);
+	a_vm->RegisterFunction("RemoveNodeDestination", "NiOverride", papyrusNiOverride::RemoveNodeDestination);
+	a_vm->RegisterFunction("GetNodeDestination", "NiOverride", papyrusNiOverride::GetNodeDestination);
+	a_vm->RegisterFunction("GetNodeTransformNames", "NiOverride", papyrusNiOverride::GetNodeTransformNames);
+	a_vm->RegisterFunction("GetNodeTransformKeys", "NiOverride", papyrusNiOverride::GetNodeTransformKeys);
 	// Extra Data Testers
-	registry->RegisterFunction(
-		new NativeFunction4<StaticFunctionTag, bool, TESObjectREFR *, bool, BSFixedString, BSFixedString>("GetBooleanExtraData", "NiOverride", papyrusNiOverride::GetExtraData<bool>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction4<StaticFunctionTag, SInt32, TESObjectREFR *, bool, BSFixedString, BSFixedString>("GetIntegerExtraData", "NiOverride", papyrusNiOverride::GetExtraData<SInt32>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction4<StaticFunctionTag, VMResultArray<SInt32>, TESObjectREFR *, bool, BSFixedString, BSFixedString>("GetIntegersExtraData", "NiOverride", papyrusNiOverride::GetExtraData<VMResultArray<SInt32>>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction4<StaticFunctionTag, float, TESObjectREFR *, bool, BSFixedString, BSFixedString>("GetFloatExtraData", "NiOverride", papyrusNiOverride::GetExtraData<float>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction4<StaticFunctionTag, VMResultArray<float>, TESObjectREFR *, bool, BSFixedString, BSFixedString>("GetFloatsExtraData", "NiOverride", papyrusNiOverride::GetExtraData<VMResultArray<float>>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction4<StaticFunctionTag, BSFixedString, TESObjectREFR *, bool, BSFixedString, BSFixedString>("GetStringExtraData", "NiOverride", papyrusNiOverride::GetExtraData<BSFixedString>, registry));
-
-	registry->RegisterFunction(
-		new NativeFunction4<StaticFunctionTag, VMResultArray<BSFixedString>, TESObjectREFR *, bool, BSFixedString, BSFixedString>("GetStringsExtraData", "NiOverride", papyrusNiOverride::GetExtraData<VMResultArray<BSFixedString>>, registry));
-
+	a_vm->RegisterFunction("GetBooleanExtraData", "NiOverride", papyrusNiOverride::GetExtraData<bool>);
+	a_vm->RegisterFunction("GetIntegerExtraData", "NiOverride", papyrusNiOverride::GetExtraData<std::int32_t>);
+	a_vm->RegisterFunction("GetIntegersExtraData", "NiOverride", papyrusNiOverride::GetExtraData<std::vector<std::int32_t>>);
+	a_vm->RegisterFunction("GetFloatExtraData", "NiOverride", papyrusNiOverride::GetExtraData<float>);
+	a_vm->RegisterFunction("GetFloatsExtraData", "NiOverride", papyrusNiOverride::GetExtraData<std::vector<float>>);
+	a_vm->RegisterFunction("GetStringExtraData", "NiOverride", papyrusNiOverride::GetExtraData<RE::BSFixedString>);
+	a_vm->RegisterFunction("GetStringsExtraData", "NiOverride", papyrusNiOverride::GetExtraData<std::vector<RE::BSFixedString>>);
 	// Mesh Manipulation
-	registry->RegisterFunction(
-		new LatentNativeFunction6<StaticFunctionTag, bool, TESObjectREFR*, bool, BSFixedString, BSFixedString, bool, VMArray<BSFixedString>>("AttachMesh", "NiOverride", papyrusNiOverride::AttachMesh, registry));
+	// R is the type returned to the script via ReturnLatentResult (legacy LatentNativeFunction result type: bool)
+	a_vm->RegisterLatentFunction<bool>("AttachMesh", "NiOverride", papyrusNiOverride::AttachMesh);
+	a_vm->RegisterLatentFunction<bool>("DetachMesh", "NiOverride", papyrusNiOverride::DetachMesh);
 
-	registry->RegisterFunction(
-		new LatentNativeFunction3<StaticFunctionTag, bool, TESObjectREFR*, bool, BSFixedString>("DetachMesh", "NiOverride", papyrusNiOverride::DetachMesh, registry));
-
-	g_objectInterface->GetObjectRegistry().RegisterClass<AttachMeshLatentFunctor>();
-	g_objectInterface->GetObjectRegistry().RegisterClass<DetachMeshLatentFunctor>();
-
+	// Legacy g_objectInterface->GetObjectRegistry().RegisterClass<T>() — the SKSE object
+	// registry maps ClassName() to a factory so co-saved latent functors can be rebuilt.
+	SKSE::GetObjectInterface()->GetObjectRegistry().RegisterFactory(new ConcreteSKSEObjectFactory<AttachMeshLatentFunctor>());
+	SKSE::GetObjectInterface()->GetObjectRegistry().RegisterFactory(new ConcreteSKSEObjectFactory<DetachMeshLatentFunctor>());
 	// Extra data manipulation
-	registry->SetFunctionFlags("NiOverride", "GetBooleanExtraData", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetIntegerExtraData", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetIntegersExtraData", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetFloatExtraData", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetFloatsExtraData", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetStringExtraData", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetStringsExtraData", VMClassRegistry::kFunctionFlag_NoWait);
-
+	a_vm->SetCallableFromTasklets("NiOverride", "GetBooleanExtraData", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetIntegerExtraData", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetIntegersExtraData", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetFloatExtraData", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetFloatsExtraData", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetStringExtraData", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetStringsExtraData", true);
 	// Overlay numerics
-	registry->SetFunctionFlags("NiOverride", "GetNumBodyOverlays", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetNumHandOverlays", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetNumFeetOverlays", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetNumFaceOverlays", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "GetNumSpellBodyOverlays", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetNumSpellHandOverlays", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetNumSpellFeetOverlays", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetNumSpellFaceOverlays", VMClassRegistry::kFunctionFlag_NoWait);
-
+	a_vm->SetCallableFromTasklets("NiOverride", "GetNumBodyOverlays", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetNumHandOverlays", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetNumFeetOverlays", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetNumFaceOverlays", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetNumSpellBodyOverlays", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetNumSpellHandOverlays", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetNumSpellFeetOverlays", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetNumSpellFaceOverlays", true);
 	// Armor based overrides
-	registry->SetFunctionFlags("NiOverride", "HasOverride", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "AddOverrideFloat", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "AddOverrideInt", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "AddOverrideBool", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "AddOverrideString", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "AddOverrideTextureSet", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "GetOverrideFloat", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetOverrideInt", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetOverrideBool", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetOverrideString", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetOverrideTextureSet", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "ApplyOverrides", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "GetPropertyFloat", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetPropertyInt", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetPropertyBool", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetPropertyString", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "HasArmorAddonNode", VMClassRegistry::kFunctionFlag_NoWait);
-
+	a_vm->SetCallableFromTasklets("NiOverride", "HasOverride", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "AddOverrideFloat", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "AddOverrideInt", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "AddOverrideBool", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "AddOverrideString", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "AddOverrideTextureSet", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetOverrideFloat", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetOverrideInt", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetOverrideBool", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetOverrideString", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetOverrideTextureSet", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "ApplyOverrides", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetPropertyFloat", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetPropertyInt", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetPropertyBool", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetPropertyString", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "HasArmorAddonNode", true);
 	// Node based overrides
-	registry->SetFunctionFlags("NiOverride", "HasNodeOverride", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "AddNodeOverrideFloat", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "AddNodeOverrideInt", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "AddNodeOverrideBool", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "AddNodeOverrideString", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "AddNodeOverrideTextureSet", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "GetNodeOverrideFloat", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetNodeOverrideInt", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetNodeOverrideBool", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetNodeOverrideString", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetNodeOverrideTextureSet", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "GetNodePropertyFloat", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetNodePropertyInt", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetNodePropertyBool", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetNodePropertyString", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "ApplyNodeOverrides", VMClassRegistry::kFunctionFlag_NoWait);
-
+	a_vm->SetCallableFromTasklets("NiOverride", "HasNodeOverride", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "AddNodeOverrideFloat", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "AddNodeOverrideInt", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "AddNodeOverrideBool", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "AddNodeOverrideString", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "AddNodeOverrideTextureSet", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetNodeOverrideFloat", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetNodeOverrideInt", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetNodeOverrideBool", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetNodeOverrideString", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetNodeOverrideTextureSet", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetNodePropertyFloat", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetNodePropertyInt", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetNodePropertyBool", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetNodePropertyString", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "ApplyNodeOverrides", true);
 	// Weapon based overrides
-	registry->SetFunctionFlags("NiOverride", "HasWeaponOverride", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "AddWeaponOverrideFloat", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "AddWeaponOverrideInt", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "AddWeaponOverrideBool", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "AddWeaponOverrideString", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "AddWeaponOverrideTextureSet", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "GetWeaponOverrideFloat", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetWeaponOverrideInt", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetWeaponOverrideBool", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetWeaponOverrideString", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetWeaponOverrideTextureSet", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "ApplyWeaponOverrides", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "GetWeaponPropertyFloat", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetWeaponPropertyInt", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetWeaponPropertyBool", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetWeaponPropertyString", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "HasWeaponNode", VMClassRegistry::kFunctionFlag_NoWait);
-
+	a_vm->SetCallableFromTasklets("NiOverride", "HasWeaponOverride", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "AddWeaponOverrideFloat", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "AddWeaponOverrideInt", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "AddWeaponOverrideBool", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "AddWeaponOverrideString", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "AddWeaponOverrideTextureSet", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetWeaponOverrideFloat", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetWeaponOverrideInt", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetWeaponOverrideBool", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetWeaponOverrideString", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetWeaponOverrideTextureSet", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "ApplyWeaponOverrides", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetWeaponPropertyFloat", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetWeaponPropertyInt", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetWeaponPropertyBool", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetWeaponPropertyString", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "HasWeaponNode", true);
 	// Skin based overrides
-	registry->SetFunctionFlags("NiOverride", "HasSkinOverride", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "AddSkinOverrideFloat", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "AddSkinOverrideInt", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "AddSkinOverrideBool", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "AddSkinOverrideString", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "AddSkinOverrideTextureSet", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "GetSkinOverrideFloat", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetSkinOverrideInt", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetSkinOverrideBool", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetSkinOverrideString", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetSkinOverrideTextureSet", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "ApplySkinOverrides", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "GetSkinPropertyFloat", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetSkinPropertyInt", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetSkinPropertyBool", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetSkinPropertyString", VMClassRegistry::kFunctionFlag_NoWait);
-
+	a_vm->SetCallableFromTasklets("NiOverride", "HasSkinOverride", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "AddSkinOverrideFloat", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "AddSkinOverrideInt", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "AddSkinOverrideBool", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "AddSkinOverrideString", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "AddSkinOverrideTextureSet", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetSkinOverrideFloat", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetSkinOverrideInt", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetSkinOverrideBool", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetSkinOverrideString", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetSkinOverrideTextureSet", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "ApplySkinOverrides", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetSkinPropertyFloat", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetSkinPropertyInt", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetSkinPropertyBool", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetSkinPropertyString", true);
 	// Armor based overrides
-	registry->SetFunctionFlags("NiOverride", "RemoveAllOverrides", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RemoveAllReferenceOverrides", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RemoveAllArmorOverrides", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RemoveAllArmorAddonOverrides", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RemoveAllArmorAddonNodeOverrides", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RemoveOverride", VMClassRegistry::kFunctionFlag_NoWait);
-
+	a_vm->SetCallableFromTasklets("NiOverride", "RemoveAllOverrides", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RemoveAllReferenceOverrides", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RemoveAllArmorOverrides", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RemoveAllArmorAddonOverrides", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RemoveAllArmorAddonNodeOverrides", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RemoveOverride", true);
 	// Node based overrides
-	registry->SetFunctionFlags("NiOverride", "RemoveAllNodeOverrides", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RemoveAllReferenceNodeOverrides", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RemoveAllNodeNameOverrides", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RemoveNodeOverride", VMClassRegistry::kFunctionFlag_NoWait);
-
+	a_vm->SetCallableFromTasklets("NiOverride", "RemoveAllNodeOverrides", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RemoveAllReferenceNodeOverrides", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RemoveAllNodeNameOverrides", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RemoveNodeOverride", true);
 	// Weapon based overrides
-	registry->SetFunctionFlags("NiOverride", "RemoveAllWeaponBasedOverrides", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RemoveAllReferenceWeaponOverrides", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RemoveAllWeaponOverrides", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RemoveAllWeaponNodeOverrides", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RemoveWeaponOverride", VMClassRegistry::kFunctionFlag_NoWait);
-
+	a_vm->SetCallableFromTasklets("NiOverride", "RemoveAllWeaponBasedOverrides", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RemoveAllReferenceWeaponOverrides", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RemoveAllWeaponOverrides", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RemoveAllWeaponNodeOverrides", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RemoveWeaponOverride", true);
 	// Skin based overrides
-	registry->SetFunctionFlags("NiOverride", "RemoveAllSkinBasedOverrides", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RemoveAllReferenceSkinOverrides", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RemoveAllSkinOverrides", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RemoveSkinOverride", VMClassRegistry::kFunctionFlag_NoWait);
-
-
-	registry->SetFunctionFlags("NiOverride", "AddOverlays", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RemoveOverlays", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "HasOverlays", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RevertOverlays", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RevertOverlay", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RevertHeadOverlays", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RevertHeadOverlay", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "HasBodyMorph", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "SetBodyMorph", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetBodyMorph", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "ClearBodyMorph", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "HasBodyMorphName", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "ClearBodyMorphNames", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "HasBodyMorphKey", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "ClearBodyMorphKeys", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "ClearMorphs", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "UpdateModelWeight", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetCachedMorphNames", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "EnableTintTextureCache", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "ReleaseTintTextureCache", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "SetItemDyeColor", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetItemDyeColor", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "ClearItemDyeColor", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "UpdateItemDyeColor", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "SetItemTextureLayerColor", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetItemTextureLayerColor", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "ClearItemTextureLayerColor", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "SetItemTextureLayerTexture", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetItemTextureLayerTexture", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "ClearItemTextureLayerTexture", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "SetItemTextureLayerBlendMode", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetItemTextureLayerBlendMode", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "ClearItemTextureLayerBlendMode", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "SetItemTextureLayerType", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetItemTextureLayerType", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "ClearItemTextureLayerType", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "UpdateItemTextureLayers", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "IsFormDye", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetFormDyeColor", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RegisterFormDyeColor", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "UnregisterFormDyeColor", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "HasNodeTransformPosition", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "AddNodeTransformPosition", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetNodeTransformPosition", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RemoveNodeTransformPosition", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "HasNodeTransformScale", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "AddNodeTransformScale", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetNodeTransformScale", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RemoveNodeTransformScale", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "HasNodeTransformRotation", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "AddNodeTransformRotation", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetNodeTransformRotation", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RemoveNodeTransformRotation", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "GetNodeDestination", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RemoveNodeDestination", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "GetNodeTransformNames", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetNodeTransformKeys", VMClassRegistry::kFunctionFlag_NoWait);
-
-	registry->SetFunctionFlags("NiOverride", "UpdateAllReferenceTransforms", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RemoveAllReferenceTransforms", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "RemoveAllTransforms", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "UpdateNodeTransform", VMClassRegistry::kFunctionFlag_NoWait);
-	registry->SetFunctionFlags("NiOverride", "GetInverseTransform", VMClassRegistry::kFunctionFlag_NoWait);
+	a_vm->SetCallableFromTasklets("NiOverride", "RemoveAllSkinBasedOverrides", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RemoveAllReferenceSkinOverrides", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RemoveAllSkinOverrides", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RemoveSkinOverride", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "AddOverlays", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RemoveOverlays", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "HasOverlays", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RevertOverlays", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RevertOverlay", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RevertHeadOverlays", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RevertHeadOverlay", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "HasBodyMorph", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "SetBodyMorph", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetBodyMorph", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "ClearBodyMorph", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "HasBodyMorphName", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "ClearBodyMorphNames", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "HasBodyMorphKey", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "ClearBodyMorphKeys", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "ClearMorphs", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "UpdateModelWeight", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetCachedMorphNames", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "EnableTintTextureCache", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "ReleaseTintTextureCache", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "SetItemDyeColor", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetItemDyeColor", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "ClearItemDyeColor", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "UpdateItemDyeColor", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "SetItemTextureLayerColor", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetItemTextureLayerColor", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "ClearItemTextureLayerColor", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "SetItemTextureLayerTexture", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetItemTextureLayerTexture", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "ClearItemTextureLayerTexture", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "SetItemTextureLayerBlendMode", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetItemTextureLayerBlendMode", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "ClearItemTextureLayerBlendMode", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "SetItemTextureLayerType", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetItemTextureLayerType", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "ClearItemTextureLayerType", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "UpdateItemTextureLayers", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "IsFormDye", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetFormDyeColor", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RegisterFormDyeColor", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "UnregisterFormDyeColor", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "HasNodeTransformPosition", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "AddNodeTransformPosition", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetNodeTransformPosition", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RemoveNodeTransformPosition", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "HasNodeTransformScale", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "AddNodeTransformScale", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetNodeTransformScale", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RemoveNodeTransformScale", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "HasNodeTransformRotation", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "AddNodeTransformRotation", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetNodeTransformRotation", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RemoveNodeTransformRotation", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetNodeDestination", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RemoveNodeDestination", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetNodeTransformNames", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetNodeTransformKeys", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "UpdateAllReferenceTransforms", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RemoveAllReferenceTransforms", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "RemoveAllTransforms", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "UpdateNodeTransform", true);
+	a_vm->SetCallableFromTasklets("NiOverride", "GetInverseTransform", true);
 }

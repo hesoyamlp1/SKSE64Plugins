@@ -1,54 +1,47 @@
 #pragma once
 
 #include "IPluginInterface.h"
+#include "SafeDataHolder.h"
 #include "IHashType.h"
 
 #include "CDXNifTextureRenderer.h"
 
-#include "skse64/NiMaterial.h"
-#include "skse64/GameTypes.h"
-#include "skse64/GameThreads.h"
-#include "skse64/PapyrusEvents.h"
+#include <RE/B/BSGeometry.h>
+#include <RE/B/BSLightingShaderProperty.h>
+#include <RE/B/BSShaderRenderTargets.h>
+#include <RE/N/NiAVObject.h>
+#include <RE/N/NiColor.h>
+#include <RE/N/NiNode.h>
+#include <RE/N/NiSmartPointer.h>
+#include <RE/T/TESObjectARMA.h>
+#include <RE/T/TESObjectARMO.h>
+
+#include <SKSE/Events.h>
 
 #include <unordered_map>
 #include <functional>
 #include <memory>
-
-struct SKSESerializationInterface;
-struct SKSENiNodeUpdateEvent;
-
-class TESObjectREFR;
-class TESObjectARMO;
-class TESObjectARMA;
-class NiAVObject;
+#include <cstdint>
 class TintMask;
-
-class NiStringsExtraData;
-class NiIntegersExtraData;
-class NiFloatsExtraData;
-class NiIntegerExtraData;
-
-class BSLightingShaderProperty;
-class BSRenderTargetGroup;
 class ItemAttributeData;
 typedef std::shared_ptr<ItemAttributeData> ItemAttributeDataPtr;
 
 struct ShaderHasher
 {
-	std::size_t operator()(const NiPointer<BSLightingShaderProperty>& k) const
+	std::size_t operator()(const RE::NiPointer<RE::BSLightingShaderProperty>& k) const
 	{
-		return (size_t)k.m_pObject;
+		return (size_t)k.get();
 	}
 };
 
-typedef std::unordered_map<NiPointer<BSLightingShaderProperty>, std::unordered_map<SInt32, std::shared_ptr<CDXNifTextureRenderer>>, ShaderHasher> TintMaskCacheMap;
+typedef std::unordered_map<RE::NiPointer<RE::BSLightingShaderProperty>, std::unordered_map<std::int32_t, std::shared_ptr<CDXNifTextureRenderer>>, ShaderHasher> TintMaskCacheMap;
 
 class TintMaskMap : public SafeDataHolder<TintMaskCacheMap>
 {
 public:
 	void ManageRenderTargetGroups();
-	std::shared_ptr<CDXNifTextureRenderer> GetRenderTarget(BSLightingShaderProperty* key, SInt32 index);
-	void AddRenderTargetGroup(BSLightingShaderProperty* key, SInt32 index, std::shared_ptr<CDXNifTextureRenderer> value);
+	std::shared_ptr<CDXNifTextureRenderer> GetRenderTarget(RE::BSLightingShaderProperty* key, std::int32_t index);
+	void AddRenderTargetGroup(RE::BSLightingShaderProperty* key, std::int32_t index, std::shared_ptr<CDXNifTextureRenderer> value);
 	void ReleaseRenderTargetGroups();
 
 	bool IsCaching() const { return m_caching; }
@@ -57,12 +50,12 @@ private:
 	bool m_caching;
 };
 
-typedef std::unordered_map<SInt32, SKEEFixedString>	LayerTextureMap;
-typedef std::unordered_map<SInt32, SInt32>			LayerColorMap;
-typedef std::unordered_map<SInt32, float>			LayerAlphaMap;
-typedef std::unordered_map<SInt32, SKEEFixedString>	LayerBlendMap;
-typedef std::unordered_map<SInt32, UInt8>			TextureTypeMap;
-typedef std::unordered_multimap<SInt32, SInt32>		LayerSlotMap;
+typedef std::unordered_map<std::int32_t, SKEEFixedString>	LayerTextureMap;
+typedef std::unordered_map<std::int32_t, std::int32_t>			LayerColorMap;
+typedef std::unordered_map<std::int32_t, float>			LayerAlphaMap;
+typedef std::unordered_map<std::int32_t, SKEEFixedString>	LayerBlendMap;
+typedef std::unordered_map<std::int32_t, std::uint8_t>			TextureTypeMap;
+typedef std::unordered_multimap<std::int32_t, std::int32_t>		LayerSlotMap;
 
 struct TextureLayer
 {
@@ -94,7 +87,6 @@ protected:
 	bool m_remappable;
 };
 
-
 typedef std::unordered_map<SKEEFixedString, MaskTriShapeMap> MaskModelContainer;
 
 // Maps model names to trishape names
@@ -103,8 +95,8 @@ class MaskModelMap : public SafeDataHolder<MaskModelContainer>
 public:
 	TextureLayer * GetMask(SKEEFixedString nif, SKEEFixedString trishape, SKEEFixedString diffuse);
 
-	SKEEFixedString GetModelPath(UInt8 gender, bool isFirstPerson, TESObjectARMO * armor, TESObjectARMA * arma);
-	void ApplyLayers(TESObjectREFR * refr, bool isFirstPerson, TESObjectARMO * armor, TESObjectARMA * arma, NiAVObject * node, std::function<void(NiPointer<BSGeometry>, SInt32, TextureLayer*)> functor);
+	SKEEFixedString GetModelPath(std::uint8_t gender, bool isFirstPerson, RE::TESObjectARMO * armor, RE::TESObjectARMA * arma);
+	void ApplyLayers(RE::TESObjectREFR * refr, bool isFirstPerson, RE::TESObjectARMO * armor, RE::TESObjectARMA * arma, RE::NiAVObject * node, std::function<void(RE::NiPointer<RE::BSGeometry>, std::int32_t, TextureLayer*)> functor);
 	MaskTriShapeMap * GetTriShapeMap(SKEEFixedString nifPath);
 };
 
@@ -115,9 +107,9 @@ struct LayerTarget
 		kTarget_EmissiveColor = 1,
 	};
 
-	NiPointer<BSGeometry>			object;
-	UInt32							targetIndex;
-	UInt32							targetFlags;
+	RE::NiPointer<RE::BSGeometry>			object;
+	std::uint32_t							targetIndex;
+	std::uint32_t							targetFlags;
 	LayerTextureMap					textureData;
 	LayerColorMap					colorData;
 	LayerAlphaMap					alphaData;
@@ -126,12 +118,12 @@ struct LayerTarget
 	LayerSlotMap					slots;
 };
 typedef std::vector<LayerTarget> LayerTargetList;
-typedef std::function<void(TESObjectARMO *, TESObjectARMA *, const char*, NiTexturePtr, LayerTarget&)> LayerFunctor;
+typedef std::function<void(RE::TESObjectARMO *, RE::TESObjectARMA *, const char*, RE::NiTexturePtr, LayerTarget&)> LayerFunctor;
 
 class TintMaskInterface 
 	: public IPluginInterface
 	, public IAddonAttachmentInterface
-	, public BSTEventSink<SKSENiNodeUpdateEvent>
+	, public RE::BSTEventSink<SKSE::NiNodeUpdateEvent>
 {
 public:
 	enum
@@ -154,52 +146,52 @@ public:
 		kUpdate_All = kUpdate_Skin | kUpdate_Hair
 	};
 
-	virtual void ApplyMasks(TESObjectREFR * refr, bool isFirstPerson, TESObjectARMO * armor, TESObjectARMA * addon, NiAVObject * object, UInt32 flags, ItemAttributeDataPtr overrides, LayerFunctor layer = LayerFunctor());
+	virtual void ApplyMasks(RE::TESObjectREFR * refr, bool isFirstPerson, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::NiAVObject * object, std::uint32_t flags, ItemAttributeDataPtr overrides, LayerFunctor layer = LayerFunctor());
 	virtual void ManageTints() { m_maskMap.ManageRenderTargetGroups(); }
 	virtual void ReleaseTints() { m_maskMap.ReleaseRenderTargetGroups(); }
 	virtual void Revert() { };
 
-	virtual bool IsDyeable(TESObjectARMO * armor);
+	virtual bool IsDyeable(RE::TESObjectARMO * armor);
 
-	virtual void GetTemplateColorMap(TESObjectREFR* actor, TESObjectARMO * armor, std::map<SInt32, UInt32>& colorMap);
-	virtual void GetSlotTextureIndexMap(TESObjectREFR* actor, TESObjectARMO* armor, std::map<SInt32, UInt32>& slotTextureIndexMap);
+	virtual void GetTemplateColorMap(RE::TESObjectREFR* actor, RE::TESObjectARMO * armor, std::map<std::int32_t, std::uint32_t>& colorMap);
+	virtual void GetSlotTextureIndexMap(RE::TESObjectREFR* actor, RE::TESObjectARMO* armor, std::map<std::int32_t, std::uint32_t>& slotTextureIndexMap);
 
 	virtual void LoadMods();
 
-	void CreateTintsFromData(TESObjectREFR * refr, std::map<SInt32, CDXNifTextureRenderer::MaskData> & masks, const LayerTarget & layerTarget, ItemAttributeDataPtr & overrides, UInt32 & flags);
-	void ParseTintData(LPCTSTR filePath);
+	void CreateTintsFromData(RE::TESObjectREFR * refr, std::map<std::int32_t, CDXNifTextureRenderer::MaskData> & masks, const LayerTarget & layerTarget, ItemAttributeDataPtr & overrides, std::uint32_t & flags);
+	void ParseTintData(const char* filePath);
 
 protected:
-	void VisitTemplateData(TESObjectREFR* refr, TESObjectARMO* armor, std::function<void(MaskTriShapeMap*)> functor);
+	void VisitTemplateData(RE::TESObjectREFR* refr, RE::TESObjectARMO* armor, std::function<void(MaskTriShapeMap*)> functor);
 
 private:
-	bool GetActorHairColor(Actor* actor, NiColorA& color);
+	bool GetActorHairColor(RE::Actor* actor, RE::NiColorA& color);
 	// Inherited via IAddonAttachmentInterface
-	virtual void OnAttach(TESObjectREFR * refr, TESObjectARMO * armor, TESObjectARMA * addon, NiAVObject * object, bool isFirstPerson, NiNode * skeleton, NiNode * root) override;
+	virtual void OnAttach(RE::TESObjectREFR * refr, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::NiAVObject * object, bool isFirstPerson, RE::NiNode * skeleton, RE::NiNode * root) override;
 
 	MaskModelMap	m_modelMap;
 	TintMaskMap		m_maskMap;
 
-	SimpleLock						m_dyeableLock;
-	std::unordered_map<UInt32, bool> m_dyeable;
+	std::recursive_mutex				m_dyeableLock;
+	std::unordered_map<std::uint32_t, bool> m_dyeable;
 
-	// Inherited via BSTEventSink
-	virtual EventResult ReceiveEvent(SKSENiNodeUpdateEvent * evn, EventDispatcher<SKSENiNodeUpdateEvent>* dispatcher) override;
+	// Inherited via RE::BSTEventSink
+	virtual RE::BSEventNotifyControl ProcessEvent(const SKSE::NiNodeUpdateEvent* a_event, RE::BSTEventSource<SKSE::NiNodeUpdateEvent>* a_source) override;
 };
 
-class NIOVTaskDeferredMask : public TaskDelegate
+class NIOVTaskDeferredMask : public SKSE::detail::TaskDelegate
 {
 public:
-	NIOVTaskDeferredMask(TESObjectREFR * refr, bool isFirstPerson, TESObjectARMO * armor, TESObjectARMA * addon, NiAVObject * object, ItemAttributeDataPtr overrides);
+	NIOVTaskDeferredMask(RE::TESObjectREFR * refr, bool isFirstPerson, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::NiAVObject * object, ItemAttributeDataPtr overrides);
 
 	virtual void Run();
 	virtual void Dispose();
 
 private:
 	bool							m_firstPerson;
-	UInt32							m_formId;
-	UInt32							m_armorId;
-	UInt32							m_addonId;
-	NiPointer<NiAVObject>			m_object;
+	std::uint32_t							m_formId;
+	std::uint32_t							m_armorId;
+	std::uint32_t							m_addonId;
+	RE::NiPointer<RE::NiAVObject>			m_object;
 	ItemAttributeDataPtr			m_overrides;
 };

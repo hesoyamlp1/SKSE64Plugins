@@ -1,12 +1,13 @@
 #include "CDXRenderState.h"
+#include <cstdint>
 
 void CDXRenderState::BackupRenderState(CDXD3DDevice * device)
 {
 	auto ctx = device->GetDeviceContext();
 
-	ctx->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, m_backupState.RenderTargetViews, &m_backupState.DepthStencilView);
+	ctx->OMGetRenderTargets(8, m_backupState.RenderTargetViews, &m_backupState.DepthStencilView);
 
-	m_backupState.ScissorRectsCount = m_backupState.ViewportsCount = D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
+	m_backupState.ScissorRectsCount = m_backupState.ViewportsCount = 16;
 	ctx->RSGetScissorRects(&m_backupState.ScissorRectsCount, m_backupState.ScissorRects);
 	ctx->RSGetViewports(&m_backupState.ViewportsCount, m_backupState.Viewports);
 	ctx->RSGetState(&m_backupState.RS);
@@ -31,8 +32,8 @@ void CDXRenderState::RestoreRenderState(CDXD3DDevice * device)
 {
 	auto ctx = device->GetDeviceContext();
 
-	ctx->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, m_backupState.RenderTargetViews, m_backupState.DepthStencilView);
-	for (UInt32 i = 0; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; i++) {
+	ctx->OMSetRenderTargets(8, m_backupState.RenderTargetViews, m_backupState.DepthStencilView);
+	for (std::uint32_t i = 0; i < 8; i++) {
 		if (m_backupState.RenderTargetViews[i]) {
 			m_backupState.RenderTargetViews[i]->Release();
 		}

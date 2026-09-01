@@ -4,6 +4,9 @@
 #include "CDXCamera.h"
 #include "CDXMaterial.h"
 #include "CDXPicker.h"
+#include <cstdint>
+
+
 
 using namespace DirectX;
 
@@ -16,7 +19,7 @@ CDXMesh::CDXMesh()
 	m_visible = true;
 	m_material = nullptr;
 	m_transform = XMMatrixIdentity();
-	m_topology = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	m_topology = REX::W32::D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 }
 
 CDXMesh::~CDXMesh()
@@ -56,14 +59,14 @@ bool CDXMesh::IsVisible() const
 	return m_visible;
 }
 
-Microsoft::WRL::ComPtr<ID3D11Buffer> CDXMesh::GetVertexBuffer()
+REX::W32::ComPtr<REX::W32::ID3D11Buffer> CDXMesh::GetVertexBuffer()
 {
 #ifdef CDX_MUTEX
 	std::lock_guard<std::mutex> guard(m_mutex);
 #endif
 	return m_vertexBuffer;
 }
-Microsoft::WRL::ComPtr<ID3D11Buffer> CDXMesh::GetIndexBuffer()
+REX::W32::ComPtr<REX::W32::ID3D11Buffer> CDXMesh::GetIndexBuffer()
 {
 #ifdef CDX_MUTEX
 	std::lock_guard<std::mutex> guard(m_mutex);
@@ -71,22 +74,22 @@ Microsoft::WRL::ComPtr<ID3D11Buffer> CDXMesh::GetIndexBuffer()
 	return m_indexBuffer;
 }
 
-UInt32 CDXMesh::GetIndexCount()
+std::uint32_t CDXMesh::GetIndexCount()
 {
 	return m_indexCount;
 }
 
-UInt32 CDXMesh::GetFaceCount()
+std::uint32_t CDXMesh::GetFaceCount()
 {
 	return m_indexCount / 3;
 }
 
-UInt32 CDXMesh::GetVertexCount()
+std::uint32_t CDXMesh::GetVertexCount()
 {
 	return m_vertCount;
 }
 
-XMVECTOR CalculateFaceNormal(UInt32 f, CDXMeshIndex * faces, CDXMeshVert * vertices)
+XMVECTOR CalculateFaceNormal(std::uint32_t f, CDXMeshIndex * faces, CDXMeshVert * vertices)
 {
 	XMVECTOR vNormal;
 	CDXMeshVert * v1 = &vertices[faces[f]];
@@ -167,12 +170,12 @@ CDXMeshVert * CDXMesh::LockVertices(const LockMode type)
 {
 	if (type == LockMode::WRITE)
 	{
-		D3D11_MAPPED_SUBRESOURCE vertResource;
+		REX::W32::D3D11_MAPPED_SUBRESOURCE vertResource;
 		CDXMeshVert* pVertices = nullptr;
-		HRESULT res = m_pDevice->GetDeviceContext()->Map(m_vertexBuffer.Get(), 0, (D3D11_MAP)type, 0, &vertResource);
+		HRESULT res = m_pDevice->GetDeviceContext()->Map(m_vertexBuffer.Get(), 0, (REX::W32::D3D11_MAP)type, 0, &vertResource);
 		if (res == S_OK)
 		{
-			return static_cast<CDXMeshVert*>(vertResource.pData);
+			return static_cast<CDXMeshVert*>(vertResource.data);
 		}
 	}
 
@@ -213,7 +216,7 @@ bool CDXMesh::Pick(CDXRayInfo & rayInfo, CDXPickInfo & pickInfo)
 	CDXVec hitNormal = XMVectorZero();
 
 	// Edges = Face * 3
-	for(UInt32 e = 0; e < m_indexCount; e += 3)
+	for(std::uint32_t e = 0; e < m_indexCount; e += 3)
 	{
 		CDXVec v0 = XMVector3Transform(XMLoadFloat3(&pVertices[pIndices[e + 0]].Position), m_transform);
 		CDXVec v1 = XMVector3Transform(XMLoadFloat3(&pVertices[pIndices[e + 1]].Position), m_transform);
@@ -268,15 +271,15 @@ bool CDXMesh::Pick(CDXRayInfo & rayInfo, CDXPickInfo & pickInfo)
 	return pickInfo.isHit;
 }
 
-bool CDXMesh::InitializeBuffers(CDXD3DDevice * device, UInt32 vertexCount, UInt32 indexCount, std::function<void(CDXMeshVert*, CDXMeshIndex*)> fillFunction)
+bool CDXMesh::InitializeBuffers(CDXD3DDevice * device, std::uint32_t vertexCount, std::uint32_t indexCount, std::function<void(CDXMeshVert*, CDXMeshIndex*)> fillFunction)
 {
-	D3D11_BUFFER_DESC vertexBufferDesc, indexBufferDesc;
-	D3D11_SUBRESOURCE_DATA vertexData, indexData;
+	REX::W32::D3D11_BUFFER_DESC vertexBufferDesc, indexBufferDesc;
+	REX::W32::D3D11_SUBRESOURCE_DATA vertexData, indexData;
 	HRESULT result;
 
 	m_pDevice = device;
 	if (!device) {
-		_ERROR("%s - No device found to create brushes", __FUNCTION__);
+		SKSE::log::error("{} - No device found to create brushes", __FUNCTION__);
 		return false;
 	}
 
@@ -284,14 +287,14 @@ bool CDXMesh::InitializeBuffers(CDXD3DDevice * device, UInt32 vertexCount, UInt3
 	m_indexCount = indexCount;
 
 	auto pDevice = device->GetDevice();
-	if (!pDevice) {
-		_ERROR("%s - No device3 found", __FUNCTION__);
+	if (!pDevice.Get()) {
+		SKSE::log::error("{} - No device3 found", __FUNCTION__);
 		return false;
 	}
 
 	auto pDeviceContext = device->GetDeviceContext();
-	if (!pDevice) {
-		_ERROR("%s - No device deviceContext4 found", __FUNCTION__);
+	if (!pDevice.Get()) {
+		SKSE::log::error("{} - No device deviceContext4 found", __FUNCTION__);
 		return false;
 	}
 
@@ -299,7 +302,7 @@ bool CDXMesh::InitializeBuffers(CDXD3DDevice * device, UInt32 vertexCount, UInt3
 	m_vertices = std::make_unique<CDXMeshVert[]>(m_vertCount);
 	if (!m_vertices)
 	{
-		_ERROR("%s - Failed to create vertex array", __FUNCTION__);
+		SKSE::log::error("{} - Failed to create vertex array", __FUNCTION__);
 		return false;
 	}
 
@@ -307,7 +310,7 @@ bool CDXMesh::InitializeBuffers(CDXD3DDevice * device, UInt32 vertexCount, UInt3
 	m_indices = std::make_unique<CDXMeshIndex[]>(m_indexCount);
 	if (!m_indices)
 	{
-		_ERROR("%s - Failed to create index array", __FUNCTION__);
+		SKSE::log::error("{} - Failed to create index array", __FUNCTION__);
 		return false;
 	}
 
@@ -315,46 +318,46 @@ bool CDXMesh::InitializeBuffers(CDXD3DDevice * device, UInt32 vertexCount, UInt3
 	fillFunction(m_vertices.get(), m_indices.get());
 	
 	// Set up the description of the static vertex buffer.
-	vertexBufferDesc.Usage = D3D11_USAGE_DYNAMIC;
-	vertexBufferDesc.ByteWidth = sizeof(CDXMeshVert) * m_vertCount;
-	vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-	vertexBufferDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-	vertexBufferDesc.MiscFlags = 0;
-	vertexBufferDesc.StructureByteStride = 0;
+	vertexBufferDesc.usage = REX::W32::D3D11_USAGE_DYNAMIC;
+	vertexBufferDesc.byteWidth = sizeof(CDXMeshVert) * m_vertCount;
+	vertexBufferDesc.bindFlags = REX::W32::D3D11_BIND_VERTEX_BUFFER;
+	vertexBufferDesc.cpuAccessFlags = REX::W32::D3D11_CPU_ACCESS_WRITE;
+	vertexBufferDesc.miscFlags = 0;
+	vertexBufferDesc.structureByteStride = 0;
 
 	// Give the subresource structure a pointer to the vertex data.
-	vertexData.pSysMem = m_vertices.get();
-	vertexData.SysMemPitch = 0;
-	vertexData.SysMemSlicePitch = 0;
+	vertexData.sysMem = m_vertices.get();
+	vertexData.sysMemPitch = 0;
+	vertexData.sysMemSlicePitch = 0;
 
 	// Now create the vertex buffer.
 	result = pDevice->CreateBuffer(&vertexBufferDesc, &vertexData, m_vertexBuffer.ReleaseAndGetAddressOf());
 	if (FAILED(result))
 	{
-		_ERROR("%s - Failed to create vertex buffer", __FUNCTION__);
+		SKSE::log::error("{} - Failed to create vertex buffer", __FUNCTION__);
 		return false;
 	}
 
 	m_vertices.release();
 
 	// Set up the description of the static index buffer.
-	indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-	indexBufferDesc.ByteWidth = sizeof(CDXMeshIndex) * m_indexCount;
-	indexBufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
-	indexBufferDesc.CPUAccessFlags = 0;
-	indexBufferDesc.MiscFlags = 0;
-	indexBufferDesc.StructureByteStride = 0;
+	indexBufferDesc.usage = REX::W32::D3D11_USAGE_DEFAULT;
+	indexBufferDesc.byteWidth = sizeof(CDXMeshIndex) * m_indexCount;
+	indexBufferDesc.bindFlags = REX::W32::D3D11_BIND_INDEX_BUFFER;
+	indexBufferDesc.cpuAccessFlags = 0;
+	indexBufferDesc.miscFlags = 0;
+	indexBufferDesc.structureByteStride = 0;
 
 	// Give the subresource structure a pointer to the index data.
-	indexData.pSysMem = m_indices.get();
-	indexData.SysMemPitch = 0;
-	indexData.SysMemSlicePitch = 0;
+	indexData.sysMem = m_indices.get();
+	indexData.sysMemPitch = 0;
+	indexData.sysMemSlicePitch = 0;
 
 	// Create the index buffer.
 	result = pDevice->CreateBuffer(&indexBufferDesc, &indexData, m_indexBuffer.ReleaseAndGetAddressOf());
 	if (FAILED(result))
 	{
-		_ERROR("%s - Failed to create index buffer", __FUNCTION__);
+		SKSE::log::error("{} - Failed to create index buffer", __FUNCTION__);
 		return false;
 	}
 
@@ -380,11 +383,11 @@ void CDXMesh::Render(CDXD3DDevice * device, CDXShader * shader)
 	shader->VSSetTransformBuffer(device, xform);
 
 	// Set the vertex buffer to active in the input assembler so it can be rendered.
-	ID3D11Buffer* vertexBuffer[] = { m_vertexBuffer.Get() };
+	REX::W32::ID3D11Buffer* vertexBuffer[] = { m_vertexBuffer.Get() };
 	pDeviceContext->IASetVertexBuffers(0, 1, vertexBuffer, &stride, &offset);
 
 	// Set the index buffer to active in the input assembler so it can be rendered.
-	pDeviceContext->IASetIndexBuffer(m_indexBuffer.Get(), DXGI_FORMAT_R16_UINT, 0);
+	pDeviceContext->IASetIndexBuffer(m_indexBuffer.Get(), REX::W32::DXGI_FORMAT_R16_UINT, 0);
 
 	// Set the type of primitive that should be rendered from this vertex buffer, in this case triangles.
 	pDeviceContext->IASetPrimitiveTopology(m_topology);

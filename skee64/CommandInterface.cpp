@@ -1,4 +1,7 @@
 #include "CommandInterface.h"
+#include "SKEETasks.h"
+#include "FileUtils.h"
+#include <cstdint>
 
 extern CommandInterface g_commandInterface;
 
@@ -8,7 +11,7 @@ bool CommandInterface::RegisterCommand(const char* command, const char* desc, Co
 	return m_commandMap[command].emplace(CommandData{ desc, cb }).second;
 }
 
-bool CommandInterface::ExecuteCommand(const char* command, TESObjectREFR* ref, const char* argumentString)
+bool CommandInterface::ExecuteCommand(const char* command, RE::TESObjectREFR* ref, const char* argumentString)
 {
 	std::scoped_lock<lock_type> locker(m_lock);
     auto it = m_commandMap.find(command);
@@ -23,9 +26,10 @@ bool CommandInterface::ExecuteCommand(const char* command, TESObjectREFR* ref, c
     return false;
 }
 
-#include "skse64/PluginAPI.h"
-#include "skse64/GameRTTI.h"
 #include "ItemDataInterface.h"
+#include "RE/I/InventoryEntryData.h"
+#include "RE/I/InventoryChanges.h"
+#include "RE/E/ExtraContainerChanges.h"
 #include "TintMaskInterface.h"
 #include "BodyMorphInterface.h"
 #include "OverlayInterface.h"
@@ -38,9 +42,9 @@ bool CommandInterface::ExecuteCommand(const char* command, TESObjectREFR* ref, c
 #include "AttachmentInterface.h"
 #include "NifUtils.h"
 #include "ShaderUtilities.h"
-#include "common/IFileStream.h"
 
-extern SKSETaskInterface*	g_task;
+
+extern const SKSE::TaskInterface* g_task;
 extern ItemDataInterface	g_itemDataInterface;
 extern TintMaskInterface	g_tintMaskInterface;
 extern BodyMorphInterface	g_bodyMorphInterface;
@@ -54,9 +58,9 @@ extern PresetInterface		g_presetInterface;
 
 void CommandInterface::RegisterCommands()
 {
-    RegisterCommand("reload", "<tints>", [](TESObjectREFR* thisObj, const char* argument) -> bool
+    RegisterCommand("reload", "<tints>", [](RE::TESObjectREFR* thisObj, const char* argument) -> bool
     {
-        if (_strnicmp(argument, "tints", MAX_PATH) == 0)
+        if (_strnicmp(argument, "tints", REX::W32::MAX_PATH) == 0)
         {
             g_tintMaskInterface.LoadMods();
             Console_Print("Tint XMLs reloaded");
@@ -65,9 +69,9 @@ void CommandInterface::RegisterCommands()
         return false;
     });
 
-	RegisterCommand("erase", "<bodymorph|transforms|sculpt|overlays|bodymorph-cache>", [](TESObjectREFR* thisObj, const char* argument) -> bool
+	RegisterCommand("erase", "<bodymorph|transforms|sculpt|overlays|bodymorph-cache>", [](RE::TESObjectREFR* thisObj, const char* argument) -> bool
 	{
-		if (_strnicmp(argument, "bodymorph", MAX_PATH) == 0)
+		if (_strnicmp(argument, "bodymorph", REX::W32::MAX_PATH) == 0)
 		{
 			if (!thisObj) {
 				Console_Print("Erasing BodyMorphs requires a console target");
@@ -79,7 +83,7 @@ void CommandInterface::RegisterCommands()
 			Console_Print("Erased all bodymorphs");
 			return true;
 		}
-		else if (_strnicmp(argument, "transforms", MAX_PATH) == 0)
+		else if (_strnicmp(argument, "transforms", REX::W32::MAX_PATH) == 0)
 		{
 			if (!thisObj) {
 				Console_Print("Erasing transforms requires a console target");
@@ -91,41 +95,41 @@ void CommandInterface::RegisterCommands()
 			Console_Print("Erased all transforms");
 			return true;
 		}
-		else if (_strnicmp(argument, "sculpt", MAX_PATH) == 0)
+		else if (_strnicmp(argument, "sculpt", REX::W32::MAX_PATH) == 0)
 		{
 			if (!thisObj) {
 				Console_Print("Erasing sculpt requires a console target");
 				return true;
 			}
-			if (thisObj->formType != Character::kTypeID) {
+			if (thisObj->IsNot(RE::FormType::ActorCharacter)) {
 				Console_Print("Console target must be an actor");
 				return true;
 			}
-			Actor* actor = static_cast<Actor*>(thisObj);
-			TESNPC* npc = DYNAMIC_CAST(thisObj->baseForm, TESForm, TESNPC);
+			RE::Actor* actor = static_cast<RE::Actor*>(thisObj);
+			RE::TESNPC* npc = thisObj->GetBaseObject() ? thisObj->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 			if (!npc) {
 				Console_Print("Failed to acquire ActorBase for specified reference");
 				return true;
 			}
 
 			g_morphInterface.EraseSculptData(npc);
-			g_task->AddTask(new SKSEUpdateFaceModel(actor));
+			SKEE_AddTask(g_task, new SKSEUpdateFaceModel(actor));
 
 			Console_Print("Erased all sculpting");
 			return true;
 		}
-		else if (_strnicmp(argument, "overlays", MAX_PATH) == 0)
+		else if (_strnicmp(argument, "overlays", REX::W32::MAX_PATH) == 0)
 		{
 			if (!thisObj) {
 				Console_Print("Erasing overlays requires a console target");
 				return true;
 			}
-			if (thisObj->formType != Character::kTypeID) {
+			if (thisObj->IsNot(RE::FormType::ActorCharacter)) {
 				Console_Print("Console target must be an actor");
 				return true;
 			}
-			Actor* actor = static_cast<Actor*>(thisObj);
-			TESNPC* npc = DYNAMIC_CAST(thisObj->baseForm, TESForm, TESNPC);
+			RE::Actor* actor = static_cast<RE::Actor*>(thisObj);
+			RE::TESNPC* npc = thisObj->GetBaseObject() ? thisObj->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 			if (!npc) {
 				Console_Print("Failed to acquire ActorBase for specified reference");
 				return true;
@@ -136,7 +140,7 @@ void CommandInterface::RegisterCommands()
 			Console_Print("Erased and reverted all overlays");
 			return true;
 		}
-		else if (_strnicmp(argument, "bodymorph-cache", MAX_PATH) == 0)
+		else if (_strnicmp(argument, "bodymorph-cache", REX::W32::MAX_PATH) == 0)
 		{
 			size_t freedMem = g_bodyMorphInterface.ClearMorphCache();
 			Console_Print("Erased %I64u bytes from BodyMorph Cache", freedMem);
@@ -144,15 +148,15 @@ void CommandInterface::RegisterCommands()
 		}
 		return false;
 	});
-	RegisterCommand("preset-save", "<name>", [](TESObjectREFR* thisObj, const char* argument) -> bool
+	RegisterCommand("preset-save", "<name>", [](RE::TESObjectREFR* thisObj, const char* argument) -> bool
 	{
-		char slotPath[MAX_PATH];
+		char slotPath[REX::W32::MAX_PATH];
 		sprintf_s(slotPath, "Data\\SKSE\\Plugins\\CharGen\\Exported\\%s.jslot", argument);
-		char tintPath[MAX_PATH];
+		char tintPath[REX::W32::MAX_PATH];
 		sprintf_s(tintPath, "Data\\Textures\\CharGen\\Exported\\");
 
-		Actor* actor = static_cast<Actor*>(thisObj);
-		TESNPC* npc = DYNAMIC_CAST(thisObj->baseForm, TESForm, TESNPC);
+		RE::Actor* actor = static_cast<RE::Actor*>(thisObj);
+		RE::TESNPC* npc = thisObj->GetBaseObject() ? thisObj->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 		if (!npc) {
 			Console_Print("Failed to acquire ActorBase for specified reference");
 			return true;
@@ -160,30 +164,30 @@ void CommandInterface::RegisterCommands()
 
 		g_presetInterface.SaveJsonPreset(slotPath, actor);
 
-		g_task->AddTask(new SKSETaskExportTintMask(tintPath, argument));
+		SKEE_AddTask(g_task, new SKSETaskExportTintMask(tintPath, argument));
 		Console_Print("Preset saved");
 		return true;
 	});
-	RegisterCommand("preset-load", "<name>", [](TESObjectREFR* thisObj, const char* argument) -> bool
+	RegisterCommand("preset-load", "<name>", [](RE::TESObjectREFR* thisObj, const char* argument) -> bool
 	{
 		if (!thisObj) {
 			Console_Print("Applying a preset requires a console target");
 			return true;
 		}
-		if (thisObj->formType != Character::kTypeID) {
+		if (thisObj->IsNot(RE::FormType::ActorCharacter)) {
 			Console_Print("Console target must be an actor");
 			return true;
 		}
-		Actor* actor = static_cast<Actor*>(thisObj);
-		TESNPC* npc = DYNAMIC_CAST(thisObj->baseForm, TESForm, TESNPC);
+		RE::Actor* actor = static_cast<RE::Actor*>(thisObj);
+		RE::TESNPC* npc = thisObj->GetBaseObject() ? thisObj->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 		if (!npc) {
 			Console_Print("Failed to acquire ActorBase for specified reference");
 			return true;
 		}
 
-		char slotPath[MAX_PATH];
+		char slotPath[REX::W32::MAX_PATH];
 		sprintf_s(slotPath, "SKSE\\Plugins\\CharGen\\Exported\\%s.jslot", argument);
-		char tintPath[MAX_PATH];
+		char tintPath[REX::W32::MAX_PATH];
 		sprintf_s(tintPath, "Textures\\CharGen\\Exported\\%s.dds", argument);
 
 		auto presetData = std::make_shared<PresetData>();
@@ -198,54 +202,54 @@ void CommandInterface::RegisterCommands()
 		g_presetInterface.ApplyPresetData(actor, presetData, true, PresetInterface::ApplyTypes::kPresetApplyAll);
 
 		// Queue a node update
-		CALL_MEMBER_FN(actor, QueueNiNodeUpdate)(true);
+		actor->DoReset3D(true);
 		Console_Print("Preset loaded");
 		return true;
 	});
 #if _DEBUG
-	RegisterCommand("attach", "<object>", [](TESObjectREFR* thisObj, const char* argument) -> bool
+	RegisterCommand("attach", "<object>", [](RE::TESObjectREFR* thisObj, const char* argument) -> bool
 	{
 		if (!thisObj) {
 			Console_Print("Attaching mesh requires object");
 			return true;
 		}
 
-		g_task->AddTask(new SKSEAttachSkinnedMesh(static_cast<Actor*>(thisObj), argument, "TestRoot", false, true, std::vector<BSFixedString>()));
+		SKEE_AddTask(g_task, new SKSEAttachSkinnedMesh(static_cast<RE::Actor*>(thisObj), argument, "TestRoot", false, true, std::vector<RE::BSFixedString>()));
 		return true;
 	});
 #endif
-	RegisterCommand("diagnostics", "<bodymorph|transforms|strings|updates|overlays>", [](TESObjectREFR* thisObj, const char* argument) -> bool
+	RegisterCommand("diagnostics", "<bodymorph|transforms|strings|updates|overlays>", [](RE::TESObjectREFR* thisObj, const char* argument) -> bool
 	{
-		if (_strnicmp(argument, "bodymorph", MAX_PATH) == 0)
+		if (_strnicmp(argument, "bodymorph", REX::W32::MAX_PATH) == 0)
 		{
 			g_bodyMorphInterface.PrintDiagnostics();
 			return true;
 		}
-		else if (_strnicmp(argument, "transforms", MAX_PATH) == 0)
+		else if (_strnicmp(argument, "transforms", REX::W32::MAX_PATH) == 0)
 		{
 			g_transformInterface.PrintDiagnostics();
 			return true;
 		}
-		else if (_strnicmp(argument, "strings", MAX_PATH) == 0)
+		else if (_strnicmp(argument, "strings", REX::W32::MAX_PATH) == 0)
 		{
 			g_stringTable.PrintDiagnostics();
 			return true;
 		}
-		else if (_strnicmp(argument, "overlays", MAX_PATH) == 0)
+		else if (_strnicmp(argument, "overlays", REX::W32::MAX_PATH) == 0)
 		{
 			g_overlayInterface.PrintDiagnostics();
 			return true;
 		}
-		else if (_strnicmp(argument, "updates", MAX_PATH) == 0)
+		else if (_strnicmp(argument, "updates", REX::W32::MAX_PATH) == 0)
 		{
 			g_actorUpdateManager.PrintDiagnostics();
 			return true;
 		}
 		return false;
 	});
-	RegisterCommand("dump", "<bodymorph|morphnames|transforms|tints|overrides|overlays|itemdata|itembinding|skeleton_3p|skeleton_1p|equipped>", [](TESObjectREFR* thisObj, const char* argument) -> bool
+	RegisterCommand("dump", "<bodymorph|morphnames|transforms|tints|overrides|overlays|itemdata|itembinding|skeleton_3p|skeleton_1p|equipped>", [](RE::TESObjectREFR* thisObj, const char* argument) -> bool
 	{
-		if (_strnicmp(argument, "bodymorph", MAX_PATH) == 0)
+		if (_strnicmp(argument, "bodymorph", REX::W32::MAX_PATH) == 0)
 		{
 			if (!thisObj) {
 				Console_Print("Dumping transforms requires a console target");
@@ -259,7 +263,7 @@ void CommandInterface::RegisterCommands()
 			public:
 				Visitor() { }
 
-				virtual void Visit(TESObjectREFR* ref, const char* morphKey, const char* key, float value)
+				virtual void Visit(RE::TESObjectREFR* ref, const char* morphKey, const char* key, float value)
 				{
 					m_mapping[key][morphKey] = value;
 				}
@@ -268,7 +272,7 @@ void CommandInterface::RegisterCommands()
 			Visitor visitor;
 			g_bodyMorphInterface.VisitMorphValues(thisObj, visitor);
 
-			UInt32 totalMorphs = 0;
+			std::uint32_t totalMorphs = 0;
 			for (auto& key : visitor.m_mapping)
 			{
 				Console_Print("Key: %s", key.first.c_str());
@@ -282,7 +286,7 @@ void CommandInterface::RegisterCommands()
 			Console_Print("Dumped %d total morphs", totalMorphs);
 			return true;
 		}
-		else if (_strnicmp(argument, "morphnames", MAX_PATH) == 0)
+		else if (_strnicmp(argument, "morphnames", REX::W32::MAX_PATH) == 0)
 		{
 			Console_Print("Dumping morph names");
 			auto morphNames = g_bodyMorphInterface.GetCachedMorphNames();
@@ -293,18 +297,18 @@ void CommandInterface::RegisterCommands()
 			Console_Print("%d total morphs", morphNames.size());
 			return true;
 		}
-		else if (_strnicmp(argument, "transforms", MAX_PATH) == 0)
+		else if (_strnicmp(argument, "transforms", REX::W32::MAX_PATH) == 0)
 		{
 			if (!thisObj) {
 				Console_Print("Dumping transforms requires a console target");
 				return true;
 			}
-			if (thisObj->formType != Character::kTypeID) {
+			if (thisObj->IsNot(RE::FormType::ActorCharacter)) {
 				Console_Print("Console target must be an actor");
 				return true;
 			}
-			Actor* actor = static_cast<Actor*>(thisObj);
-			TESNPC* npc = DYNAMIC_CAST(thisObj->baseForm, TESForm, TESNPC);
+			RE::Actor* actor = static_cast<RE::Actor*>(thisObj);
+			RE::TESNPC* npc = thisObj->GetBaseObject() ? thisObj->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 			if (!npc) {
 				Console_Print("Failed to acquire ActorBase for specified reference");
 				return true;
@@ -312,8 +316,8 @@ void CommandInterface::RegisterCommands()
 
 			Console_Print("Dumping transforms for %08X", thisObj->formID);
 
-			UInt32 totalTransforms = 0;
-			g_transformInterface.Impl_VisitNodes(thisObj, false, CALL_MEMBER_FN(npc, GetSex)() == 1, [&](const SKEEFixedString& node, OverrideRegistration<StringTableItem>* keys)
+			std::uint32_t totalTransforms = 0;
+			g_transformInterface.Impl_VisitNodes(thisObj, false, npc->GetSex() == 1, [&](const SKEEFixedString& node, OverrideRegistration<StringTableItem>* keys)
 			{
 				Console_Print("Node: %s", node.c_str());
 				for (auto& item : *keys)
@@ -326,116 +330,110 @@ void CommandInterface::RegisterCommands()
 			Console_Print("Dumped %d total transforms", totalTransforms);
 			return true;
 		}
-		else if (_strnicmp(argument, "tints", MAX_PATH) == 0)
+		else if (_strnicmp(argument, "tints", REX::W32::MAX_PATH) == 0)
 		{
-			if (thisObj && thisObj->formType != Character::kTypeID) {
+			if (thisObj && thisObj->IsNot(RE::FormType::ActorCharacter)) {
 				Console_Print("Console target must be an actor");
 				return true;
 			}
 
-			UInt32 mask = 1;
-			for (UInt32 i = 0; i < 32; ++i)
+			std::uint32_t mask = 1;
+			for (std::uint32_t i = 0; i < 32; ++i)
 			{
 				IItemDataInterface::Identifier identifier;
 				identifier.SetSlotMask(mask);
-				g_task->AddTask(new NIOVTaskUpdateItemDye(thisObj ? static_cast<Actor*>(thisObj) : (*g_thePlayer), identifier, TintMaskInterface::kUpdate_All, true, [mask](TESObjectARMO* armo, TESObjectARMA* arma, const char* path, NiTexturePtr texture, LayerTarget& layer)
+				SKEE_AddTask(g_task, new NIOVTaskUpdateItemDye(thisObj ? thisObj->As<RE::Actor>() : RE::PlayerCharacter::GetSingleton(), identifier, TintMaskInterface::kUpdate_All, true, [mask](RE::TESObjectARMO* armo, RE::TESObjectARMA* arma, const char* path, RE::NiTexturePtr texture, LayerTarget& layer)
 				{
-					char texturePath[MAX_PATH];
-					_snprintf_s(texturePath, MAX_PATH, "Data\\SKSE\\Plugins\\NiOverride\\Exported\\TintMasks\\%s", path);
+					char texturePath[REX::W32::MAX_PATH];
+					_snprintf_s(texturePath, REX::W32::MAX_PATH, "Data\\SKSE\\Plugins\\NiOverride\\Exported\\TintMasks\\%s", path);
 
-					IFileStream::MakeAllDirs(texturePath);
+					FileUtils::MakeAllDirs(texturePath);
 
-					SaveRenderedDDS(texture, texturePath);
+					SaveRenderedDDS(texture.get(), texturePath);
 
-					Console_Print("Dumped result for slot %08X at %s on shape", mask, texturePath, layer.object->m_name);
+					Console_Print("Dumped result for slot %08X at %s on shape", mask, texturePath, layer.object->name.c_str());
 				}));
 				mask <<= 1;
 			}
 			return true;
 		}
-		else if (_strnicmp(argument, "overrides", MAX_PATH) == 0)
+		else if (_strnicmp(argument, "overrides", REX::W32::MAX_PATH) == 0)
 		{
 			Console_Print("Dumping node overrides...");
 			g_overrideInterface.Dump();
 			Console_Print("Dump complete. See log file for details.");
 			return true;
 		}
-		else if (_strnicmp(argument, "overlays", MAX_PATH) == 0)
+		else if (_strnicmp(argument, "overlays", REX::W32::MAX_PATH) == 0)
 		{
 			Console_Print("Dumping overlays...");
-			g_overlayInterface.Visit([](UInt32 formId) {
-				TESForm* form = LookupFormByID(formId);
-				TESObjectREFR* refr = form ? DYNAMIC_CAST(form, TESForm, TESObjectREFR) : nullptr;
-				_MESSAGE("Reference: %08X (%s) with Overlays", formId, refr ? CALL_MEMBER_FN(refr, GetReferenceName)() : "");
+			g_overlayInterface.Visit([](std::uint32_t formId) {
+				RE::TESForm* form = RE::TESForm::LookupByID(formId);
+				RE::TESObjectREFR* refr = form ? form->As<RE::TESObjectREFR>() : nullptr;
+				SKSE::log::info("Reference: {:08X} ({}) with Overlays", formId, refr ? refr->GetName() : "");
 			});
 			Console_Print("Dump complete. See log file for details.");
 			return true;
 		}
-		else if (_strnicmp(argument, "itemdata", MAX_PATH) == 0)
+		else if (_strnicmp(argument, "itemdata", REX::W32::MAX_PATH) == 0)
 		{
 			g_itemDataInterface.ForEachItemAttribute([](const ItemAttribute& item)
 			{
-				_MESSAGE("Item UID: %d ID: %d Owner: %08X Form: %08X", item.uid, item.rank, item.ownerForm, item.formId);
-				gLog.Indent();
-				item.data->ForEachLayer([&](SInt32 layerIndex, auto tintData) -> bool
+				SKSE::log::info("Item UID: {} ID: {} Owner: {:08X} Form: {:08X}", item.uid, item.rank, item.ownerForm, item.formId);
+				item.data->ForEachLayer([&](std::int32_t layerIndex, auto tintData) -> bool
 				{
-					_MESSAGE("Tint Index: %d", layerIndex);
-					gLog.Indent();
+					SKSE::log::info("Tint Index: {}", layerIndex);
 					for (auto& color : tintData.m_colorMap)
 					{
-						_MESSAGE("ColorIndex: %d Color: %08X", color.first, color.second);
+						SKSE::log::info("ColorIndex: {} Color: {:08X}", color.first, color.second);
 					}
 					for (auto& blend : tintData.m_blendMap)
 					{
-						_MESSAGE("BlendIndex: %d Blend: %s", blend.first, blend.second->c_str());
+						SKSE::log::info("BlendIndex: {} Blend: {}", blend.first, blend.second->c_str());
 					}
 					for (auto& texture : tintData.m_textureMap)
 					{
-						_MESSAGE("TextureIndex: %d Texture: %s", texture.first, texture.second->c_str());
+						SKSE::log::info("TextureIndex: {} Texture: {}", texture.first, texture.second->c_str());
 					}
 					for (auto& type : tintData.m_typeMap)
 					{
-						_MESSAGE("TypeIndex: %d Type: %d", type.first, type.second);
+						SKSE::log::info("TypeIndex: {} Type: {}", type.first, type.second);
 					}
-					gLog.Outdent();
 					return false;
 				});
-				gLog.Outdent();
 				Console_Print("Item UID: %d ID: %d Owner: %08X Form: %08X", item.uid, item.rank, item.ownerForm, item.formId);
 			});
 			return true;
 		}
-		else if (_strnicmp(argument, "itembinding", MAX_PATH) == 0)
+		else if (_strnicmp(argument, "itembinding", REX::W32::MAX_PATH) == 0)
 		{
 			if (!thisObj) {
 				Console_Print("Dumping itembinding requires a console target");
 				return true;
 			}
 
-			class RankItemFinder
+			class RankItemFinder : public RE::InventoryChanges::IItemChangeVisitor
 			{
 			public:
-				bool Accept(InventoryEntryData* pEntryData)
+				RE::BSContainer::ForEachResult Visit(RE::InventoryEntryData* pEntryData) override
 				{
 					if (!pEntryData)
-						return true;
+						return RE::BSContainer::ForEachResult::kContinue;
 
-					ExtendDataList* pExtendList = pEntryData->extendDataList;
+					auto* pExtendList = pEntryData->extraLists;
 					if (!pExtendList)
-						return true;
+						return RE::BSContainer::ForEachResult::kContinue;
 
-					SInt32 n = 0;
-					BaseExtraList* pExtraDataList = pExtendList->GetNthItem(n);
-					while (pExtraDataList)
+					for (auto* pExtraDataList : *pExtendList)
 					{
-						if (pExtraDataList->HasType(kExtraData_Rank))
+						if (pExtraDataList && pExtraDataList->HasType(RE::ExtraDataType::kRank))
 						{
-							ExtraRank* extraRank = static_cast<ExtraRank*>(pExtraDataList->GetByType(kExtraData_Rank));
-							Console_Print("\tItem ID: %d Form: %08X", extraRank->rank, pEntryData->type->formID);
+							RE::ExtraRank* extraRank = pExtraDataList->GetByType<RE::ExtraRank>();
+							Console_Print("\tItem ID: %d Form: %08X", extraRank->rank, pEntryData->object ? pEntryData->object->formID : 0);
 							auto itemData = g_itemDataInterface.GetData(extraRank->rank);
 							if (itemData)
 							{
-								itemData->ForEachLayer([&](SInt32 layerIndex, auto tintData) -> bool
+								itemData->ForEachLayer([&](std::int32_t layerIndex, auto tintData) -> bool
 								{
 									Console_Print("\t\tTint Index: %d", layerIndex);
 									for (auto& color : tintData.m_colorMap)
@@ -459,34 +457,28 @@ void CommandInterface::RegisterCommands()
 							}
 							foundItems++;
 						}
-
-						n++;
-						pExtraDataList = pExtendList->GetNthItem(n);
 					}
-					return true;
+					return RE::BSContainer::ForEachResult::kContinue;
 				}
 
-				UInt32 foundItems = 0;
+				std::uint32_t foundItems = 0;
 			};
 
 			Console_Print("Finding items with extended data inside %08X", thisObj->formID);
 
-			ExtraContainerChanges* pContainerChanges = static_cast<ExtraContainerChanges*>(thisObj->extraData.GetByType(kExtraData_ContainerChanges));
+			RE::ExtraContainerChanges* pContainerChanges = thisObj->extraList.GetByType<RE::ExtraContainerChanges>();
 			if (pContainerChanges) {
 				RankItemFinder itemFinder;
-				auto data = pContainerChanges->data;
+				auto* data = pContainerChanges->changes;
 				if (data) {
-					auto objList = data->objList;
-					if (objList) {
-						objList->Visit(itemFinder);
+					data->VisitInventory(itemFinder);
 
-						Console_Print("Found %d items with extended data inside %08X", itemFinder.foundItems, thisObj->formID);
-					}
+					Console_Print("Found %d items with extended data inside %08X", itemFinder.foundItems, thisObj->formID);
 				}
 			}
 			return true;
 		}
-		else if (_strnicmp(argument, "skeleton_3p", MAX_PATH) == 0)
+		else if (_strnicmp(argument, "skeleton_3p", REX::W32::MAX_PATH) == 0)
 		{
 			if (!thisObj) {
 				Console_Print("Dumping nodes requires a reference");
@@ -494,11 +486,11 @@ void CommandInterface::RegisterCommands()
 			}
 
 			Console_Print("Dumping reference third person skeleton...");
-			DumpNodeChildren(thisObj->GetNiRootNode(0));
+			DumpNodeChildren(thisObj->Get3D(false));
 			Console_Print("Dumped reference. See log for more details.");
 			return true;
 		}
-		else if (_strnicmp(argument, "skeleton_1p", MAX_PATH) == 0)
+		else if (_strnicmp(argument, "skeleton_1p", REX::W32::MAX_PATH) == 0)
 		{
 			if (!thisObj) {
 				Console_Print("Dumping nodes requires a reference");
@@ -506,11 +498,11 @@ void CommandInterface::RegisterCommands()
 			}
 
 			Console_Print("Dumping reference first person skeleton...");
-			DumpNodeChildren(thisObj->GetNiRootNode(1));
+			DumpNodeChildren(thisObj->Get3D(true));
 			Console_Print("Dumped reference. See log for more details.");
 			return true;
 		}
-		else if (_strnicmp(argument, "equipped", MAX_PATH) == 0)
+		else if (_strnicmp(argument, "equipped", REX::W32::MAX_PATH) == 0)
 		{
 			if (!thisObj) {
 				Console_Print("Dumping biped nodes requires a reference");
@@ -518,28 +510,28 @@ void CommandInterface::RegisterCommands()
 			}
 			for (int k = 0; k <= 1; ++k)
 			{
-				auto weightModel = thisObj->GetBiped(k);
-				_MESSAGE("Biped Set %d", k);
-				if (weightModel && weightModel->bipedData)
+				auto weightModel = thisObj->GetBiped(k == 1);
+				SKSE::log::info("Biped Set {}", k);
+				if (weightModel)
 				{
 					for (int i = 0; i < 42; ++i)
 					{
-						_MESSAGE("Biped 1 Slot: %d Armor: %08X Arma: %08X", i, weightModel->bipedData->unk10[i].armor ? weightModel->bipedData->unk10[i].armor->formID : 0, weightModel->bipedData->unk10[i].addon ? weightModel->bipedData->unk10[i].addon->formID : 0);
-						TESForm* armor = weightModel->bipedData->unk10[i].armor;
-						NiAVObject* node = weightModel->bipedData->unk10[i].object;
-						if (armor && armor->formType == TESObjectARMO::kTypeID)
+						SKSE::log::info("Biped 1 Slot: {} Armor: {:08X} Arma: {:08X}", i, weightModel->objects[i].item ? weightModel->objects[i].item->formID : 0, weightModel->objects[i].addon ? weightModel->objects[i].addon->formID : 0);
+						RE::TESForm* armor = weightModel->objects[i].item;
+						RE::NiAVObject* node = weightModel->objects[i].partClone.get();
+						if (armor && armor->IsArmor())
 						{
-							_MESSAGE("Armor: %s Shape: %s [%p]", static_cast<TESObjectARMO*>(armor)->fullName.GetName(), node ? node->m_name : "", (void*)node);
+							SKSE::log::info("Armor: {} Shape: {} [{:#x}]", armor->As<RE::TESObjectARMO>()->GetFullName(), node ? node->name.c_str() : "", (std::uint64_t)(uintptr_t)node);
 						}
 					}
 					for (int i = 0; i < 42; ++i)
 					{
-						_MESSAGE("Biped 2 Slot: %d Armor: %08X Arma: %08X", i, weightModel->bipedData->unk13C0[i].armor ? weightModel->bipedData->unk13C0[i].armor->formID : 0, weightModel->bipedData->unk13C0[i].addon ? weightModel->bipedData->unk13C0[i].addon->formID : 0);
-						TESForm* armor = weightModel->bipedData->unk13C0[i].armor;
-						NiAVObject* node = weightModel->bipedData->unk13C0[i].object;
-						if (armor && armor->formType == TESObjectARMO::kTypeID)
+						SKSE::log::info("Biped 2 Slot: {} Armor: {:08X} Arma: {:08X}", i, weightModel->bufferedObjects[i].item ? weightModel->bufferedObjects[i].item->formID : 0, weightModel->bufferedObjects[i].addon ? weightModel->bufferedObjects[i].addon->formID : 0);
+						RE::TESForm* armor = weightModel->bufferedObjects[i].item;
+						RE::NiAVObject* node = weightModel->bufferedObjects[i].partClone.get();
+						if (armor && armor->IsArmor())
 						{
-							_MESSAGE("Armor: %s Shape: %s [%p]", static_cast<TESObjectARMO*>(armor)->fullName.GetName(), node ? node->m_name : "", (void*)node);
+							SKSE::log::info("Armor: {} Shape: {} [{:#x}]", armor->As<RE::TESObjectARMO>()->GetFullName(), node ? node->name.c_str() : "", (std::uint64_t)(uintptr_t)node);
 						}
 					}
 				}
@@ -548,11 +540,11 @@ void CommandInterface::RegisterCommands()
 		}
 		return false;
 	});
-	RegisterCommand("help", "Displays all the registered commands and their description", [](TESObjectREFR* thisObj, const char* argument) -> bool
+	RegisterCommand("help", "Displays all the registered commands and their description", [](RE::TESObjectREFR* thisObj, const char* argument) -> bool
 	{
 		if (argument == nullptr || argument[0] == 0)
 		{
-			std::scoped_lock<lock_type> locker(g_commandInterface.m_lock);
+			std::scoped_lock locker(g_commandInterface.m_lock);
 			for (auto& cmdItem : g_commandInterface.m_commandMap)
 			{
 				if (_stricmp(cmdItem.first.c_str(), "help") == 0)

@@ -1,13 +1,13 @@
 #pragma once
 
-#include "skse64/GameTypes.h"
+#include "RE/B/BSFixedString.h"
 
 namespace std {
-	template <> struct hash < BSFixedString >
+	template <> struct hash < RE::BSFixedString >
 	{
-		size_t operator()(const BSFixedString & x) const
+		size_t operator()(const RE::BSFixedString & x) const
 		{
-			return hash<const char*>()(x.data);
-		}
+			return hash<const char*>()(x.c_str());
+		};
 	};
 }

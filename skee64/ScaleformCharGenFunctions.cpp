@@ -1,31 +1,24 @@
-#include "common/IFileStream.h"
+#include <REX/W32/KERNEL32.h>
+#include <filesystem>
+#include <ctime>
+#include <cstdio>
+#include "SKEETasks.h"
 
-#include "skse64/PluginAPI.h"
-#include "skse64_common/skse_version.h"
 
 #include "ScaleformCharGenFunctions.h"
 #include "ScaleformUtils.h"
 
 #include "FaceMorphInterface.h"
 #include "PartHandler.h"
+#include "SKEEHooks.h"
 
-#include "skse64/GameAPI.h"
-#include "skse64/GameData.h"
-#include "skse64/GameObjects.h"
-#include "skse64/GameRTTI.h"
-#include "skse64/GameStreams.h"
-#include "skse64/GameMenus.h"
 
 #include "NifUtils.h"
+#include "FaceLists.h"
 
-#include "skse64/NiRTTI.h"
-#include "skse64/NiObjects.h"
-#include "skse64/NiNodes.h"
-#include "skse64/NiGeometry.h"
-#include "skse64/NiSerialization.h"
+#include "RE/N/NiRTTI.h"
+#include "RE/N/NiGeometry.h"
 
-#include "skse64/ScaleformMovie.h"
-#include "skse64/ScaleformLoader.h"
 
 #include "OverrideVariant.h"
 #include "OverrideInterface.h"
@@ -36,19 +29,20 @@
 #include "FormTagInterface.h"
 
 #include "ScaleformUtils.h"
+#include <cstdint>
+#include <cassert>
 
 extern FaceMorphInterface	g_morphInterface;
 extern PresetInterface		g_presetInterface;
 extern FormTagInterface		g_formTagInterface;
 extern PartSet	g_partSet;
 
-extern SKSETaskInterface * g_task;
+extern const SKSE::TaskInterface* g_task;
 
-#include "skse64/NiRenderer.h"
-#include "skse64/NiExtraData.h"
+#include "RE/N/NiExtraData.h"
 
 #include <DirectXMath.h>
-#include <d3d11_4.h>
+#include "REX/W32/D3D11_4.h"
 
 #include "CDXShader.h"
 #include "CDXD3DDevice.h"
@@ -62,7 +56,9 @@ extern SKSETaskInterface * g_task;
 #include "CDXShaderFactory.h"
 #include "CDXBSShaderResource.h"
 
-UInt32 colors[] = {
+
+
+std::uint32_t colors[] = {
 	0xffffff, 0xff0000, 0x0000ff, 0x00ff00,
 	0xff00ff, 0xffff00, 0x00ffff, 0x79f2f2,
 	0xe58473, 0xe673da, 0x57d936, 0xcc3d00,
@@ -78,156 +74,156 @@ extern CDXModelViewerCamera			g_Camera;
 extern CDXNifScene					g_World;
 extern float						g_panSpeed;
 extern float						g_cameraFOV;
-extern SInt32						g_viewWidth;
-extern SInt32						g_viewHeight;
+extern std::int32_t						g_viewWidth;
+extern std::int32_t						g_viewHeight;
 extern bool							g_enableHeadExport;
 
 extern float	g_sculptOffsetX;
 extern float	g_sculptOffsetY;
 extern float	g_sculptOffsetZ;
 
-void SKSEScaleform_SavePreset::Invoke(Args * args)
+void SKSEScaleform_SavePreset::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	ASSERT(args->numArgs >= 1);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_String);
-	ASSERT(args->args[1].GetType() == GFxValue::kType_Bool);
+	assert(a_params.argCount >= 1);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kString);
+	assert(a_params.args[1].GetType() == RE::GFxValue::ValueType::kBoolean);
 
-	bool saveJson = args->args[1].GetBool();
-	const char	* strData = args->args[0].GetString();
+	bool saveJson = a_params.args[1].GetBool();
+	const char	* strData = a_params.args[0].GetString();
 
 	if (saveJson)
-		args->result->SetBool(g_presetInterface.SaveJsonPreset(strData, (*g_thePlayer)));
+		a_params.retVal->SetBoolean(g_presetInterface.SaveJsonPreset(strData, (RE::PlayerCharacter::GetSingleton())));
 	else
-		args->result->SetBool(g_presetInterface.SaveBinaryPreset(strData));
+		a_params.retVal->SetBoolean(g_presetInterface.SaveBinaryPreset(strData));
 }
 
-void SKSEScaleform_LoadPreset::Invoke(Args * args)
+void SKSEScaleform_LoadPreset::Call(RE::GFxFunctionHandler::Params& a_params)
 {
 	using namespace ScaleformUtils;
 
-	ASSERT(args->numArgs >= 1);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_String);
-	ASSERT(args->args[1].GetType() == GFxValue::kType_Object);
-	ASSERT(args->args[2].GetType() == GFxValue::kType_Bool);
+	assert(a_params.argCount >= 1);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kString);
+	assert(a_params.args[1].GetType() == RE::GFxValue::ValueType::kObject);
+	assert(a_params.args[2].GetType() == RE::GFxValue::ValueType::kBoolean);
 
-	bool loadJson = args->args[2].GetBool();
+	bool loadJson = a_params.args[2].GetBool();
 
-	const char	* strData = args->args[0].GetString();
+	const char	* strData = a_params.args[0].GetString();
 
-	GFxValue	* object = NULL;
-	if (args->numArgs >= 2)
-		object = &args->args[1];
+	RE::GFxValue	* object = nullptr;
+	if (a_params.argCount >= 2)
+		object = &a_params.args[1];
 
 	auto presetData = std::make_shared<PresetData>();
-	bool loadError = loadJson ? g_presetInterface.LoadJsonPreset(strData, presetData) : g_presetInterface.LoadBinaryPreset(strData, presetData);//g_morphHandler.LoadPreset(strData, args->movie, object);
+	bool loadError = loadJson ? g_presetInterface.LoadJsonPreset(strData, presetData) : g_presetInterface.LoadBinaryPreset(strData, presetData);//g_morphHandler.LoadPreset(strData, a_params.movie, object);
 	if (!loadError) {
-		g_presetInterface.ApplyPresetData(*g_thePlayer, presetData);
+		g_presetInterface.ApplyPresetData(RE::PlayerCharacter::GetSingleton(), presetData);
 
 		RegisterNumber(object, "hairColor", presetData->hairColor);
 
-		GFxValue tintArray;
-		args->movie->CreateArray(&tintArray);
+		RE::GFxValue tintArray{};
+		a_params.movie->CreateArray(&tintArray);
 
 		for(auto & tint : presetData->tints) {
-			GFxValue tintObject;
-			args->movie->CreateObject(&tintObject);
+			RE::GFxValue tintObject{};
+			a_params.movie->CreateObject(&tintObject);
 			RegisterNumber(&tintObject, "color", tint.color);
 			RegisterNumber(&tintObject, "index", tint.index);
-			RegisterString(&tintObject, args->movie, "texture", tint.name.c_str());
-			tintArray.PushBack(&tintObject);
+			RegisterString(&tintObject, a_params.movie, "texture", tint.name.c_str());
+			tintArray.PushBack(tintObject);
 		}
 
-		object->SetMember("tints", &tintArray);
+		object->SetMember("tints", tintArray);
 	}
 
-	args->result->SetBool(loadError);
+	a_params.retVal->SetBoolean(loadError);
 }
 
 const char * GetGameSettingString(const char * key)
 {
-	Setting	* setting = (*g_gameSettingCollection)->Get(key);
-	if(setting && setting->GetType() == Setting::kType_String)
-		return setting->data.s;
+	RE::Setting * setting = RE::GameSettingCollection::GetSingleton()->GetSetting(key);
+	if (setting && setting->GetType() == RE::Setting::Type::kString)
+		return setting->GetString();
 
 	return NULL;
 }
 
-void SKSEScaleform_ReadPreset::Invoke(Args * args)
+void SKSEScaleform_ReadPreset::Call(RE::GFxFunctionHandler::Params& a_params)
 {
 	using namespace ScaleformUtils;
 
-	ASSERT(args->numArgs >= 1);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_String);
-	ASSERT(args->args[1].GetType() == GFxValue::kType_Object);
-	ASSERT(args->args[2].GetType() == GFxValue::kType_Bool);
+	assert(a_params.argCount >= 1);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kString);
+	assert(a_params.args[1].GetType() == RE::GFxValue::ValueType::kObject);
+	assert(a_params.args[2].GetType() == RE::GFxValue::ValueType::kBoolean);
 
-	bool loadJson = args->args[2].GetBool();
-	const char	* strData = args->args[0].GetString();
+	bool loadJson = a_params.args[2].GetBool();
+	const char	* strData = a_params.args[0].GetString();
 	
 
-	GFxValue	* object = NULL;
-	if (args->numArgs >= 2)
-		object = &args->args[1];
+	RE::GFxValue	* object = nullptr;
+	if (a_params.argCount >= 2)
+		object = &a_params.args[1];
 
-	DataHandler * dataHandler = DataHandler::GetSingleton();
+	RE::TESDataHandler * dataHandler = RE::TESDataHandler::GetSingleton();
 	auto presetData = std::make_shared<PresetData>();
-	bool loadError = loadJson ? g_presetInterface.LoadJsonPreset(strData, presetData) : g_presetInterface.LoadBinaryPreset(strData, presetData);//g_morphHandler.LoadPreset(strData, args->movie, object);
+	bool loadError = loadJson ? g_presetInterface.LoadJsonPreset(strData, presetData) : g_presetInterface.LoadBinaryPreset(strData, presetData);//g_morphHandler.LoadPreset(strData, a_params.movie, object);
 	if(!loadError) {
-		PlayerCharacter * player = (*g_thePlayer);
-		TESNPC * npc = DYNAMIC_CAST(player->baseForm, TESForm, TESNPC);
+		RE::PlayerCharacter * player = (RE::PlayerCharacter::GetSingleton());
+		RE::TESNPC * npc = player->GetBaseObject() ? player->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 
-		GFxValue modArray;
-		args->movie->CreateArray(&modArray);
+		RE::GFxValue modArray{};
+		a_params.movie->CreateArray(&modArray);
 		for(std::vector<std::string>::iterator it = presetData->modList.begin(); it != presetData->modList.end(); ++it) {
 
-			const ModInfo * modInfo = dataHandler->LookupModByName((*it).c_str());
-			if (!modInfo || !modInfo->IsActive())
+			const RE::TESFile * modInfo = dataHandler->LookupModByName((*it).c_str());
+			if (!modInfo || !BSFileUtil::IsActive(modInfo))
 				continue;
 
-			GFxValue modObject;
-			args->movie->CreateObject(&modObject);
-			RegisterString(&modObject, args->movie, "name", (*it).c_str());
+			RE::GFxValue modObject{};
+			a_params.movie->CreateObject(&modObject);
+			RegisterString(&modObject, a_params.movie, "name", (*it).c_str());
 			RegisterNumber(&modObject, "loadedIndex", modInfo->GetPartialIndex());
-			modArray.PushBack(&modObject);
+			modArray.PushBack(modObject);
 		}
-		object->SetMember("mods", &modArray);
+		object->SetMember("mods", modArray);
 
-		GFxValue partArray;
-		args->movie->CreateArray(&partArray);
-		for(std::vector<BGSHeadPart*>::iterator it = presetData->headParts.begin(); it != presetData->headParts.end(); ++it) {
-			GFxValue partObject;
-			args->movie->CreateString(&partObject, (*it)->partName.data);
-			partArray.PushBack(&partObject);
+		RE::GFxValue partArray{};
+		a_params.movie->CreateArray(&partArray);
+		for(std::vector<RE::BGSHeadPart*>::iterator it = presetData->headParts.begin(); it != presetData->headParts.end(); ++it) {
+			RE::GFxValue partObject{};
+			a_params.movie->CreateString(&partObject, (*it)->fullName.c_str());
+			partArray.PushBack(partObject);
 		}
-		object->SetMember("headParts", &partArray);
+		object->SetMember("headParts", partArray);
 
-		GFxValue weightObject;
-		args->movie->CreateObject(&weightObject);
+		RE::GFxValue weightObject{};
+		a_params.movie->CreateObject(&weightObject);
 		RegisterUnmanagedString(&weightObject, "name", GetGameSettingString("sRSMWeight"));
 		RegisterNumber(&weightObject, "value", presetData->weight);
-		object->SetMember("weight", &weightObject);
+		object->SetMember("weight", weightObject);
 
-		GFxValue hairObject;
-		args->movie->CreateObject(&hairObject);
+		RE::GFxValue hairObject{};
+		a_params.movie->CreateObject(&hairObject);
 		RegisterUnmanagedString(&hairObject, "name", GetGameSettingString("sRSMHairColorPresets"));
 		RegisterNumber(&hairObject, "value", presetData->hairColor);
-		object->SetMember("hair", &hairObject);
+		object->SetMember("hair", hairObject);
 
-		GFxValue tintArray;
-		args->movie->CreateArray(&tintArray);
+		RE::GFxValue tintArray{};
+		a_params.movie->CreateArray(&tintArray);
 		for(std::vector<PresetData::Tint>::iterator it = presetData->tints.begin(); it != presetData->tints.end(); ++it) {
 			PresetData::Tint & tint = (*it);
-			GFxValue tintObject;
-			args->movie->CreateObject(&tintObject);
+			RE::GFxValue tintObject{};
+			a_params.movie->CreateObject(&tintObject);
 			RegisterNumber(&tintObject, "color", tint.color);
 			RegisterNumber(&tintObject, "index", tint.index);
-			RegisterString(&tintObject, args->movie, "texture", tint.name.c_str());
-			tintArray.PushBack(&tintObject);
+			RegisterString(&tintObject, a_params.movie, "texture", tint.name.c_str());
+			tintArray.PushBack(tintObject);
 		}
-		object->SetMember("tints", &tintArray);
+		object->SetMember("tints", tintArray);
 
-		GFxValue morphArray;
-		args->movie->CreateArray(&morphArray);
+		RE::GFxValue morphArray;
+		a_params.movie->CreateArray(&morphArray);
 
 		const char * presetNames[FacePresetList::kNumPresets];
 		presetNames[FacePresetList::kPreset_NoseType] = GetGameSettingString("sRSMNoseTypes");
@@ -256,29 +252,29 @@ void SKSEScaleform_ReadPreset::Invoke(Args * args)
 		morphNames[FaceMorphList::kMorph_EyesBackForward] = GetGameSettingString("sRSMEyeDepth");
 		morphNames[FaceMorphList::kMorph_Vampire] = NULL;
 
-		UInt32 i = 0;
-		for(std::vector<SInt32>::iterator it = presetData->presets.begin(); it != presetData->presets.end(); ++it) {
-			GFxValue presetObject;
-			args->movie->CreateObject(&presetObject);
+		std::uint32_t i = 0;
+		for(std::vector<std::int32_t>::iterator it = presetData->presets.begin(); it != presetData->presets.end(); ++it) {
+			RE::GFxValue presetObject{};
+			a_params.movie->CreateObject(&presetObject);
 			if(presetNames[i])
 				RegisterUnmanagedString(&presetObject, "name", presetNames[i]);
 			RegisterNumber(&presetObject, "value", *it);
 			RegisterNumber(&presetObject, "type", 0);
 			RegisterNumber(&presetObject, "index", i);
-			morphArray.PushBack(&presetObject);
+			morphArray.PushBack(presetObject);
 			i++;
 		}
 
 		i = 0;
 		for(auto & it : presetData->morphs) {
-			GFxValue presetObject;
-			args->movie->CreateObject(&presetObject);
+			RE::GFxValue presetObject{};
+			a_params.movie->CreateObject(&presetObject);
 			if (i < FaceMorphList::kNumMorphs && morphNames[i])
 				RegisterUnmanagedString(&presetObject, "name", morphNames[i]);
 			RegisterNumber(&presetObject, "value", it);
 			RegisterNumber(&presetObject, "type", 1);
 			RegisterNumber(&presetObject, "index", i);
-			morphArray.PushBack(&presetObject);
+			morphArray.PushBack(presetObject);
 			i++;
 		}
 
@@ -286,20 +282,20 @@ void SKSEScaleform_ReadPreset::Invoke(Args * args)
 		for(auto & it : presetData->customMorphs) {
 			std::string morphName = "$";
 			morphName.append(it.name.c_str());
-			GFxValue customObject;
-			args->movie->CreateObject(&customObject);
-			RegisterString(&customObject, args->movie, "name", morphName.c_str());
+			RE::GFxValue customObject{};
+			a_params.movie->CreateObject(&customObject);
+			RegisterString(&customObject, a_params.movie, "name", morphName.c_str());
 			RegisterNumber(&customObject, "value", it.value);
 			RegisterNumber(&customObject, "type", 2);
 			RegisterNumber(&customObject, "index", i);
-			morphArray.PushBack(&customObject);
+			morphArray.PushBack(customObject);
 			i++;
 		}
 		i = 0;
 		for (auto & it : presetData->bodyMorphData) {
-			GFxValue customObject;
-			args->movie->CreateObject(&customObject);
-			RegisterString(&customObject, args->movie, "name", it.first.c_str());
+			RE::GFxValue customObject{};
+			a_params.movie->CreateObject(&customObject);
+			RegisterString(&customObject, a_params.movie, "name", it.first.c_str());
 
 			float morphSum = 0;
 			for (auto & keys : it.second)
@@ -308,135 +304,133 @@ void SKSEScaleform_ReadPreset::Invoke(Args * args)
 			RegisterNumber(&customObject, "value", morphSum);
 			RegisterNumber(&customObject, "type", 3);
 			RegisterNumber(&customObject, "index", i);
-			morphArray.PushBack(&customObject);
+			morphArray.PushBack(customObject);
 			i++;
 		}
-		object->SetMember("morphs", &morphArray);
+		object->SetMember("morphs", morphArray);
 	}
 
-	args->result->SetBool(loadError);
+	a_params.retVal->SetBoolean(loadError);
 }
 
-void SKSEScaleform_ReloadSliders::Invoke(Args * args)
+void SKSEScaleform_ReloadSliders::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	MenuManager * mm = MenuManager::GetSingleton();
+	RE::UI * mm = RE::UI::GetSingleton();
 	if (mm) {
-		BSFixedString t("RaceSex Menu");
-		RaceSexMenu* raceMenu = (RaceSexMenu*)mm->GetMenu(&t);
+		auto raceMenu = mm->GetMenu<RE::RaceSexMenu>();
 		if(raceMenu) {
-			PlayerCharacter * player = (*g_thePlayer);
-			CALL_MEMBER_FN(raceMenu, LoadSliders)((UInt64)player->baseForm, 0);
-			//CALL_MEMBER_FN(raceMenu, UpdatePlayer)();
-			CALL_MEMBER_FN((*g_thePlayer), QueueNiNodeUpdate)(true);
+			RE::PlayerCharacter * player = RE::PlayerCharacter::GetSingleton();
+			SKEE::LoadSliders(raceMenu.get(), (std::uint64_t)player->GetBaseObject(), 0);
+			player->DoReset3D(true);
 		}
 	}
 }
 
-std::pair<RaceSexMenu*, RaceMenuSlider*> GetRaceMenuSlider(UInt32 sliderId)
+std::pair<RE::RaceSexMenu*, RE::RaceMenuSlider*> GetRaceMenuSlider(std::uint32_t sliderId)
 {
-	MenuManager* mm = MenuManager::GetSingleton();
+	RE::UI* mm = RE::UI::GetSingleton();
 	if (mm)
 	{
-		BSFixedString t("RaceSex Menu");
-		RaceSexMenu* raceMenu = (RaceSexMenu*)mm->GetMenu(&t);
+		auto raceMenu = mm->GetMenu<RE::RaceSexMenu>();
 		if (raceMenu)
 		{
-			RaceMenuSlider* slider = NULL;
-			RaceSexMenu::RaceComponent* raceData = NULL;
+			RE::RaceMenuSlider* slider = NULL;
+			RE::RaceComponent* raceData = NULL;
 
-			UInt8 gender = 0;
-			PlayerCharacter* player = (*g_thePlayer);
-			TESNPC* actorBase = DYNAMIC_CAST(player->baseForm, TESForm, TESNPC);
+			std::uint8_t gender = 0;
+			RE::PlayerCharacter* player = RE::PlayerCharacter::GetSingleton();
+			RE::TESNPC* actorBase = player->GetBaseObject() ? player->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 			if (actorBase)
-				gender = CALL_MEMBER_FN(actorBase, GetSex)();
+				gender = actorBase->GetSex();
 
-			if (raceMenu->raceIndex < raceMenu->sliderData[gender].count)
-				raceData = &raceMenu->sliderData[gender][raceMenu->raceIndex];
-			if (raceData && sliderId < raceData->sliders.count)
+			auto& menuData = raceMenu->GetRuntimeData();
+			if (menuData.unk188 < menuData.sliderData[gender].size())
+				raceData = &menuData.sliderData[gender][menuData.unk188];
+			if (raceData && sliderId < raceData->sliders.size())
 				slider = &raceData->sliders[sliderId];
 
 			if (raceData && slider)
 			{
-				return {raceMenu, slider};
+				return {raceMenu.get(), slider};
 			}
 		}
 	}
 	return {nullptr, nullptr};
 }
 
-void SKSEScaleform_GetSliderPartData::Invoke(Args* args)
+void SKSEScaleform_GetSliderPartData::Call(RE::GFxFunctionHandler::Params& a_params)
 {
 	using namespace ScaleformUtils;
 
-	ASSERT(args->numArgs >= 1);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_Number);
+	assert(a_params.argCount >= 1);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kNumber);
 
-	UInt32 sliderId = (UInt32)args->args[0].GetNumber();
+	std::uint32_t sliderId = (std::uint32_t)a_params.args[0].GetNumber();
 
-	auto createTagsForPart = [](GFxMovieView* view, GFxValue* object, BGSHeadPart* headPart)
+	auto createTagsForPart = [](RE::GFxMovie* view, RE::GFxValue* object, RE::BGSHeadPart* headPart)
 	{
 		if (g_formTagInterface.HasTags(headPart))
 		{
 			class TagVisitor : public IFormTagInterface::TagVisitor
 			{
 			public:
-				TagVisitor(GFxMovieView* view, GFxValue* arr) : m_view(view), m_array(arr) { };
+				TagVisitor(RE::GFxMovie* view, RE::GFxValue* arr) : m_view(view), m_array(arr) { };
 				virtual void Visit(const char* tag) override
 				{
-					GFxValue str;
+					RE::GFxValue str{};
 					m_view->CreateString(&str, tag);
-					m_array->PushBack(&str);
+					m_array->PushBack(str);
 				}
-				GFxMovieView* m_view;
-				GFxValue* m_array;
+				RE::GFxMovie* m_view;
+				RE::GFxValue* m_array;
 			};
 			TagVisitor visitor{ view, object };
 			g_formTagInterface.GetTags(headPart, visitor);
 		}
 	};
 
-	auto createFilterTags = [](GFxMovieView* view, GFxValue* object, uint32_t partType)
+	auto createFilterTags = [](RE::GFxMovie* view, RE::GFxValue* object, uint32_t partType)
 	{
 		if (g_formTagInterface.HasPartTags(partType))
 		{
 			class PartTagVisitor : public IFormTagInterface::PartTagVisitor
 			{
 			public:
-				PartTagVisitor(GFxMovieView* view, GFxValue* arr) : m_view(view), m_array(arr) { };
+				PartTagVisitor(RE::GFxMovie* view, RE::GFxValue* arr) : m_view(view), m_array(arr) { };
 				virtual void Visit(const char* name, const char* label) override
 				{
-					GFxValue obj;
+					RE::GFxValue obj{};
 					m_view->CreateObject(&obj);
 					RegisterString(&obj, m_view, "name", name);
 					RegisterString(&obj, m_view, "label", label);
-					m_array->PushBack(&obj);
+					m_array->PushBack(obj);
 				}
-				GFxMovieView* m_view;
-				GFxValue* m_array;
+				RE::GFxMovie* m_view;
+				RE::GFxValue* m_array;
 			};
 			PartTagVisitor visitor{ view, object };
 			g_formTagInterface.GetPartTags(partType, visitor);
 		}
 	};
 
-	auto addHeadPart = [&createTagsForPart](GFxMovieView* view, GFxValue* object, BGSHeadPart* headPart, uint32_t index)
+	auto addHeadPart = [&createTagsForPart](RE::GFxMovie* view, RE::GFxValue* object, RE::BGSHeadPart* headPart, uint32_t index)
 	{
-		GFxValue partObject;
+		RE::GFxValue partObject{};
 		view->CreateObject(&partObject);
-		SKEEFixedString full(headPart->fullName.name.c_str());
-		SKEEFixedString edid(headPart->partName.c_str());
-		std::string partName(headPart->fullName.name.c_str());
+		SKEEFixedString full(headPart->fullName.c_str());
+		SKEEFixedString edid(headPart->formEditorID.c_str());
+		std::string partName(headPart->fullName.c_str());
 		if (partName.empty())
-			partName = headPart->partName.c_str();
+			partName = headPart->formEditorID.c_str();
 		else if(full != edid)
-			partName += " <font size='14' color='#666666'>[" + std::string(headPart->partName.c_str()) + "]</font>";
+			partName += " <font size='14' color='#666666'>[" + std::string(headPart->formEditorID.c_str()) + "]</font>";
 
 		RegisterString(&partObject, view, "name", partName.c_str());
 		RegisterNumber(&partObject, "index", static_cast<double>(index));
 
-		GFxValue tagArray;
+		RE::GFxValue tagArray{};
 		view->CreateArray(&tagArray);
-		partObject.SetMember("tags", &tagArray);
+		partObject.SetMember("tags", tagArray);
 		createTagsForPart(view, &tagArray, headPart);
 
 		// Add the ModName as a tag, and a property
@@ -444,15 +438,15 @@ void SKSEScaleform_GetSliderPartData::Invoke(Args* args)
 		{
 			auto mod = GetModInfoByFormID(headPart->formID);
 			if (mod) {
-				GFxValue str;
-				view->CreateString(&str, mod->name);
-				tagArray.PushBack(&str);
+				RE::GFxValue str{};
+				view->CreateString(&str, mod->GetFilename().data());
+				tagArray.PushBack(str);
 
-				RegisterString(&partObject, view, "source", mod->name);
+				RegisterString(&partObject, view, "source", mod->GetFilename().data());
 			}
 		}
 
-		object->PushBack(&partObject);
+		object->PushBack(partObject);
 	};
 
 	std::set<std::string> modSet;
@@ -460,67 +454,68 @@ void SKSEScaleform_GetSliderPartData::Invoke(Args* args)
 	auto [raceMenu, slider] = GetRaceMenuSlider(sliderId);
 	if (raceMenu && slider)
 	{
-		args->movie->CreateObject(args->result);
+		a_params.movie->CreateObject(a_params.retVal);
 
-		GFxValue tagArray;
-		args->movie->CreateArray(&tagArray);
-		args->result->SetMember("tags", &tagArray);
+		RE::GFxValue tagArray{};
+		a_params.movie->CreateArray(&tagArray);
+		a_params.retVal->SetMember("tags", tagArray);
 
-		GFxValue partArray;
-		args->movie->CreateArray(&partArray);
-		args->result->SetMember("parts", &partArray);
+		RE::GFxValue partArray{};
+		a_params.movie->CreateArray(&partArray);
+		a_params.retVal->SetMember("parts", partArray);
 
 		switch(slider->type)
 		{
-		case RaceMenuSlider::kTypeHeadPart:
+		case RE::RaceMenuSlider::kTypeHeadPart:
 			{
-				if(slider->index < RaceSexMenu::kNumHeadPartLists)
+				if(slider->index < skee::kNumHeadPartLists)
 				{
-					createFilterTags(args->movie, &tagArray, slider->index);
+					createFilterTags(a_params.movie, &tagArray, slider->index);
 
-					BGSHeadPart * headPart = NULL;
-					for (int32_t i = 0; i < raceMenu->headParts[slider->index].count; ++i)
+					auto& headPartList = raceMenu->GetRuntimeData().headParts[slider->index];
+					RE::BGSHeadPart * headPart = NULL;
+					for (int32_t i = 0; i < (int32_t)headPartList.size(); ++i)
 					{
-						raceMenu->headParts[slider->index].GetNthItem(i, headPart);
+						headPart = headPartList[i];
 						if (headPart)
 						{
-							addHeadPart(args->movie, &partArray, headPart, i);
+							addHeadPart(a_params.movie, &partArray, headPart, i);
 
 							auto mod = GetModInfoByFormID(headPart->formID);
 							if (mod) {
-								modSet.insert(mod->name);
+								modSet.insert(std::string(mod->GetFilename()));
 							}
 						}
 					}
 				}
 			}
 			break;
-		case RaceMenuSlider::kTypeDoubleMorph:
+		case RE::RaceMenuSlider::kTypeDoubleMorph:
 			{
 				// Provide case for custom parts
 				if(slider->index >= SLIDER_OFFSET) {
-					UInt32 sliderIndex = slider->index - SLIDER_OFFSET;
-					SliderInternalPtr sliderInternal = g_morphInterface.GetSliderByIndex((*g_thePlayer)->race, sliderIndex);
+					std::uint32_t sliderIndex = slider->index - SLIDER_OFFSET;
+					SliderInternalPtr sliderInternal = g_morphInterface.GetSliderByIndex((RE::PlayerCharacter::GetSingleton())->race, sliderIndex);
 					if(sliderInternal) {
 						switch (sliderInternal->type)
 						{
 							// Only acquire part information for actual part sliders
 							case SliderInternal::kTypeHeadPart:
 							{
-								UInt8 partType = sliderInternal->presetCount;
+								std::uint8_t partType = sliderInternal->presetCount;
 								HeadPartList * partList = g_partSet.GetPartList(partType);
 								if (partList)
 								{
-									createFilterTags(args->movie, &tagArray, partType);
+									createFilterTags(a_params.movie, &tagArray, partType);
 
 									uint32_t i = 0;
 									for (auto& headPart : *partList)
 									{
-										addHeadPart(args->movie, &partArray, headPart, i++);
+										addHeadPart(a_params.movie, &partArray, headPart, i++);
 
 										auto mod = GetModInfoByFormID(headPart->formID);
 										if (mod) {
-											modSet.insert(mod->name);
+											modSet.insert(std::string(mod->GetFilename()));
 										}
 									}
 								}
@@ -536,73 +531,72 @@ void SKSEScaleform_GetSliderPartData::Invoke(Args* args)
 		// Add the mods automatically as tags
 		for (auto& mod : modSet)
 		{
-			GFxValue obj;
-			args->movie->CreateObject(&obj);
-			RegisterString(&obj, args->movie, "name", mod.c_str());
-			RegisterString(&obj, args->movie, "label", mod.c_str());
-			tagArray.PushBack(&obj);
+			RE::GFxValue obj{};
+			a_params.movie->CreateObject(&obj);
+			RegisterString(&obj, a_params.movie, "name", mod.c_str());
+			RegisterString(&obj, a_params.movie, "label", mod.c_str());
+			tagArray.PushBack(obj);
 		}
 	}
 }
 
-void SKSEScaleform_GetSliderData::Invoke(Args * args)
+void SKSEScaleform_GetSliderData::Call(RE::GFxFunctionHandler::Params& a_params)
 {
 	using namespace ScaleformUtils;
 
-	ASSERT(args->numArgs >= 1);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_Number);
-	ASSERT(args->args[1].GetType() == GFxValue::kType_Number);
+	assert(a_params.argCount >= 1);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kNumber);
+	assert(a_params.args[1].GetType() == RE::GFxValue::ValueType::kNumber);
 
-	UInt32 sliderId = (UInt32)args->args[0].GetNumber();
-	double value = args->args[1].GetNumber();
-
+	std::uint32_t sliderId = (std::uint32_t)a_params.args[0].GetNumber();
+	double value = a_params.args[1].GetNumber();
 
 	auto [raceMenu, slider] = GetRaceMenuSlider(sliderId);
 	if (raceMenu && slider)
 	{
-		args->movie->CreateObject(args->result);
-		RegisterNumber(args->result, "type", slider->type);
-		RegisterNumber(args->result, "index", slider->index);
+		a_params.movie->CreateObject(a_params.retVal);
+		RegisterNumber(a_params.retVal, "type", slider->type);
+		RegisterNumber(a_params.retVal, "index", slider->index);
 
 		switch(slider->type)
 		{
-		case RaceMenuSlider::kTypeHeadPart:
+		case RE::RaceMenuSlider::kTypeHeadPart:
 			{
-				if(slider->index < RaceSexMenu::kNumHeadPartLists)
+				if(slider->index < skee::kNumHeadPartLists)
 				{
-					BGSHeadPart * headPart = NULL;
-					raceMenu->headParts[slider->index].GetNthItem((UInt32)value, headPart);
+					auto& headPartList = raceMenu->GetRuntimeData().headParts[slider->index];
+					RE::BGSHeadPart * headPart = (value < headPartList.size()) ? headPartList[(std::uint32_t)value] : NULL;
 					if(headPart) {
-						RegisterNumber(args->result, "formId", headPart->formID);
-						RegisterString(args->result, args->movie, "partName", headPart->partName.data);
+						RegisterNumber(a_params.retVal, "formId", headPart->formID);
+						RegisterString(a_params.retVal, a_params.movie, "partName", headPart->formEditorID.c_str());
 					}
-					RegisterNumber(args->result, "parts", static_cast<double>(raceMenu->headParts[slider->index].count));
+					RegisterNumber(a_params.retVal, "parts", static_cast<double>(headPartList.size()));
 				}
 			}
 			break;
-		case RaceMenuSlider::kTypeDoubleMorph:
+		case RE::RaceMenuSlider::kTypeDoubleMorph:
 			{
 				// Provide case for custom parts
 				if(slider->index >= SLIDER_OFFSET) {
-					UInt32 sliderIndex = slider->index - SLIDER_OFFSET;
-					SliderInternalPtr sliderInternal = g_morphInterface.GetSliderByIndex((*g_thePlayer)->race, sliderIndex);
+					std::uint32_t sliderIndex = slider->index - SLIDER_OFFSET;
+					SliderInternalPtr sliderInternal = g_morphInterface.GetSliderByIndex((RE::PlayerCharacter::GetSingleton())->race, sliderIndex);
 					if(sliderInternal) {
-						RegisterNumber(args->result, "subType", sliderInternal->type);
+						RegisterNumber(a_params.retVal, "subType", sliderInternal->type);
 						switch (sliderInternal->type)
 						{
 							// Only acquire part information for actual part sliders
 							case SliderInternal::kTypeHeadPart:
 							{
-								UInt8 partType = sliderInternal->presetCount;
+								std::uint8_t partType = sliderInternal->presetCount;
 								HeadPartList * partList = g_partSet.GetPartList(partType);
 								if (partList)
 								{
-									BGSHeadPart * targetPart = g_partSet.GetPartByIndex(partList, (UInt32)value - 1);
+									RE::BGSHeadPart * targetPart = g_partSet.GetPartByIndex(partList, (std::uint32_t)value - 1);
 									if (targetPart) {
-										RegisterNumber(args->result, "formId", targetPart->formID);
-										RegisterString(args->result, args->movie, "partName", targetPart->partName.data);
+										RegisterNumber(a_params.retVal, "formId", targetPart->formID);
+										RegisterString(a_params.retVal, a_params.movie, "partName", targetPart->formEditorID.c_str());
 									}
-									RegisterNumber(args->result, "parts", static_cast<double>(partList->size()));
+									RegisterNumber(a_params.retVal, "parts", static_cast<double>(partList->size()));
 								}
 							}
 							break;
@@ -615,29 +609,28 @@ void SKSEScaleform_GetSliderData::Invoke(Args * args)
 	}
 }
 
-
-void SKSEScaleform_GetModName::Invoke(Args * args)
+void SKSEScaleform_GetModName::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	ASSERT(args->numArgs >= 1);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_Number);
+	assert(a_params.argCount >= 1);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kNumber);
 
-	UInt32 formId = (UInt32)args->args[0].GetNumber();
+	std::uint32_t formId = (std::uint32_t)a_params.args[0].GetNumber();
 
-	ModInfo* modInfo = GetModInfoByFormID(formId);
+	RE::TESFile* modInfo = GetModInfoByFormID(formId);
 	if(modInfo) {
-		args->movie->CreateString(args->result, modInfo->name);
+		a_params.movie->CreateString(a_params.retVal, modInfo->GetFilename().data());
 	}
 }
 
-void SKSEScaleform_ExportHead::Invoke(Args * args)
+void SKSEScaleform_ExportHead::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	ASSERT(args->numArgs >= 1);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_String);
+	assert(a_params.argCount >= 1);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kString);
 
-	const char	* strData = args->args[0].GetString();
+	const char	* strData = a_params.args[0].GetString();
 
 	// Get the Editor's working actor
-	Actor * actor = (*g_thePlayer);//g_World.GetWorkingActor();
+	RE::Actor * actor = (RE::PlayerCharacter::GetSingleton());//g_World.GetWorkingActor();
 	if (!actor)
 		return;
 
@@ -647,67 +640,65 @@ void SKSEScaleform_ExportHead::Invoke(Args * args)
 	ddsPath.append(".dds");
 
 	if(g_enableHeadExport)
-		g_task->AddTask(new SKSETaskExportHead(actor, nifPath.c_str(), ddsPath.c_str()));
+		SKEE_AddTask(g_task, new SKSETaskExportHead(actor, nifPath.c_str(), ddsPath.c_str()));
 }
 
-void SKSEScaleform_ImportHead::Invoke(Args * args)
+void SKSEScaleform_ImportHead::Call(RE::GFxFunctionHandler::Params& a_params)
 {
 	using namespace ScaleformUtils;
 
-	ASSERT(args->numArgs >= 1);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_String);
+	assert(a_params.argCount >= 1);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kString);
 
-	const char	* strData = args->args[0].GetString();
+	const char	* strData = a_params.args[0].GetString();
 
 	// Release the previous import just in case
 	g_World.ReleaseImport();
 
 	// Get the Editor's working actor
-	Actor * actor = g_World.GetWorkingActor();
+	RE::Actor * actor = g_World.GetWorkingActor();
 	if (!actor)
 		return;
 
-	BSFaceGenNiNode * faceNode = actor->GetFaceGenNiNode();
-	TESNPC * actorBase = DYNAMIC_CAST(actor->baseForm, TESForm, TESNPC);
+	RE::BSFaceGenNiNode * faceNode = GetFaceGenNiNode(actor);
+	RE::TESNPC * actorBase = actor->GetBaseObject() ? actor->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 	if (!actorBase || !faceNode)
 		return;
 
-	UInt8 niStreamMemory[sizeof(NiStream)];
-	memset(niStreamMemory, 0, sizeof(NiStream));
-	NiStream * niStream = (NiStream *)niStreamMemory;
-	CALL_MEMBER_FN(niStream, ctor)();
+	NifStreamWrapper niStreamScope;
+	RE::NiStream * niStream = niStreamScope.get();
 
-	NiNode * rootNode = NULL;
-	BSResourceNiBinaryStream binaryStream(strData);
-	if (binaryStream.IsValid())
+	RE::NiNode * rootNode = NULL;
+	RE::BSResourceNiBinaryStream binaryStream(strData);
+	if (binaryStream.good())
 	{		
-		niStream->LoadStream(&binaryStream);
-		if (niStream->m_rootObjects.m_data)
+		niStream->Load1(&binaryStream);
+		if (niStream->topObjects.size() > 0)
 		{
-			if (niStream->m_rootObjects.m_data[0]) // Get the root node
-				rootNode = niStream->m_rootObjects.m_data[0]->GetAsNiNode();
+			if (niStream->topObjects[0].get()) // Get the root node
+				rootNode = niStream->topObjects[0].get() ? niStream->topObjects[0].get()->AsNode() : nullptr;
 			if (rootNode)
 			{
-				args->movie->CreateArray(args->result);
+				a_params.movie->CreateArray(a_params.retVal);
 				
-				SInt32 gIndex = 0;
-				VisitObjects(rootNode, [&gIndex, &args](NiAVObject* trishape)
+				std::int32_t gIndex = 0;
+				VisitObjects(rootNode, [&](RE::NiAVObject* trishape) -> bool
 				{
-					NiNode * parent = trishape->m_parent;
-					if (parent && BSFixedString(parent->m_name) == BSFixedString("BSFaceGenNiNodeSkinned")) {
+					RE::NiNode * parent = trishape->parent;
+					if (parent && RE::BSFixedString(parent->name) == RE::BSFixedString("BSFaceGenNiNodeSkinned")) {
 
-						UInt32 numVertices = 0;
+						std::uint32_t numVertices = 0;
 
-						NiGeometry * legacyGeometry = trishape->GetAsNiGeometry();
-						BSTriShape * geometry = trishape->GetAsBSTriShape();
+						RE::NiGeometry * legacyGeometry = trishape ? trishape->AsNiGeometry() : nullptr;
+						RE::BSTriShape * geometry = trishape ? trishape->AsTriShape() : nullptr;
 
 						if (geometry) {
-							numVertices = geometry->numVertices;
+							numVertices = geometry->vertexCount;
 						}
 						else if (legacyGeometry) {
-							NiGeometryData * geometryData = niptr_cast<NiGeometryData>(legacyGeometry->m_spModelData);
+							RE::NiGeometryData * geometryData = legacyGeometry->spModelData.get();
 							if (geometryData) {
-								numVertices = geometryData->m_usVertices;
+								numVertices = geometryData->vertices;
 							}
 						}
 						else {
@@ -715,12 +706,12 @@ void SKSEScaleform_ImportHead::Invoke(Args * args)
 							return false;
 						}
 						
-						GFxValue gfxGeom;
-						args->movie->CreateObject(&gfxGeom);
-						RegisterString(&gfxGeom, args->movie, "name", trishape->m_name);
+						RE::GFxValue gfxGeom;
+						a_params.movie->CreateObject(&gfxGeom);
+						RegisterString(&gfxGeom, a_params.movie, "name", trishape->name.c_str());
 						RegisterNumber(&gfxGeom, "vertices", numVertices);
 						RegisterNumber(&gfxGeom, "gIndex", gIndex);
-						args->result->PushBack(&gfxGeom);
+						a_params.retVal->PushBack(gfxGeom);
 						gIndex++;
 					}
 
@@ -732,52 +723,50 @@ void SKSEScaleform_ImportHead::Invoke(Args * args)
 
 	// Add the Root node to the Editor
 	if (rootNode) {
-		rootNode->IncRef();
+		rootNode->IncRefCount();
 		g_World.SetImportRoot(rootNode);
 	}
 
-	// Release the created NiStream
-	CALL_MEMBER_FN(niStream, dtor)();
+	// niStreamScope's destructor releases the stream automatically.
 }
 
-void SKSEScaleform_ReleaseImportedHead::Invoke(Args * args)
+void SKSEScaleform_ReleaseImportedHead::Call(RE::GFxFunctionHandler::Params& a_params)
 {
 	g_World.ReleaseImport();
 }
 
-void SKSEScaleform_LoadImportedHead::Invoke(Args * args)
+void SKSEScaleform_LoadImportedHead::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	ASSERT(args->numArgs >= 1);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_Array);
+	assert(a_params.argCount >= 1);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kArray);
 
+	std::uint32_t meshLength = g_World.GetNumMeshes();
+	std::uint32_t reqLength = a_params.args[0].GetArraySize();
 
-	UInt32 meshLength = g_World.GetNumMeshes();
-	UInt32 reqLength = args->args[0].GetArraySize();
-
-	for (UInt32 i = 0, m = 0; i < meshLength && m < reqLength; i++)
+	for (std::uint32_t i = 0, m = 0; i < meshLength && m < reqLength; i++)
 	{
 		CDXNifMesh * mesh = dynamic_cast<CDXNifMesh*>(g_World.GetNthMesh(i));
 		if (mesh) {
-			NiNode * importRoot = g_World.GetImportRoot();
+			RE::NiNode * importRoot = g_World.GetImportRoot();
 			if (importRoot) {
 
-				SInt32 searchIndex = -1;
+				std::int32_t searchIndex = -1;
 
-				GFxValue gfxIndex;
-				args->args[0].GetElement(m, &gfxIndex);
+				RE::GFxValue gfxIndex{};
+				a_params.args[0].GetElement(m, &gfxIndex);
 				searchIndex = gfxIndex.GetNumber();
 
-				NiAVObject * sourceGeometry = NULL;
-				SInt32 gIndex = 0;
-				VisitObjects(importRoot, [&gIndex, &args, &searchIndex, &sourceGeometry](NiAVObject* trishape)
+				RE::NiAVObject * sourceGeometry = NULL;
+				std::int32_t gIndex = 0;
+				VisitObjects(importRoot, [&gIndex, &searchIndex, &sourceGeometry](RE::NiAVObject* trishape) -> bool
 				{
-					NiNode * parent = trishape->m_parent;
-					if (parent && BSFixedString(parent->m_name) == BSFixedString("BSFaceGenNiNodeSkinned")) {
-						NiTriBasedGeom * legacyGeometry = trishape->GetAsNiTriBasedGeom();
-						BSTriShape * geometry = trishape->GetAsBSTriShape();
+					RE::NiNode * parent = trishape->parent;
+					if (parent && RE::BSFixedString(parent->name) == RE::BSFixedString("BSFaceGenNiNodeSkinned")) {
+						RE::NiTriBasedGeometry * legacyGeometry = netimmerse_cast<RE::NiTriBasedGeometry*>(trishape);
+						RE::BSTriShape * geometry = trishape ? trishape->AsTriShape() : nullptr;
 
 						if (legacyGeometry) {
-							NiGeometryData * geometryData = niptr_cast<NiGeometryData>(legacyGeometry->m_spModelData);
+							RE::NiGeometryData * geometryData = legacyGeometry->spModelData.get();
 							if (!geometryData) {
 								gIndex++;
 								return false;
@@ -808,19 +797,18 @@ void SKSEScaleform_LoadImportedHead::Invoke(Args * args)
 	}
 }
 
-
-void SKSEScaleform_ClearSculptData::Invoke(Args * args)
+void SKSEScaleform_ClearSculptData::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	ASSERT(args->numArgs >= 1);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_Array);
+	assert(a_params.argCount >= 1);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kArray);
 
-	UInt32 meshLength = args->args[0].GetArraySize();
+	std::uint32_t meshLength = a_params.args[0].GetArraySize();
 
-	for (UInt32 i = 0; i < meshLength; i++)
+	for (std::uint32_t i = 0; i < meshLength; i++)
 	{
-		GFxValue gfxIndex;
-		args->args[0].GetElement(i, &gfxIndex);
-		SInt32 meshIndex = gfxIndex.GetNumber();
+		RE::GFxValue gfxIndex{};
+		a_params.args[0].GetElement(i, &gfxIndex);
+		std::int32_t meshIndex = gfxIndex.GetNumber();
 
 		CDXNifMesh * mesh = dynamic_cast<CDXNifMesh*>(g_World.GetNthMesh(meshIndex));
 		if (mesh) {	
@@ -831,197 +819,207 @@ void SKSEScaleform_ClearSculptData::Invoke(Args * args)
 	}
 }
 
-void CreateHeadPartObject(GFxValue& object, GFxMovieView* movie, BGSHeadPart* headPart)
+void CreateHeadPartObject(RE::GFxValue& object, RE::GFxMovie* movie, RE::BGSHeadPart* headPart)
 {
 	using namespace ScaleformUtils;
 
-	RegisterString(&object, movie, "partName", headPart->partName.data);
-	RegisterNumber(&object, "partFlags", headPart->partFlags);
-	RegisterNumber(&object, "partType", headPart->type);
-	RegisterString(&object, movie, "modelPath", headPart->model.GetModelName());
-	RegisterString(&object, movie, "chargenMorphPath", headPart->chargenMorph.GetModelName());
-	RegisterString(&object, movie, "raceMorphPath", headPart->raceMorph.GetModelName());
+	RegisterString(&object, movie, "partName", headPart->formEditorID.c_str());
+	RegisterNumber(&object, "partFlags", headPart->flags.underlying());
+	RegisterNumber(&object, "partType", headPart->type.underlying());
+	RegisterString(&object, movie, "modelPath", headPart->GetModel());
+	RegisterString(&object, movie, "chargenMorphPath", headPart->morphs[RE::BGSHeadPart::MorphIndex::kChargenMorph].GetModel());
+	RegisterString(&object, movie, "raceMorphPath", headPart->morphs[RE::BGSHeadPart::MorphIndex::kRaceMorph].GetModel());
 }
 
-
-void SKSEScaleform_GetHeadParts::Invoke(Args * args)
+void SKSEScaleform_GetHeadParts::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	args->movie->CreateObject(args->result);
+	a_params.movie->CreateObject(a_params.retVal);
 
-	GFxValue partList;
-	args->movie->CreateArray(&partList);
+	RE::GFxValue partList{};
+	a_params.movie->CreateArray(&partList);
+	a_params.retVal->SetMember("parts", partList);
 
-	PlayerCharacter * player = (*g_thePlayer);
-	TESNPC * actorBase = DYNAMIC_CAST(player->baseForm, TESForm, TESNPC);
+	RE::PlayerCharacter * player = (RE::PlayerCharacter::GetSingleton());
+	RE::TESNPC * actorBase = player->GetBaseObject()->As<RE::TESNPC>();
+	if(!actorBase)
+		return;
 
-	UInt32 numHeadParts = actorBase->numHeadParts;
-	BGSHeadPart** headParts = actorBase->headparts;
-	if (CALL_MEMBER_FN(actorBase, HasOverlays)())
+	std::uint32_t numHeadParts = actorBase->numHeadParts;
+	RE::BGSHeadPart** headParts = actorBase->headParts;
+	if (actorBase->HasOverlays())
 	{
-		numHeadParts = std::max((UInt32)actorBase->numHeadParts, GetNumActorBaseOverlays(actorBase));
-		headParts = GetActorBaseOverlays(actorBase);
+		numHeadParts = std::max((std::uint32_t)actorBase->numHeadParts, actorBase->GetNumBaseOverlays());
+		headParts = actorBase->GetBaseOverlays();
 	}
 
-	for(UInt32 i = 0; i < numHeadParts; i++)
+	for(std::uint32_t i = 0; i < numHeadParts; i++)
 	{
-		GFxValue partData;
-		args->movie->CreateObject(&partData);
+		RE::GFxValue partData{};
+		a_params.movie->CreateObject(&partData);
 
-		BGSHeadPart * headPart = i < actorBase->numHeadParts ? actorBase->headparts[i] : headParts[i];
+		RE::BGSHeadPart * headPart = i < actorBase->numHeadParts ? actorBase->headParts[i] : headParts[i];
 
-		GFxValue headPartData;
-		args->movie->CreateObject(&headPartData);
-		CreateHeadPartObject(headPartData, args->movie, headPart);
-		partData.SetMember("base", &headPartData);
+		RE::GFxValue headPartData{};
+		a_params.movie->CreateObject(&headPartData);
+		CreateHeadPartObject(headPartData, a_params.movie, headPart);
+		partData.SetMember("base", headPartData);
 
 		// Get the overlay, if there is one
-		if(CALL_MEMBER_FN(actorBase, HasOverlays)()) {
-			BGSHeadPart * overlayPart = actorBase->GetHeadPartOverlayByType(headPart->type);
+		if(actorBase->HasOverlays()) {
+			RE::BGSHeadPart * overlayPart = actorBase->GetHeadPartOverlayByType(static_cast<RE::BGSHeadPart::HeadPartType>(headPart->type.underlying()));
 			if(overlayPart) {
-				GFxValue overlayPartData;
-				args->movie->CreateObject(&overlayPartData);
-				CreateHeadPartObject(overlayPartData, args->movie, overlayPart);
-				partData.SetMember("overlay", &overlayPartData);
+				RE::GFxValue overlayPartData{};
+				a_params.movie->CreateObject(&overlayPartData);
+				CreateHeadPartObject(overlayPartData, a_params.movie, overlayPart);
+				partData.SetMember("overlay", overlayPartData);
 			}
 		}
 
-		partList.PushBack(&partData);
+		partList.PushBack(partData);
 	}
-
-	args->result->SetMember("parts", &partList);
 }
 
-void SKSEScaleform_GetPlayerPosition::Invoke(Args * args)
+void SKSEScaleform_GetPlayerPosition::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	PlayerCharacter * player = (*g_thePlayer);
-	NiNode * root = player->GetNiRootNode(0);
+	RE::PlayerCharacter * player = (RE::PlayerCharacter::GetSingleton());
+	RE::NiNode * root = player->Get3D(false) ? player->Get3D(false)->AsNode() : nullptr;
 	if(root) {
-		args->movie->CreateObject(args->result);
-		GFxValue x;
-		x.SetNumber(root->m_localTransform.pos.x);
-		args->result->SetMember("x", &x);
-		GFxValue y;
-		y.SetNumber(root->m_localTransform.pos.y);
-		args->result->SetMember("y", &y);
-		GFxValue z;
-		z.SetNumber(root->m_localTransform.pos.z);
-		args->result->SetMember("z", &z);
+		a_params.movie->CreateObject(a_params.retVal);
+		RE::GFxValue x{};
+		x.SetNumber(root->local.translate.x);
+		a_params.retVal->SetMember("x", x);
+		RE::GFxValue y{};
+		y.SetNumber(root->local.translate.y);
+		a_params.retVal->SetMember("y", y);
+		RE::GFxValue z{};
+		z.SetNumber(root->local.translate.z);
+		a_params.retVal->SetMember("z", z);
 	}
 }
 
-void SKSEScaleform_GetPlayerRotation::Invoke(Args * args)
+void SKSEScaleform_GetPlayerRotation::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	PlayerCharacter * player = (*g_thePlayer);
-	NiNode * root = player->GetNiRootNode(0);
+	RE::PlayerCharacter * player = (RE::PlayerCharacter::GetSingleton());
+	RE::NiNode * root = player->Get3D(false) ? player->Get3D(false)->AsNode() : nullptr;
 	if (root)
 	{
-		args->movie->CreateArray(args->result);
-		for (UInt32 i = 0; i < 3 * 3; i++)
+		a_params.movie->CreateArray(a_params.retVal);
+		for (std::uint32_t i = 0; i < 3 * 3; i++)
 		{
-			GFxValue index;
-			index.SetNumber(((float*)(root->m_localTransform.rot.data))[i]);
-			args->result->PushBack(&index);
+			RE::GFxValue index{};
+			index.SetNumber(((float*)(root->local.rotate.entry))[i]);
+			a_params.retVal->PushBack(index);
 		}
 	}
 }
 
-void SKSEScaleform_SetPlayerRotation::Invoke(Args * args)
+void SKSEScaleform_SetPlayerRotation::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	ASSERT(args->numArgs >= 1);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_Array);
-	ASSERT(args->args[0].GetArraySize() == 9);
+	assert(a_params.argCount >= 1);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kArray);
+	assert(a_params.args[0].GetArraySize() == 9);
 
-	PlayerCharacter * player = (*g_thePlayer);
-	NiNode * root = player->GetNiRootNode(0);
+	RE::PlayerCharacter * player = (RE::PlayerCharacter::GetSingleton());
+	RE::NiNode * root = player->Get3D(false) ? player->Get3D(false)->AsNode() : nullptr;
 
 	if (root)
 	{
-		for (UInt32 i = 0; i < 3 * 3; i++)
+		for (std::uint32_t i = 0; i < 3 * 3; i++)
 		{
-			GFxValue val;
-			args->args[0].GetElement(i, &val);
-			if (val.GetType() != GFxValue::kType_Number)
+			RE::GFxValue val{};
+			a_params.args[0].GetElement(i, &val);
+			if (val.GetType() != RE::GFxValue::ValueType::kNumber)
 				break;
 
-			((float*)root->m_localTransform.rot.data)[i] = val.GetNumber();
+			((float*)root->local.rotate.entry)[i] = val.GetNumber();
 		}
 
-		NiAVObject::ControllerUpdateContext ctx;
+		RE::NiUpdateData ctx;
 		root->UpdateWorldData(&ctx);
 	}
 }
 
-void SKSEScaleform_GetRaceSexCameraRot::Invoke(Args * args)
+void SKSEScaleform_GetRaceSexCameraRot::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	RaceSexMenu * raceMenu = DYNAMIC_CAST(MenuManager::GetSingleton()->GetMenu(&UIStringHolder::GetSingleton()->raceSexMenu), IMenu, RaceSexMenu);
+	RE::RaceSexMenu * raceMenu = RE::UI::GetSingleton()->GetMenu<RE::RaceSexMenu>().get();
 	if(raceMenu) {
-		NiNode * raceCamera = raceMenu->camera.cameraNode;
-		args->movie->CreateArray(args->result);
-		for(UInt32 i = 0; i < 3 * 3; i++)
+		RE::NiNode * raceCamera = raceMenu->camera.cameraRoot.get();
+		a_params.movie->CreateArray(a_params.retVal);
+		for(std::uint32_t i = 0; i < 3 * 3; i++)
 		{
-			GFxValue index;
-			index.SetNumber(((float*)raceCamera->m_localTransform.rot.data)[i]);
-			args->result->PushBack(&index);
+			RE::GFxValue index{};
+			index.SetNumber(((float*)raceCamera->local.rotate.entry)[i]);
+			a_params.retVal->PushBack(index);
 		}
 	}
 }
 
-void SKSEScaleform_GetRaceSexCameraPos::Invoke(Args * args)
+void SKSEScaleform_GetRaceSexCameraPos::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	RaceSexMenu * raceMenu = DYNAMIC_CAST(MenuManager::GetSingleton()->GetMenu(&UIStringHolder::GetSingleton()->raceSexMenu), IMenu, RaceSexMenu);
+	RE::RaceSexMenu * raceMenu = RE::UI::GetSingleton()->GetMenu<RE::RaceSexMenu>().get();
 	if(raceMenu) {
-		NiNode * raceCamera = raceMenu->camera.cameraNode;
-		args->movie->CreateObject(args->result);
-		GFxValue x;
-		x.SetNumber(raceCamera->m_localTransform.pos.x);
-		args->result->SetMember("x", &x);
-		GFxValue y;
-		y.SetNumber(raceCamera->m_localTransform.pos.y);
-		args->result->SetMember("y", &y);
-		GFxValue z;
-		z.SetNumber(raceCamera->m_localTransform.pos.z);
-		args->result->SetMember("z", &z);
+		RE::NiNode * raceCamera = raceMenu->camera.cameraRoot.get();
+		a_params.movie->CreateObject(a_params.retVal);
+		RE::GFxValue x{};
+		x.SetNumber(raceCamera->local.translate.x);
+		a_params.retVal->SetMember("x", x);
+		RE::GFxValue y{};
+		y.SetNumber(raceCamera->local.translate.y);
+		a_params.retVal->SetMember("y", y);
+		RE::GFxValue z{};
+		z.SetNumber(raceCamera->local.translate.z);
+		a_params.retVal->SetMember("z", z);
 	}
 }
 
-void SKSEScaleform_SetRaceSexCameraPos::Invoke(Args * args)
+void SKSEScaleform_SetRaceSexCameraPos::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	ASSERT(args->numArgs >= 1);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_Object);
+	assert(a_params.argCount >= 1);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kObject);
 
-	RaceSexMenu * raceMenu = DYNAMIC_CAST(MenuManager::GetSingleton()->GetMenu(&UIStringHolder::GetSingleton()->raceSexMenu), IMenu, RaceSexMenu);
+	RE::RaceSexMenu * raceMenu = RE::UI::GetSingleton()->GetMenu<RE::RaceSexMenu>().get();
 	if(raceMenu) {
-		NiNode * raceCamera = raceMenu->camera.cameraNode;
+		RE::NiNode * raceCamera = raceMenu->camera.cameraRoot.get();
 
-		GFxValue val;
-		args->args[0].GetMember("x", &val);
-		if(val.GetType() == GFxValue::kType_Number)
-			raceCamera->m_localTransform.pos.x = val.GetNumber();
+		RE::GFxValue val{};
+		a_params.args[0].GetMember("x", &val);
+		if(val.GetType() == RE::GFxValue::ValueType::kNumber)
+			raceCamera->local.translate.x = val.GetNumber();
 
-		args->args[0].GetMember("y", &val);
-		if(val.GetType() == GFxValue::kType_Number)
-			raceCamera->m_localTransform.pos.y = val.GetNumber();
+		a_params.args[0].GetMember("y", &val);
+		if(val.GetType() == RE::GFxValue::ValueType::kNumber)
+			raceCamera->local.translate.y = val.GetNumber();
 
-		args->args[0].GetMember("z", &val);
-		if(val.GetType() == GFxValue::kType_Number)
-			raceCamera->m_localTransform.pos.z = val.GetNumber();
+		a_params.args[0].GetMember("z", &val);
+		if(val.GetType() == RE::GFxValue::ValueType::kNumber)
+			raceCamera->local.translate.z = val.GetNumber();
 
-		NiAVObject::ControllerUpdateContext ctx;
+		RE::NiUpdateData ctx;
 		raceCamera->UpdateWorldData(&ctx);
 	}
 }
 
-void SKSEScaleform_CreateMorphEditor::Invoke(Args * args)
+void SKSEScaleform_CreateMorphEditor::Call(RE::GFxFunctionHandler::Params& a_params)
 {
 	using namespace ScaleformUtils;
 
-	Microsoft::WRL::ComPtr<ID3D11DeviceContext> pDeviceContext = g_renderManager->context;
-	Microsoft::WRL::ComPtr<ID3D11Device> pDevice;
-	pDeviceContext->GetDevice(&pDevice);
-	if (!pDevice) { // This shouldnt happen
-		_ERROR("%s - Failed to acquire device from context.", __FUNCTION__);
+	REX::W32::ID3D11DeviceContext* r3dCtx = RE::BSGraphics::Renderer::GetSingleton()->GetRuntimeData().context;
+	if (!r3dCtx) { // This shouldnt happen
+		SKSE::log::error("{} - No REX::W32::D3D device context available.", __FUNCTION__);
 		return;
 	}
+
+	REX::W32::ComPtr<REX::W32::ID3D11Device> r3dDev;
+	r3dCtx->GetDevice(r3dDev.GetAddressOf());
+	if (!r3dDev.Get()) { // This shouldnt happen
+		SKSE::log::error("{} - Failed to acquire device from context.", __FUNCTION__);
+		return;
+	}
+
+	// CDXD3DeviceInfo stores global d3d11.h COM pointers. REX::W32 mirrors the same ABI, so bridge via raw-pointer transfer (no double-free). The renderer keeps its own ref to the context; the ComPtr ctor takes an owning ref.
+	REX::W32::ComPtr<REX::W32::ID3D11Device> pDevice;
+	pDevice.Attach(reinterpret_cast<REX::W32::ID3D11Device*>(r3dDev.Detach()));
+	REX::W32::ComPtr<REX::W32::ID3D11DeviceContext> pDeviceContext(r3dCtx);
 
 	g_Device = new CDXD3DDevice(pDevice, pDeviceContext);
 
@@ -1068,80 +1066,86 @@ void SKSEScaleform_CreateMorphEditor::Invoke(Args * args)
 	initParams.wgShader[1] = &pgsShader;
 
 	if (!g_World.Setup(initParams)) {
-		_ERROR("%s - Failed to setup world.", __FUNCTION__);
+		SKSE::log::error("{} - Failed to setup world.", __FUNCTION__);
 		return;
 	}
 
-	PlayerCharacter * player = (*g_thePlayer);
+	RE::PlayerCharacter * player = (RE::PlayerCharacter::GetSingleton());
 	if (!player) {
-		_ERROR("%s - Invalid working actor.", __FUNCTION__);
+		SKSE::log::error("{} - Invalid working actor.", __FUNCTION__);
 		return;
 	}
 
-	TESNPC * actorBase = DYNAMIC_CAST(player->baseForm, TESForm, TESNPC);
+	RE::TESNPC * actorBase = player->GetBaseObject() ? player->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 	if (!actorBase) {
-		_ERROR("%s - No actor base.", __FUNCTION__);
+		SKSE::log::error("{} - No actor base.", __FUNCTION__);
 		return;
 	}
 
-	NiNode * rootFaceGen = player->GetFaceGenNiNode();
+	RE::NiNode * rootFaceGen = GetFaceGenNiNode(player);
 	if (!rootFaceGen) {
-		_ERROR("%s - No FaceGen node.", __FUNCTION__);
+		SKSE::log::error("{} - No FaceGen node.", __FUNCTION__);
 		return;
 	}
 
 	g_World.SetWorkingActor(player);
 
-	BSFaceGenAnimationData * animationData = player->GetFaceGenAnimationData();
+	RE::BSFaceGenAnimationData * animationData = player->GetFaceGenAnimationData();
 	if (animationData) {
-		FaceGen::GetSingleton()->isReset = 0;
-		for (UInt32 t = BSFaceGenAnimationData::kKeyframeType_Expression; t <= BSFaceGenAnimationData::kKeyframeType_Phoneme; t++)
+		RE::BSFaceGenManager::GetSingleton()->isReset = 0;
+		// Legacy keyFrames[] maps to the contiguous 0x20-byte keyframe blocks starting at
+		// expressionKeyFrame. Legacy enum: kKeyframeType_Expression=0 .. kKeyframeType_Phoneme=3.
+		constexpr std::uint32_t kKeyframeType_Expression = 0;
+		constexpr std::uint32_t kKeyframeType_Phoneme = 3;
+		auto* keyFrames = reinterpret_cast<RE::BSFaceGenKeyframeMultiple*>(&animationData->expressionKeyFrame);
+		for (std::uint32_t t = kKeyframeType_Expression; t <= kKeyframeType_Phoneme; t++)
 		{
-			BSFaceGenKeyframeMultiple * keyframe = &animationData->keyFrames[t];
-			for (UInt32 i = 0; i < keyframe->count; i++)
+			RE::BSFaceGenKeyframeMultiple * keyframe = &keyFrames[t];
+			for (std::uint32_t i = 0; i < keyframe->count; i++)
 				keyframe->values[i] = 0.0;
 			keyframe->isUpdated = 0;
 		}
-		UpdateModelFace(rootFaceGen);
+		SKEE::UpdateModelFace(rootFaceGen);
 	}
 
-	UInt32 numHeadParts = actorBase->numHeadParts;
-	BGSHeadPart ** headParts = actorBase->headparts;
-	if (CALL_MEMBER_FN(actorBase, HasOverlays)()) {
-		numHeadParts = GetNumActorBaseOverlays(actorBase);
-		headParts = GetActorBaseOverlays(actorBase);
+	std::uint32_t numHeadParts = actorBase->numHeadParts;
+	RE::BGSHeadPart ** headParts = actorBase->headParts;
+	if (actorBase->HasOverlays()) {
+		numHeadParts = actorBase->GetNumBaseOverlays();
+		headParts = actorBase->GetBaseOverlays();
 	}
 
 	// What??
 	if (!headParts) {
-		_ERROR("%s - No head parts found.", __FUNCTION__);
+		SKSE::log::error("{} - No head parts found.", __FUNCTION__);
 		return;
 	}
 
-	std::set<BGSHeadPart*> extraParts; // Collect extra hair parts
-	BGSHeadPart * hairPart = actorBase->GetCurrentHeadPartByType(BGSHeadPart::kTypeHair);
+	std::set<RE::BGSHeadPart*> extraParts; // Collect extra hair parts
+	RE::BGSHeadPart * hairPart = actorBase->GetCurrentHeadPartByType(RE::BGSHeadPart::HeadPartType::kHair);
 	if (hairPart) {
-		BGSHeadPart * extraPart = NULL;
-		for (UInt32 p = 0; p < hairPart->extraParts.count; p++) {
-			if (hairPart->extraParts.GetNthItem(p, extraPart))
+		RE::BGSHeadPart * extraPart = NULL;
+		for (std::uint32_t p = 0; p < hairPart->extraParts.size(); p++) {
+			extraPart = hairPart->extraParts[p];
+			if (extraPart)
 				extraParts.insert(extraPart);
 		}
 	}
 
-	for(UInt32 i = 0; i < rootFaceGen->m_children.m_emptyRunStart; i++)
+	for(std::uint32_t i = 0; i < rootFaceGen->children.size(); i++)
 	{
-		for(UInt32 h = 0; h < numHeadParts; h++) {
-			BGSHeadPart * headPart = headParts[h];
+		for(std::uint32_t h = 0; h < numHeadParts; h++) {
+			RE::BGSHeadPart * headPart = headParts[h];
 			if (!headPart)
 				continue;
 
-			NiAVObject * object = rootFaceGen->m_children.m_data[i];
+			RE::NiAVObject * object = rootFaceGen->children[i].get();
 			if (!object)
 				continue;
 
-			if(headPart->partName == BSFixedString(object->m_name)) {
-				NiGeometry* legacyGeometry = object->GetAsNiGeometry();
-				BSTriShape* geometry = object->GetAsBSTriShape();
+			if(headPart->formEditorID == RE::BSFixedString(object->name)) {
+				RE::NiGeometry* legacyGeometry = object ? object->AsNiGeometry() : nullptr;
+				RE::BSTriShape* geometry = object ? object->AsTriShape() : nullptr;
 
 				CDXNifMesh * mesh = nullptr;
 				if (legacyGeometry) {
@@ -1161,7 +1165,7 @@ void SKSEScaleform_CreateMorphEditor::Invoke(Args * args)
 				if (material)
 					material->SetWireframeColor(DirectX::XMFLOAT4(((colors[i] >> 16) & 0xFF) / 255.0, ((colors[i] >> 8) & 0xFF) / 255.0, (colors[i] & 0xFF) / 255.0, 1.0f));
 
-				if (headPart->type != BGSHeadPart::kTypeFace)
+				if (!headPart->type.any(RE::BGSHeadPart::HeadPartType::kFace))
 					mesh->SetLocked(true);
 
 				mesh->SetTransform(DirectX::XMMatrixTranslation(g_sculptOffsetX, g_sculptOffsetY, g_sculptOffsetZ));
@@ -1173,78 +1177,78 @@ void SKSEScaleform_CreateMorphEditor::Invoke(Args * args)
 	}
 
 	if (animationData) {
-		animationData->overrideFlag = 0;
-		CALL_MEMBER_FN(animationData, Reset)(1.0, 1, 1, 0, 0);
-		FaceGen::GetSingleton()->isReset = 1;
-		UpdateModelFace(rootFaceGen);
+		animationData->exprOverride = 0;
+		animationData->Reset(1.0f, true, true, false, false);
+		RE::BSFaceGenManager::GetSingleton()->isReset = 1;
+		SKEE::UpdateModelFace(rootFaceGen);
 	}
 
-	args->movie->CreateObject(args->result);
-	RegisterNumber(args->result, "width", initParams.viewportWidth);
-	RegisterNumber(args->result, "height", initParams.viewportHeight);
+	a_params.movie->CreateObject(a_params.retVal);
+	RegisterNumber(a_params.retVal, "width", initParams.viewportWidth);
+	RegisterNumber(a_params.retVal, "height", initParams.viewportHeight);
 }
 
-void SKSEScaleform_ReleaseMorphEditor::Invoke(Args * args)
+void SKSEScaleform_ReleaseMorphEditor::Call(RE::GFxFunctionHandler::Params& a_params)
 {
 	g_World.Release();
 	delete g_Device;
 	g_Device = nullptr;
 }
 
-void SKSEScaleform_BeginRotateMesh::Invoke(Args * args)
+void SKSEScaleform_BeginRotateMesh::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	ASSERT(args->numArgs >= 2);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_Number);
-	ASSERT(args->args[1].GetType() == GFxValue::kType_Number);
+	assert(a_params.argCount >= 2);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kNumber);
+	assert(a_params.args[1].GetType() == RE::GFxValue::ValueType::kNumber);
 
-	g_Camera.OnRotateBegin(args->args[0].GetNumber(), args->args[1].GetNumber());
+	g_Camera.OnRotateBegin(a_params.args[0].GetNumber(), a_params.args[1].GetNumber());
 };
 
-void SKSEScaleform_DoRotateMesh::Invoke(Args * args)
+void SKSEScaleform_DoRotateMesh::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	ASSERT(args->numArgs >= 2);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_Number);
-	ASSERT(args->args[1].GetType() == GFxValue::kType_Number);
+	assert(a_params.argCount >= 2);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kNumber);
+	assert(a_params.args[1].GetType() == RE::GFxValue::ValueType::kNumber);
 
-	g_Camera.OnRotate(args->args[0].GetNumber(), args->args[1].GetNumber());
+	g_Camera.OnRotate(a_params.args[0].GetNumber(), a_params.args[1].GetNumber());
 };
 
-void SKSEScaleform_EndRotateMesh::Invoke(Args * args)
+void SKSEScaleform_EndRotateMesh::Call(RE::GFxFunctionHandler::Params& a_params)
 {
 	g_Camera.OnRotateEnd();
 };
 
-void SKSEScaleform_BeginPanMesh::Invoke(Args * args)
+void SKSEScaleform_BeginPanMesh::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	ASSERT(args->numArgs >= 2);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_Number);
-	ASSERT(args->args[1].GetType() == GFxValue::kType_Number);
+	assert(a_params.argCount >= 2);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kNumber);
+	assert(a_params.args[1].GetType() == RE::GFxValue::ValueType::kNumber);
 
-	g_Camera.OnMoveBegin(args->args[0].GetNumber(), args->args[1].GetNumber());
+	g_Camera.OnMoveBegin(a_params.args[0].GetNumber(), a_params.args[1].GetNumber());
 };
 
-void SKSEScaleform_DoPanMesh::Invoke(Args * args)
+void SKSEScaleform_DoPanMesh::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	ASSERT(args->numArgs >= 2);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_Number);
-	ASSERT(args->args[1].GetType() == GFxValue::kType_Number);
+	assert(a_params.argCount >= 2);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kNumber);
+	assert(a_params.args[1].GetType() == RE::GFxValue::ValueType::kNumber);
 
-	g_Camera.OnMove(args->args[0].GetNumber(), args->args[1].GetNumber());
+	g_Camera.OnMove(a_params.args[0].GetNumber(), a_params.args[1].GetNumber());
 };
 
-void SKSEScaleform_EndPanMesh::Invoke(Args * args)
+void SKSEScaleform_EndPanMesh::Call(RE::GFxFunctionHandler::Params& a_params)
 {
 	g_Camera.OnMoveEnd();
 };
 
-void SKSEScaleform_BeginPaintMesh::Invoke(Args * args)
+void SKSEScaleform_BeginPaintMesh::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	ASSERT(args->numArgs >= 2);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_Number);
-	ASSERT(args->args[1].GetType() == GFxValue::kType_Number);
+	assert(a_params.argCount >= 2);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kNumber);
+	assert(a_params.args[1].GetType() == RE::GFxValue::ValueType::kNumber);
 
-	SInt32 x = args->args[0].GetNumber();
-	SInt32 y = args->args[1].GetNumber();
+	std::int32_t x = a_params.args[0].GetNumber();
+	std::int32_t y = a_params.args[1].GetNumber();
 
 	bool hitMesh = false;
 
@@ -1256,17 +1260,17 @@ void SKSEScaleform_BeginPaintMesh::Invoke(Args * args)
 			hitMesh = true;
 	}
 
-	args->result->SetBool(hitMesh);
+	a_params.retVal->SetBoolean(hitMesh);
 };
 
-void SKSEScaleform_DoPaintMesh::Invoke(Args * args)
+void SKSEScaleform_DoPaintMesh::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	ASSERT(args->numArgs >= 2);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_Number);
-	ASSERT(args->args[1].GetType() == GFxValue::kType_Number);
+	assert(a_params.argCount >= 2);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kNumber);
+	assert(a_params.args[1].GetType() == RE::GFxValue::ValueType::kNumber);
 
-	SInt32 x = args->args[0].GetNumber();
-	SInt32 y = args->args[1].GetNumber();
+	std::int32_t x = a_params.args[0].GetNumber();
+	std::int32_t y = a_params.args[1].GetNumber();
 
 	CDXBrush * brush = g_World.GetCurrentBrush();
 	if (brush) {
@@ -1276,21 +1280,21 @@ void SKSEScaleform_DoPaintMesh::Invoke(Args * args)
 	}
 };
 
-void SKSEScaleform_EndPaintMesh::Invoke(Args * args)
+void SKSEScaleform_EndPaintMesh::Call(RE::GFxFunctionHandler::Params& a_params)
 {
 	CDXBrush * brush = g_World.GetCurrentBrush();
 	if(brush)
 		brush->EndStroke();
 };
 
-void SKSEScaleform_DoHoverMesh::Invoke(Args * args)
+void SKSEScaleform_DoHoverMesh::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	ASSERT(args->numArgs >= 2);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_Number);
-	ASSERT(args->args[1].GetType() == GFxValue::kType_Number);
+	assert(a_params.argCount >= 2);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kNumber);
+	assert(a_params.args[1].GetType() == RE::GFxValue::ValueType::kNumber);
 
-	SInt32 x = args->args[0].GetNumber();
-	SInt32 y = args->args[1].GetNumber();
+	std::int32_t x = a_params.args[0].GetNumber();
+	std::int32_t y = a_params.args[1].GetNumber();
 
 	CDXBrush * brush = g_World.GetCurrentBrush();
 	if (brush) {
@@ -1299,37 +1303,37 @@ void SKSEScaleform_DoHoverMesh::Invoke(Args * args)
 	}
 };
 
-void SKSEScaleform_GetCurrentBrush::Invoke(Args * args)
+void SKSEScaleform_GetCurrentBrush::Call(RE::GFxFunctionHandler::Params& a_params)
 {
 	CDXBrush * brush = g_World.GetCurrentBrush();
 	if (brush)
-		args->result->SetNumber(brush->GetType());
+		a_params.retVal->SetNumber(brush->GetType());
 	else
-		args->result->SetNull();
+		a_params.retVal->SetNull();
 }
 
-void SKSEScaleform_SetCurrentBrush::Invoke(Args * args)
+void SKSEScaleform_SetCurrentBrush::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	ASSERT(args->numArgs >= 1);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_Number);
+	assert(a_params.argCount >= 1);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kNumber);
 
-	CDXBrush::BrushType brushType = (CDXBrush::BrushType)(UInt32)args->args[0].GetNumber();
+	CDXBrush::BrushType brushType = (CDXBrush::BrushType)(std::uint32_t)a_params.args[0].GetNumber();
 	CDXBrush * brush = g_World.GetBrush(brushType);
 	if (brush)
 		g_World.SetCurrentBrush(brushType);
 
-	args->result->SetBool(brush != NULL);
+	a_params.retVal->SetBoolean(brush != NULL);
 }
 
-void SKSEScaleform_GetBrushes::Invoke(Args * args)
+void SKSEScaleform_GetBrushes::Call(RE::GFxFunctionHandler::Params& a_params)
 {
 	using namespace ScaleformUtils;
 
-	args->movie->CreateArray(args->result);
+	a_params.movie->CreateArray(a_params.retVal);
 
 	for (const auto& brush : g_World.GetBrushes()) {
-		GFxValue object;
-		args->movie->CreateObject(&object);
+		RE::GFxValue object{};
+		a_params.movie->CreateObject(&object);
 		RegisterNumber(&object, "type", brush->GetType());
 		RegisterNumber(&object, "radius", brush->GetProperty(CDXBrush::kBrushProperty_Radius, CDXBrush::kBrushPropertyValue_Value));
 		RegisterNumber(&object, "radiusMin", brush->GetProperty(CDXBrush::kBrushProperty_Radius, CDXBrush::kBrushPropertyValue_Min));
@@ -1344,52 +1348,52 @@ void SKSEScaleform_GetBrushes::Invoke(Args * args)
 		RegisterNumber(&object, "falloffMax", brush->GetProperty(CDXBrush::kBrushProperty_Falloff, CDXBrush::kBrushPropertyValue_Max));
 		RegisterNumber(&object, "falloffInterval", brush->GetProperty(CDXBrush::kBrushProperty_Falloff, CDXBrush::kBrushPropertyValue_Interval));
 		RegisterNumber(&object, "mirror", brush->IsMirror() ? 1.0 : 0.0);
-		args->result->PushBack(&object);
+		a_params.retVal->PushBack(object);
 	}
 }
 
-void SKSEScaleform_SetBrushData::Invoke(Args * args)
+void SKSEScaleform_SetBrushData::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	ASSERT(args->numArgs >= 2);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_Number);
-	ASSERT(args->args[1].GetType() == GFxValue::kType_Object);
+	assert(a_params.argCount >= 2);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kNumber);
+	assert(a_params.args[1].GetType() == RE::GFxValue::ValueType::kObject);
 
-	CDXBrush::BrushType brushType = (CDXBrush::BrushType)(UInt32)args->args[0].GetNumber();
+	CDXBrush::BrushType brushType = (CDXBrush::BrushType)(std::uint32_t)a_params.args[0].GetNumber();
 	CDXBrush * brush = g_World.GetBrush(brushType);
 	if (brush) {
-		GFxValue radius;
-		args->args[1].GetMember("radius", &radius);
-		GFxValue strength;
-		args->args[1].GetMember("strength", &strength);
-		GFxValue falloff;
-		args->args[1].GetMember("falloff", &falloff);
-		GFxValue mirror;
-		args->args[1].GetMember("mirror", &mirror);
+		RE::GFxValue radius{};
+		a_params.args[1].GetMember("radius", &radius);
+		RE::GFxValue strength{};
+		a_params.args[1].GetMember("strength", &strength);
+		RE::GFxValue falloff{};
+		a_params.args[1].GetMember("falloff", &falloff);
+		RE::GFxValue mirror{};
+		a_params.args[1].GetMember("mirror", &mirror);
 
 		brush->SetProperty(CDXBrush::kBrushProperty_Radius, CDXBrush::kBrushPropertyValue_Value, radius.GetNumber());
 		brush->SetProperty(CDXBrush::kBrushProperty_Strength, CDXBrush::kBrushPropertyValue_Value, strength.GetNumber());
 		brush->SetProperty(CDXBrush::kBrushProperty_Falloff, CDXBrush::kBrushPropertyValue_Value, falloff.GetNumber());
 		brush->SetMirror(mirror.GetNumber() > 0.0 ? true : false);
 
-		args->result->SetBool(true);
+		a_params.retVal->SetBoolean(true);
 	}
 	else {
-		args->result->SetBool(false);
+		a_params.retVal->SetBoolean(false);
 	}
 }
 
-void SKSEScaleform_GetMeshes::Invoke(Args * args)
+void SKSEScaleform_GetMeshes::Call(RE::GFxFunctionHandler::Params& a_params)
 {
 	using namespace ScaleformUtils;
 
-	args->movie->CreateArray(args->result);
+	a_params.movie->CreateArray(a_params.retVal);
 
-	for (UInt32 i = 0; i < g_World.GetNumMeshes(); i++) {
+	for (std::uint32_t i = 0; i < g_World.GetNumMeshes(); i++) {
 		CDXMesh * mesh = g_World.GetNthMesh(i);
 		if (mesh && mesh->IsEditable()) {
-			GFxValue object;
-			args->movie->CreateObject(&object);
-			RegisterString(&object, args->movie, "name", mesh->GetName());
+			RE::GFxValue object{};
+			a_params.movie->CreateObject(&object);
+			RegisterString(&object, a_params.movie, "name", mesh->GetName());
 			RegisterNumber(&object, "meshIndex", i);
 			RegisterBool(&object, "wireframe", mesh->ShowWireframe());
 			RegisterBool(&object, "locked", mesh->IsLocked());
@@ -1400,191 +1404,216 @@ void SKSEScaleform_GetMeshes::Invoke(Args * args)
 			auto material = mesh->GetMaterial();
 			if (material) {
 				DirectX::XMFLOAT4 fColor = material->GetWireframeColor();
-				UInt32 color = 0xFF000000 | (UInt32)(fColor.x * 255) << 16 | (UInt32)(fColor.y * 255) << 8 | (UInt32)(fColor.z * 255);
+				std::uint32_t color = 0xFF000000 | (std::uint32_t)(fColor.x * 255) << 16 | (std::uint32_t)(fColor.y * 255) << 8 | (std::uint32_t)(fColor.z * 255);
 				RegisterNumber(&object, "wfColor", color);
 			}
 
-			args->result->PushBack(&object);
+			a_params.retVal->PushBack(object);
 		}
 	}
 }
 
-void SKSEScaleform_SetMeshData::Invoke(Args * args)
+void SKSEScaleform_SetMeshData::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	ASSERT(args->numArgs >= 2);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_Number);
-	ASSERT(args->args[1].GetType() == GFxValue::kType_Object);
+	assert(a_params.argCount >= 2);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kNumber);
+	assert(a_params.args[1].GetType() == RE::GFxValue::ValueType::kObject);
 
-	UInt32 i = (UInt32)args->args[0].GetNumber();
+	std::uint32_t i = (std::uint32_t)a_params.args[0].GetNumber();
 
 	CDXEditableMesh * mesh = dynamic_cast<CDXEditableMesh*>(g_World.GetNthMesh(i));
 	if (mesh) {
-		GFxValue wireframe;
-		args->args[1].GetMember("wireframe", &wireframe);
-		GFxValue locked;
-		args->args[1].GetMember("locked", &locked);
-		GFxValue visible;
-		args->args[1].GetMember("visible", &visible);
-		GFxValue wfColor;
-		args->args[1].GetMember("wfColor", &wfColor);
+		RE::GFxValue wireframe{};
+		a_params.args[1].GetMember("wireframe", &wireframe);
+		RE::GFxValue locked{};
+		a_params.args[1].GetMember("locked", &locked);
+		RE::GFxValue visible{};
+		a_params.args[1].GetMember("visible", &visible);
+		RE::GFxValue wfColor{};
+		a_params.args[1].GetMember("wfColor", &wfColor);
 
 		mesh->SetLocked(locked.GetBool());
 		mesh->SetShowWireframe(wireframe.GetBool());
 		mesh->SetVisible(visible.GetBool());
 		auto material = mesh->GetMaterial();
 		if (material) {
-			UInt32 color = wfColor.GetNumber();
+			std::uint32_t color = wfColor.GetNumber();
 			material->SetWireframeColor(DirectX::XMFLOAT4(((color >> 16) & 0xFF) / 255.0, ((color >> 8) & 0xFF) / 255.0, (color & 0xFF) / 255.0, 1.0f));
 		}
 
-		args->result->SetBool(true);
+		a_params.retVal->SetBoolean(true);
 	}
 	else {
-		args->result->SetBool(false);
+		a_params.retVal->SetBoolean(false);
 	}
 }
 
-void SKSEScaleform_GetActionLimit::Invoke(Args * args)
+void SKSEScaleform_GetActionLimit::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	args->result->SetNumber(g_undoStack.GetLimit());
+	a_params.retVal->SetNumber(g_undoStack.GetLimit());
 }
 
-void SKSEScaleform_UndoAction::Invoke(Args * args)
+void SKSEScaleform_UndoAction::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	args->result->SetNumber(g_undoStack.Undo(true));
+	a_params.retVal->SetNumber(g_undoStack.Undo(true));
 }
 
-void SKSEScaleform_RedoAction::Invoke(Args * args)
+void SKSEScaleform_RedoAction::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	args->result->SetNumber(g_undoStack.Redo(true));
+	a_params.retVal->SetNumber(g_undoStack.Redo(true));
 }
 
-void SKSEScaleform_GoToAction::Invoke(Args * args)
+void SKSEScaleform_GoToAction::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	ASSERT(args->numArgs >= 1);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_Number);
+	assert(a_params.argCount >= 1);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kNumber);
 
-	SInt32 previous = g_undoStack.GetIndex();
-	SInt32 result = g_undoStack.GoTo(args->args[0].GetNumber(), true);
+	std::int32_t previous = g_undoStack.GetIndex();
+	std::int32_t result = g_undoStack.GoTo(a_params.args[0].GetNumber(), true);
 
 	if (result != previous) {
-		Actor * actor = g_World.GetWorkingActor();
+		RE::Actor * actor = g_World.GetWorkingActor();
 		if (actor) {
-			NiNode * rootFaceGen = actor->GetFaceGenNiNode();
-			UpdateModelFace(rootFaceGen);
+			RE::NiNode * rootFaceGen = GetFaceGenNiNode(actor);
+			SKEE::UpdateModelFace(rootFaceGen);
 		}
 	}
 
-	args->result->SetNumber(result);
+	a_params.retVal->SetNumber(result);
 }
 
-void SKSEScaleform_GetMeshCameraRadius::Invoke(Args * args)
+void SKSEScaleform_GetMeshCameraRadius::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	args->result->SetNumber(g_Camera.GetRadius());
+	a_params.retVal->SetNumber(g_Camera.GetRadius());
 }
 
-void SKSEScaleform_SetMeshCameraRadius::Invoke(Args * args)
+void SKSEScaleform_SetMeshCameraRadius::Call(RE::GFxFunctionHandler::Params& a_params)
 {
-	ASSERT(args->numArgs >= 1);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_Number);
+	assert(a_params.argCount >= 1);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kNumber);
 
-	g_Camera.SetRadius(args->args[0].GetNumber());
+	g_Camera.SetRadius(a_params.args[0].GetNumber());
 	g_Camera.Update();
 }
 
-#include <Shlwapi.h>
-
-void ReadFileDirectory(const char * lpFolder, const char ** lpFilePattern, UInt32 numPatterns, std::function<void(char*, WIN32_FIND_DATA &, bool)> file)
+namespace {
+// std-filesystem path join into a fixed buffer (replaces shlwapi PathCombine).
+void SKEEPathCombine(char (&dst)[REX::W32::MAX_PATH], const char* dir, const char* file)
 {
-	char szFullPattern[MAX_PATH];
-	WIN32_FIND_DATA FindFileData;
-	HANDLE hFindFile;
+	auto p = std::filesystem::path(dir) / file;
+	std::snprintf(dst, sizeof(dst), "%s", p.string().c_str());
+}
+
+// REX::W32::FILETIME (100ns ticks since 1601-01-01, UTC) -> Flash Date params [7].
+void FileTimeToDateParams(const REX::W32::FILETIME& ft, double* out /* [7] */)
+{
+	std::uint64_t ticks = static_cast<std::uint64_t>(ft);
+	// 100ns ticks since 1601-01-01 -> Unix seconds (since 1970-01-01).
+	const std::int64_t kFiletimeToUnixOffset = 11644473600LL;  // seconds between 1601 and 1970
+	std::time_t t = static_cast<std::time_t>(static_cast<std::int64_t>(ticks / 10000000ULL) - kFiletimeToUnixOffset);
+	std::tm tm{};
+	gmtime_s(&tm, &t);  // FILETIME is UTC
+	out[0] = static_cast<double>(tm.tm_year + 1900);  // year
+	out[1] = static_cast<double>(tm.tm_mon);          // Flash month is 0-11 (tm_mon already is)
+	out[2] = static_cast<double>(tm.tm_mday);         // day
+	out[3] = static_cast<double>(tm.tm_hour);         // hour
+	out[4] = static_cast<double>(tm.tm_min);          // minute
+	out[5] = static_cast<double>(tm.tm_sec);          // second
+	out[6] = static_cast<double>((ticks % 10000000ULL) / 10000ULL);  // milliseconds
+}
+}
+
+void ReadFileDirectory(const char * lpFolder, const char ** lpFilePattern, std::uint32_t numPatterns, std::function<void(char*, REX::W32::WIN32_FIND_DATAA &, bool)> file)
+{
+	char szFullPattern[REX::W32::MAX_PATH];
+	REX::W32::WIN32_FIND_DATAA FindFileData;
+	REX::W32::HANDLE hFindFile;
 	// first we are going to process any subdirectories
-	PathCombine(szFullPattern, lpFolder, "*");
-	hFindFile = FindFirstFile(szFullPattern, &FindFileData);
-	if (hFindFile != INVALID_HANDLE_VALUE)
+	SKEEPathCombine(szFullPattern, lpFolder, "*");
+	hFindFile = REX::W32::FindFirstFileA(szFullPattern, &FindFileData);
+	if (hFindFile != REX::W32::INVALID_HANDLE_VALUE)
 	{
 		do
 		{
-			if (FindFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+			if (FindFileData.fileAttributes & REX::W32::FILE_ATTRIBUTE_DIRECTORY)
 			{
 				// found a subdirectory; recurse into it
-				PathCombine(szFullPattern, lpFolder, FindFileData.cFileName);
-				if (FindFileData.cFileName[0] == '.')
+				SKEEPathCombine(szFullPattern, lpFolder, FindFileData.fileName);
+				if (FindFileData.fileName[0] == '.')
 					continue;
 
 				file(szFullPattern, FindFileData, true);
 			}
-		} while (FindNextFile(hFindFile, &FindFileData));
-		FindClose(hFindFile);
+		} while (REX::W32::FindNextFileA(hFindFile, &FindFileData));
+		REX::W32::FindClose(hFindFile);
 	}
 	// now we are going to look for the matching files
-	for (UInt32 i = 0; i < numPatterns; i++)
+	for (std::uint32_t i = 0; i < numPatterns; i++)
 	{
-		PathCombine(szFullPattern, lpFolder, lpFilePattern[i]);
-		hFindFile = FindFirstFile(szFullPattern, &FindFileData);
-		if (hFindFile != INVALID_HANDLE_VALUE)
+		SKEEPathCombine(szFullPattern, lpFolder, lpFilePattern[i]);
+		hFindFile = REX::W32::FindFirstFileA(szFullPattern, &FindFileData);
+		if (hFindFile != REX::W32::INVALID_HANDLE_VALUE)
 		{
 			do
 			{
-				if (!(FindFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+				if (!(FindFileData.fileAttributes & REX::W32::FILE_ATTRIBUTE_DIRECTORY))
 				{
 					// found a file; do something with it
-					PathCombine(szFullPattern, lpFolder, FindFileData.cFileName);
+					SKEEPathCombine(szFullPattern, lpFolder, FindFileData.fileName);
 					file(szFullPattern, FindFileData, false);
 				}
-			} while (FindNextFile(hFindFile, &FindFileData));
-			FindClose(hFindFile);
+			} while (REX::W32::FindNextFileA(hFindFile, &FindFileData));
+			REX::W32::FindClose(hFindFile);
 		}
 	}
 }
 
-void SKSEScaleform_GetExternalFiles::Invoke(Args * args)
+void SKSEScaleform_GetExternalFiles::Call(RE::GFxFunctionHandler::Params& a_params)
 {
 	using namespace ScaleformUtils;
 
-	ASSERT(args->numArgs >= 1);
-	ASSERT(args->args[0].GetType() == GFxValue::kType_String);
-	ASSERT(args->args[1].GetType() == GFxValue::kType_Array);
+	assert(a_params.argCount >= 1);
+	assert(a_params.args[0].GetType() == RE::GFxValue::ValueType::kString);
+	assert(a_params.args[1].GetType() == RE::GFxValue::ValueType::kArray);
 
-	const char * path = args->args[0].GetString();
+	const char * path = a_params.args[0].GetString();
 	
-	UInt32 numPatterns = args->args[1].GetArraySize();
+	std::uint32_t numPatterns = a_params.args[1].GetArraySize();
 
-	const char ** patterns = (const char **)ScaleformHeap_Allocate(numPatterns * sizeof(const char*));
-	for (UInt32 i = 0; i < numPatterns; i++) {
-		GFxValue str;
-		args->args[1].GetElement(i, &str);
+	const char ** patterns = (const char **)RE::GMemory::Alloc(numPatterns * sizeof(const char*));
+	for (std::uint32_t i = 0; i < numPatterns; i++) {
+		RE::GFxValue str{};
+		a_params.args[1].GetElement(i, &str);
 		patterns[i] = str.GetString();
 	}
 
-	args->movie->CreateArray(args->result);
+	a_params.movie->CreateArray(a_params.retVal);
 
-	ReadFileDirectory(path, patterns, numPatterns, [args](char* dirPath, WIN32_FIND_DATA & fileData, bool dir)
+	ReadFileDirectory(path, patterns, numPatterns, [&a_params](char* dirPath, REX::W32::WIN32_FIND_DATAA & fileData, bool dir)
 	{
-		GFxValue fileInfo;
-		args->movie->CreateObject(&fileInfo);
-		RegisterString(&fileInfo, args->movie, "path", dirPath);
-		RegisterString(&fileInfo, args->movie, "name", fileData.cFileName);
-		UInt64 fileSize = (UInt64)fileData.nFileSizeHigh << 32 | fileData.nFileSizeLow;
+		RE::GFxValue fileInfo{};
+		a_params.movie->CreateObject(&fileInfo);
+		RegisterString(&fileInfo, a_params.movie, "path", dirPath);
+		RegisterString(&fileInfo, a_params.movie, "name", fileData.fileName);
+		std::uint64_t fileSize = (std::uint64_t)fileData.fileSizeHi << 32 | fileData.fileSizeLo;
 		RegisterNumber(&fileInfo, "size", fileSize);
-		SYSTEMTIME sysTime;
-		FileTimeToSystemTime(&fileData.ftLastWriteTime, &sysTime);
-		GFxValue date;
-		GFxValue params[7];
-		params[0].SetNumber(sysTime.wYear);
-		params[1].SetNumber(sysTime.wMonth - 1); // Flash Month is 0-11, System time is 1-12
-		params[2].SetNumber(sysTime.wDay);
-		params[3].SetNumber(sysTime.wHour);
-		params[4].SetNumber(sysTime.wMinute);
-		params[5].SetNumber(sysTime.wSecond);
-		params[6].SetNumber(sysTime.wMilliseconds);
-		args->movie->CreateObject(&date, "Date", params, 7);
-		fileInfo.SetMember("lastModified", &date);
+		double dateParams[7];
+		FileTimeToDateParams(fileData.lastWriteTime, dateParams);
+		RE::GFxValue date{};
+		RE::GFxValue params[7] = {};
+		params[0].SetNumber(dateParams[0]);
+		params[1].SetNumber(dateParams[1]); // Flash month is 0-11 (already converted)
+		params[2].SetNumber(dateParams[2]);
+		params[3].SetNumber(dateParams[3]);
+		params[4].SetNumber(dateParams[4]);
+		params[5].SetNumber(dateParams[5]);
+		params[6].SetNumber(dateParams[6]);
+		a_params.movie->CreateObject(&date, "Date", params, 7);
+		fileInfo.SetMember("lastModified", date);
 		RegisterBool(&fileInfo, "directory", dir);
-		args->result->PushBack(&fileInfo);
+		a_params.retVal->PushBack(fileInfo);
 	});
 
-	ScaleformHeap_Free(patterns);
+	RE::GMemory::Free(patterns);
 }
 

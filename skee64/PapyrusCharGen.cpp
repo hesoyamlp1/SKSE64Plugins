@@ -1,27 +1,9 @@
 #include "PapyrusCharGen.h"
+#include "SKEETasks.h"
+#include <filesystem>
 #include "FaceMorphInterface.h"
 #include "NifUtils.h"
-
-#include "common/IFileStream.h"
-
-#include "skse64/PluginAPI.h"
-
-#include "skse64/GameFormComponents.h"
-#include "skse64/GameData.h"
-#include "skse64/GameRTTI.h"
-#include "skse64/GameForms.h"
-#include "skse64/GameObjects.h"
-#include "skse64/GameReferences.h"
-
-#include "skse64/NiGeometry.h"
-#include "skse64/NiNodes.h"
-#include "skse64/NiMaterial.h"
-#include "skse64/NiProperties.h"
-
-#include "skse64/PapyrusVM.h"
-#include "skse64/PapyrusNativeFunctions.h"
-
-#include "common/ICriticalSection.h"
+#include "Win32ErrorCodes.h"
 
 #include "OverrideVariant.h"
 #include "OverrideInterface.h"
@@ -31,12 +13,14 @@
 #include "PresetInterface.h"
 
 #include "FileUtils.h"
+#include <cstdint>
+
 
 extern FaceMorphInterface g_morphInterface;
 extern bool			g_externalHeads;
 extern bool			g_enableHeadExport;
 
-extern SKSETaskInterface				* g_task;
+extern const SKSE::TaskInterface* g_task;
 extern OverrideInterface				g_overrideInterface;
 extern NiTransformInterface				g_transformInterface;
 extern BodyMorphInterface				g_bodyMorphInterface;
@@ -45,71 +29,71 @@ extern PresetInterface					g_presetInterface;
 
 namespace papyrusCharGen
 {
-	void SaveCharacter(StaticFunctionTag*, BSFixedString fileName)
+	void SaveCharacter(RE::StaticFunctionTag*, RE::BSFixedString fileName)
 	{
-		char slotPath[MAX_PATH];
-		sprintf_s(slotPath, "Data\\SKSE\\Plugins\\CharGen\\Exported\\%s.jslot", fileName.data);
-		char tintPath[MAX_PATH];
+		char slotPath[REX::W32::MAX_PATH];
+		sprintf_s(slotPath, "Data\\SKSE\\Plugins\\CharGen\\Exported\\%s.jslot", fileName.c_str());
+		char tintPath[REX::W32::MAX_PATH];
 		sprintf_s(tintPath, "Data\\Textures\\CharGen\\Exported\\");
 
-		g_presetInterface.SaveJsonPreset(slotPath, (*g_thePlayer));
+		g_presetInterface.SaveJsonPreset(slotPath, RE::PlayerCharacter::GetSingleton());
 
 		if(g_enableHeadExport)
-			g_task->AddTask(new SKSETaskExportTintMask(tintPath, fileName.data));
+			SKEE_AddTask(g_task, new SKSETaskExportTintMask(tintPath, fileName.c_str()));
 	}
 
-	void DeleteCharacter(StaticFunctionTag*, BSFixedString fileName)
+	void DeleteCharacter(RE::StaticFunctionTag*, RE::BSFixedString fileName)
 	{
-		char tempPath[MAX_PATH];
-		sprintf_s(tempPath, "Data\\SKSE\\Plugins\\CharGen\\Exported\\%s.slot", fileName.data);
-		if (!DeleteFile(tempPath)) {
-			UInt32 lastError = GetLastError();
+		char tempPath[REX::W32::MAX_PATH];
+		sprintf_s(tempPath, "Data\\SKSE\\Plugins\\CharGen\\Exported\\%s.slot", fileName.c_str());
+		if (!std::filesystem::remove(tempPath)) {
+			std::uint32_t lastError = REX::W32::GetLastError();
 			switch (lastError) {
-				case ERROR_ACCESS_DENIED:
-				_ERROR("%s - access denied could not delete %s", __FUNCTION__, tempPath);
+				case skee::W32::ERROR_ACCESS_DENIED:
+				SKSE::log::error("{} - access denied could not delete {}", __FUNCTION__, tempPath);
 				break;
 			}
 		}
-		sprintf_s(tempPath, "Data\\SKSE\\Plugins\\CharGen\\Exported\\%s.jslot", fileName.data);
-		if (!DeleteFile(tempPath)) {
-			UInt32 lastError = GetLastError();
+		sprintf_s(tempPath, "Data\\SKSE\\Plugins\\CharGen\\Exported\\%s.jslot", fileName.c_str());
+		if (!std::filesystem::remove(tempPath)) {
+			std::uint32_t lastError = REX::W32::GetLastError();
 			switch (lastError) {
-			case ERROR_ACCESS_DENIED:
-				_ERROR("%s - access denied could not delete %s", __FUNCTION__, tempPath);
+			case skee::W32::ERROR_ACCESS_DENIED:
+				SKSE::log::error("{} - access denied could not delete {}", __FUNCTION__, tempPath);
 				break;
 			}
 		}
-		sprintf_s(tempPath, "Data\\Textures\\CharGen\\Exported\\%s.dds", fileName.data);
-		if (!DeleteFile(tempPath)) {
-			UInt32 lastError = GetLastError();
+		sprintf_s(tempPath, "Data\\Textures\\CharGen\\Exported\\%s.dds", fileName.c_str());
+		if (!std::filesystem::remove(tempPath)) {
+			std::uint32_t lastError = REX::W32::GetLastError();
 			switch (lastError) {
-			case ERROR_ACCESS_DENIED:
-				_ERROR("%s - access denied could not delete %s", __FUNCTION__, tempPath);
+			case skee::W32::ERROR_ACCESS_DENIED:
+				SKSE::log::error("{} - access denied could not delete {}", __FUNCTION__, tempPath);
 				break;
 			}
 		}
-		sprintf_s(tempPath, "Data\\Meshes\\CharGen\\Exported\\%s.nif", fileName.data);
-		if (!DeleteFile(tempPath)) {
-			UInt32 lastError = GetLastError();
+		sprintf_s(tempPath, "Data\\Meshes\\CharGen\\Exported\\%s.nif", fileName.c_str());
+		if (!std::filesystem::remove(tempPath)) {
+			std::uint32_t lastError = REX::W32::GetLastError();
 			switch (lastError) {
-			case ERROR_ACCESS_DENIED:
-				_ERROR("%s - access denied could not delete %s", __FUNCTION__, tempPath);
+			case skee::W32::ERROR_ACCESS_DENIED:
+				SKSE::log::error("{} - access denied could not delete {}", __FUNCTION__, tempPath);
 				break;
 			}
 		}
 	}
 	
-	SInt32 DeleteFaceGenData(StaticFunctionTag*, TESNPC * npc)
+	std::int32_t DeleteFaceGenData(RE::StaticFunctionTag*, RE::TESNPC * npc)
 	{
-		SInt32 ret = 0;
+		std::int32_t ret = 0;
 		if (!npc) {
-			_ERROR("%s - invalid actorbase.", __FUNCTION__);
+			SKSE::log::error("{} - invalid actorbase.", __FUNCTION__);
 			return -1;
 		}
 
-		ModInfo * modInfo = GetModInfoByFormID(npc->formID);
+		const RE::TESFile* modInfo = GetModInfoByFormID(npc->formID);
 		if (!modInfo) {
-			_ERROR("%s - failed to find mod for %08X.", __FUNCTION__, npc->formID);
+			SKSE::log::error("{} - failed to find mod for {:08X}.", __FUNCTION__, npc->formID);
 			return false;
 		}
 
@@ -119,35 +103,35 @@ namespace papyrusCharGen
 			kReturnDeletedDDS = 2
 		};
 		
-		char tempPath[MAX_PATH];
-		sprintf_s(tempPath, "Data\\Meshes\\Actors\\Character\\FaceGenData\\FaceGeom\\%s\\%08X.nif", modInfo->name, modInfo->IsLight() ? (npc->formID & 0xFFF) : (npc->formID & 0xFFFFFF));
-		if (!DeleteFile(tempPath)) {
-			UInt32 lastError = GetLastError();
+		char tempPath[REX::W32::MAX_PATH];
+		sprintf_s(tempPath, "Data\\Meshes\\Actors\\Character\\FaceGenData\\FaceGeom\\%s\\%08X.nif", modInfo->GetFilename().data(), modInfo->IsLight() ? (npc->formID & 0xFFF) : (npc->formID & 0xFFFFFF));
+		if (!std::filesystem::remove(tempPath)) {
+			std::uint32_t lastError = REX::W32::GetLastError();
 			switch (lastError) {
-			case ERROR_FILE_NOT_FOUND: // We don't need to display a message for this
+			case skee::W32::ERROR_FILE_NOT_FOUND: // We don't need to display a message for this
 				break;
-			case ERROR_ACCESS_DENIED:
-				_ERROR("%s - access denied could not delete %s", __FUNCTION__, tempPath);
+			case skee::W32::ERROR_ACCESS_DENIED:
+				SKSE::log::error("{} - access denied could not delete {}", __FUNCTION__, tempPath);
 				break;
 			default:
-				_ERROR("%s - error deleting file %s (Error %d)", __FUNCTION__, tempPath, lastError);
+				SKSE::log::error("{} - error deleting file {} (Error {})", __FUNCTION__, tempPath, lastError);
 				break;
 			}
 		}
 		else
 			ret |= kReturnDeletedNif;
 
-		sprintf_s(tempPath, "Data\\Textures\\Actors\\Character\\FaceGenData\\FaceTint\\%s\\%08X.dds", modInfo->name, modInfo->IsLight() ? (npc->formID & 0xFFF) : (npc->formID & 0xFFFFFF));
-		if (!DeleteFile(tempPath)) {
-			UInt32 lastError = GetLastError();
+		sprintf_s(tempPath, "Data\\Textures\\Actors\\Character\\FaceGenData\\FaceTint\\%s\\%08X.dds", modInfo->GetFilename().data(), modInfo->IsLight() ? (npc->formID & 0xFFF) : (npc->formID & 0xFFFFFF));
+		if (!std::filesystem::remove(tempPath)) {
+			std::uint32_t lastError = REX::W32::GetLastError();
 			switch (lastError) {
-			case ERROR_FILE_NOT_FOUND: // We don't need to display a message for this
+			case skee::W32::ERROR_FILE_NOT_FOUND: // We don't need to display a message for this
 				break;
-			case ERROR_ACCESS_DENIED:
-				_ERROR("%s - access denied could not delete %s", __FUNCTION__, tempPath);
+			case skee::W32::ERROR_ACCESS_DENIED:
+				SKSE::log::error("{} - access denied could not delete {}", __FUNCTION__, tempPath);
 				break;
 			default:
-				_ERROR("%s - error deleting file %s (Error %d)", __FUNCTION__, tempPath, lastError);
+				SKSE::log::error("{} - error deleting file {} (Error {})", __FUNCTION__, tempPath, lastError);
 				break;
 			}
 		}
@@ -157,36 +141,36 @@ namespace papyrusCharGen
 		return ret;
 	}
 	
-	bool LoadCharacterEx(StaticFunctionTag*, Actor * actor, TESRace * race, BSFixedString fileName, UInt32 flags)
+	bool LoadCharacterEx(RE::StaticFunctionTag*, RE::Actor * actor, RE::TESRace * race, RE::BSFixedString fileName, std::uint32_t flags)
 	{
 		if (!actor) {
-			_ERROR("%s - No actor found.", __FUNCTION__);
+			SKSE::log::error("{} - No actor found.", __FUNCTION__);
 			return false;
 		}
 		if (!race) {
-			_ERROR("%s - No race found.", __FUNCTION__);
+			SKSE::log::error("{} - No race found.", __FUNCTION__);
 			return false;
 		}
-		TESNPC * npc = DYNAMIC_CAST(actor->baseForm, TESForm, TESNPC);
+		RE::TESNPC * npc = actor->GetActorBase() ? actor->GetActorBase()->As<RE::TESNPC>() : nullptr;
 		if (!npc) {
-			_ERROR("%s - failed acquire ActorBase.", __FUNCTION__);
+			SKSE::log::error("{} - failed acquire ActorBase.", __FUNCTION__);
 			return false;
 		}
 		
-		char slotPath[MAX_PATH];
-		sprintf_s(slotPath, "SKSE\\Plugins\\CharGen\\Exported\\%s.jslot", fileName.data);
-		char tintPath[MAX_PATH];
-		sprintf_s(tintPath, "Textures\\CharGen\\Exported\\%s.dds", fileName.data);
+		char slotPath[REX::W32::MAX_PATH];
+		sprintf_s(slotPath, "SKSE\\Plugins\\CharGen\\Exported\\%s.jslot", fileName.c_str());
+		char tintPath[REX::W32::MAX_PATH];
+		sprintf_s(tintPath, "Textures\\CharGen\\Exported\\%s.dds", fileName.c_str());
 
 		auto presetData = std::make_shared<PresetData>();
 		bool loadError = g_presetInterface.LoadJsonPreset(slotPath, presetData);
 		if (loadError) {
-			sprintf_s(slotPath, "SKSE\\Plugins\\CharGen\\Exported\\%s.slot", fileName.data);
+			sprintf_s(slotPath, "SKSE\\Plugins\\CharGen\\Exported\\%s.slot", fileName.c_str());
 			loadError = g_presetInterface.LoadBinaryPreset(slotPath, presetData);
 		}
 
 		if (loadError) {
-			_ERROR("%s - failed to load preset.", __FUNCTION__);
+			SKSE::log::error("{} - failed to load preset.", __FUNCTION__);
 			return false;
 		}
 
@@ -197,98 +181,98 @@ namespace papyrusCharGen
 		return true;
 	}
 
-	void SaveExternalCharacter(StaticFunctionTag*, BSFixedString fileName)
+	void SaveExternalCharacter(RE::StaticFunctionTag*, RE::BSFixedString fileName)
 	{
-		char slotPath[MAX_PATH];
-		sprintf_s(slotPath, "Data\\SKSE\\Plugins\\CharGen\\Exported\\%s.jslot", fileName.data);
-		char nifPath[MAX_PATH];
-		sprintf_s(nifPath, "Data\\Meshes\\CharGen\\Exported\\%s.nif", fileName.data);
-		char tintPath[MAX_PATH];
-		sprintf_s(tintPath, "Data\\Textures\\CharGen\\Exported\\%s.dds", fileName.data);
+		char slotPath[REX::W32::MAX_PATH];
+		sprintf_s(slotPath, "Data\\SKSE\\Plugins\\CharGen\\Exported\\%s.jslot", fileName.c_str());
+		char nifPath[REX::W32::MAX_PATH];
+		sprintf_s(nifPath, "Data\\Meshes\\CharGen\\Exported\\%s.nif", fileName.c_str());
+		char tintPath[REX::W32::MAX_PATH];
+		sprintf_s(tintPath, "Data\\Textures\\CharGen\\Exported\\%s.dds", fileName.c_str());
 
-		g_presetInterface.SaveJsonPreset(slotPath, (*g_thePlayer));
+		g_presetInterface.SaveJsonPreset(slotPath, RE::PlayerCharacter::GetSingleton());
 
 		if(g_enableHeadExport)
-			g_task->AddTask(new SKSETaskExportHead((*g_thePlayer), nifPath, tintPath));
+			SKEE_AddTask(g_task, new SKSETaskExportHead(RE::PlayerCharacter::GetSingleton(), nifPath, tintPath));
 	}
 
-	bool LoadExternalCharacterEx(StaticFunctionTag*, Actor * actor, TESRace * race, BSFixedString fileName, UInt32 flags)
+	bool LoadExternalCharacterEx(RE::StaticFunctionTag*, RE::Actor * actor, RE::TESRace * race, RE::BSFixedString fileName, std::uint32_t flags)
 	{
 		if (!actor) {
-			_ERROR("%s - No actor found.", __FUNCTION__);
+			SKSE::log::error("{} - No actor found.", __FUNCTION__);
 			return false;
 		}
 		if (!race) {
-			_ERROR("%s - No race found.", __FUNCTION__);
+			SKSE::log::error("{} - No race found.", __FUNCTION__);
 			return false;
 		}
-		TESNPC * npc = DYNAMIC_CAST(actor->baseForm, TESForm, TESNPC);
+		RE::TESNPC * npc = actor->GetActorBase() ? actor->GetActorBase()->As<RE::TESNPC>() : nullptr;
 		if (!npc) {
-			_ERROR("%s - failed acquire ActorBase.", __FUNCTION__);
+			SKSE::log::error("{} - failed acquire ActorBase.", __FUNCTION__);
 			return false;
 		}
 
 		g_presetInterface.EraseMappedPreset(npc);
 
-		char slotPath[MAX_PATH];
-		sprintf_s(slotPath, "SKSE\\Plugins\\CharGen\\Exported\\%s.jslot", fileName.data);
+		char slotPath[REX::W32::MAX_PATH];
+		sprintf_s(slotPath, "SKSE\\Plugins\\CharGen\\Exported\\%s.jslot", fileName.c_str());
 
 		auto presetData = std::make_shared<PresetData>();
 		bool loadError = g_presetInterface.LoadJsonPreset(slotPath, presetData);
 		if (loadError) {
-			sprintf_s(slotPath, "SKSE\\Plugins\\CharGen\\Exported\\%s.slot", fileName.data);
+			sprintf_s(slotPath, "SKSE\\Plugins\\CharGen\\Exported\\%s.slot", fileName.c_str());
 			loadError = g_presetInterface.LoadBinaryPreset(slotPath, presetData);
 		}
 
 		if (loadError) {
-			_ERROR("%s - failed to load preset.", __FUNCTION__);
+			SKSE::log::error("{} - failed to load preset.", __FUNCTION__);
 			return false;
 		}
 
-		ModInfo * modInfo = GetModInfoByFormID(npc->formID);
+		const RE::TESFile* modInfo = GetModInfoByFormID(npc->formID);
 		if (!modInfo) {
-			_ERROR("%s - failed to find mod for %08X.", __FUNCTION__, npc->formID);
+			SKSE::log::error("{} - failed to find mod for {:08X}.", __FUNCTION__, npc->formID);
 			return false;
 		}
 
-		char sourcePath[MAX_PATH];
-		char destPath[MAX_PATH];
-		sprintf_s(sourcePath, "Data\\Meshes\\CharGen\\Exported\\%s.nif", fileName.data);
-		sprintf_s(destPath, "Data\\Meshes\\Actors\\Character\\FaceGenData\\FaceGeom\\%s\\%08X.nif", modInfo->name, modInfo->IsLight() ? (npc->formID & 0xFFF) : (npc->formID & 0xFFFFFF));
-		CopyFile(sourcePath, destPath, false);
-		sprintf_s(sourcePath, "Data\\Textures\\CharGen\\Exported\\%s.dds", fileName.data);
-		sprintf_s(destPath, "Data\\Textures\\Actors\\Character\\FaceGenData\\FaceTint\\%s\\%08X.dds", modInfo->name, modInfo->IsLight() ? (npc->formID & 0xFFF) : (npc->formID & 0xFFFFFF));
-		CopyFile(sourcePath, destPath, false);
+		char sourcePath[REX::W32::MAX_PATH];
+		char destPath[REX::W32::MAX_PATH];
+		sprintf_s(sourcePath, "Data\\Meshes\\CharGen\\Exported\\%s.nif", fileName.c_str());
+		sprintf_s(destPath, "Data\\Meshes\\Actors\\Character\\FaceGenData\\FaceGeom\\%s\\%08X.nif", modInfo->GetFilename().data(), modInfo->IsLight() ? (npc->formID & 0xFFF) : (npc->formID & 0xFFFFFF));
+		std::filesystem::copy_file(sourcePath, destPath, std::filesystem::copy_options::overwrite_existing);
+		sprintf_s(sourcePath, "Data\\Textures\\CharGen\\Exported\\%s.dds", fileName.c_str());
+		sprintf_s(destPath, "Data\\Textures\\Actors\\Character\\FaceGenData\\FaceTint\\%s\\%08X.dds", modInfo->GetFilename().data(), modInfo->IsLight() ? (npc->formID & 0xFFF) : (npc->formID & 0xFFFFFF));
+		std::filesystem::copy_file(sourcePath, destPath, std::filesystem::copy_options::overwrite_existing);
 
 		g_presetInterface.ApplyPreset(actor, race, npc, presetData, (PresetInterface::ApplyTypes)flags);
-		g_task->AddTask(new SKSETaskRefreshTintMask(actor, sourcePath));
+		SKEE_AddTask(g_task, new SKSETaskRefreshTintMask(actor, sourcePath));
 		return true;
 	}
 
-	bool LoadCharacterPresetEx(StaticFunctionTag*, Actor * actor, BSFixedString fileName, BGSColorForm * hairColor, UInt32 flags)
+	bool LoadCharacterPresetEx(RE::StaticFunctionTag*, RE::Actor * actor, RE::BSFixedString fileName, RE::BGSColorForm* hairColor, std::uint32_t flags)
 	{
 		if (!actor) {
-			_ERROR("%s - No actor found.", __FUNCTION__);
+			SKSE::log::error("{} - No actor found.", __FUNCTION__);
 			return false;
 		}
-		TESNPC * npc = DYNAMIC_CAST(actor->baseForm, TESForm, TESNPC);
+		RE::TESNPC * npc = actor->GetActorBase() ? actor->GetActorBase()->As<RE::TESNPC>() : nullptr;
 		if (!npc) {
-			_ERROR("%s - failed acquire ActorBase.", __FUNCTION__);
+			SKSE::log::error("{} - failed acquire ActorBase.", __FUNCTION__);
 			return false;
 		}
 
-		char slotPath[MAX_PATH];
-		sprintf_s(slotPath, "SKSE\\Plugins\\CharGen\\Presets\\%s.jslot", fileName.data);
+		char slotPath[REX::W32::MAX_PATH];
+		sprintf_s(slotPath, "SKSE\\Plugins\\CharGen\\Presets\\%s.jslot", fileName.c_str());
 
 		auto presetData = std::make_shared<PresetData>();
 		bool loadError = g_presetInterface.LoadJsonPreset(slotPath, presetData);
 		if (loadError) {
-			sprintf_s(slotPath, "SKSE\\Plugins\\CharGen\\Presets\\%s.slot", fileName.data);
+			sprintf_s(slotPath, "SKSE\\Plugins\\CharGen\\Presets\\%s.slot", fileName.c_str());
 			loadError = g_presetInterface.LoadBinaryPreset(slotPath, presetData);
 		}
 
 		if (loadError) {
-			_ERROR("%s - failed to load preset.", __FUNCTION__);
+			SKSE::log::error("{} - failed to load preset.", __FUNCTION__);
 			return false;
 		}
 
@@ -304,96 +288,83 @@ namespace papyrusCharGen
 		g_presetInterface.ApplyPresetData(actor, presetData, true, (PresetInterface::ApplyTypes)flags);
 
 		// Queue a node update
-		CALL_MEMBER_FN(actor, QueueNiNodeUpdate)(true);
+		actor->DoReset3D(true);
 		return true;
 	}
 
-	void SaveCharacterPreset(StaticFunctionTag*, Actor * actor, BSFixedString fileName)
+	void SaveCharacterPreset(RE::StaticFunctionTag*, RE::Actor * actor, RE::BSFixedString fileName)
 	{
-		char slotPath[MAX_PATH];
-		sprintf_s(slotPath, "Data\\SKSE\\Plugins\\CharGen\\Presets\\%s.jslot", fileName.data);
+		char slotPath[REX::W32::MAX_PATH];
+		sprintf_s(slotPath, "Data\\SKSE\\Plugins\\CharGen\\Presets\\%s.jslot", fileName.c_str());
 		g_presetInterface.SaveJsonPreset(slotPath, actor);
 	}
 
-	bool IsExternalEnabled(StaticFunctionTag*)
+	bool IsExternalEnabled(RE::StaticFunctionTag*)
 	{
 		return g_externalHeads;
 	}
 
-	bool ClearPreset(StaticFunctionTag*, TESNPC * npc)
+	bool ClearPreset(RE::StaticFunctionTag*, RE::TESNPC * npc)
 	{
 		if (!npc) {
-			_ERROR("%s - failed acquire ActorBase.", __FUNCTION__);
+			SKSE::log::error("{} - failed acquire ActorBase.", __FUNCTION__);
 			return false;
 		}
 
 		return g_presetInterface.EraseMappedPreset(npc);
 	}
 
-	void ClearPresets(StaticFunctionTag*)
+	void ClearPresets(RE::StaticFunctionTag*)
 	{
 		g_presetInterface.ClearMappedPresets();
 	}
 
-	void ExportHead(StaticFunctionTag*, BSFixedString fileName)
+	void ExportHead(RE::StaticFunctionTag*, RE::BSFixedString fileName)
 	{
 		if (g_enableHeadExport)
 		{
-			char nifPath[MAX_PATH];
-			sprintf_s(nifPath, "Data\\SKSE\\Plugins\\CharGen\\%s.nif", fileName.data);
-			char tintPath[MAX_PATH];
-			sprintf_s(tintPath, "Data\\SKSE\\Plugins\\CharGen\\%s.dds", fileName.data);
+			char nifPath[REX::W32::MAX_PATH];
+			sprintf_s(nifPath, "Data\\SKSE\\Plugins\\CharGen\\%s.nif", fileName.c_str());
+			char tintPath[REX::W32::MAX_PATH];
+			sprintf_s(tintPath, "Data\\SKSE\\Plugins\\CharGen\\%s.dds", fileName.c_str());
 
-			g_task->AddTask(new SKSETaskExportHead((*g_thePlayer), nifPath, tintPath));
+			SKEE_AddTask(g_task, new SKSETaskExportHead(RE::PlayerCharacter::GetSingleton(), nifPath, tintPath));
 		}
 	}
 
-	void ExportSlot(StaticFunctionTag*, BSFixedString fileName)
+	void ExportSlot(RE::StaticFunctionTag*, RE::BSFixedString fileName)
 	{
-		char slotPath[MAX_PATH];
-		sprintf_s(slotPath, "Data\\SKSE\\Plugins\\CharGen\\Exported\\%s.jslot", fileName.data);
-		g_presetInterface.SaveJsonPreset(slotPath, (*g_thePlayer));
+		char slotPath[REX::W32::MAX_PATH];
+		sprintf_s(slotPath, "Data\\SKSE\\Plugins\\CharGen\\Exported\\%s.jslot", fileName.c_str());
+		g_presetInterface.SaveJsonPreset(slotPath, RE::PlayerCharacter::GetSingleton());
 	}
 };
 
-void papyrusCharGen::RegisterFuncs(VMClassRegistry* registry)
+void papyrusCharGen::RegisterFuncs(RE::BSScript::IVirtualMachine* a_vm)
 {
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, void, BSFixedString>("SaveCharacter", "CharGen", papyrusCharGen::SaveCharacter, registry));
+	a_vm->RegisterFunction("SaveCharacter", "CharGen", papyrusCharGen::SaveCharacter);
 
-	registry->RegisterFunction(
-		new NativeFunction4<StaticFunctionTag, bool, Actor*, TESRace*, BSFixedString, UInt32>("LoadCharacterEx", "CharGen", papyrusCharGen::LoadCharacterEx, registry));
+	a_vm->RegisterFunction("LoadCharacterEx", "CharGen", papyrusCharGen::LoadCharacterEx);
 
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, void, BSFixedString>("DeleteCharacter", "CharGen", papyrusCharGen::DeleteCharacter, registry));
+	a_vm->RegisterFunction("DeleteCharacter", "CharGen", papyrusCharGen::DeleteCharacter);
 
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, SInt32, TESNPC*>("DeleteFaceGenData", "CharGen", papyrusCharGen::DeleteFaceGenData, registry));
+	a_vm->RegisterFunction("DeleteFaceGenData", "CharGen", papyrusCharGen::DeleteFaceGenData);
 
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, void, BSFixedString>("SaveExternalCharacter", "CharGen", papyrusCharGen::SaveExternalCharacter, registry));
+	a_vm->RegisterFunction("SaveExternalCharacter", "CharGen", papyrusCharGen::SaveExternalCharacter);
 
-	registry->RegisterFunction(
-		new NativeFunction4<StaticFunctionTag, bool, Actor*, TESRace*, BSFixedString, UInt32>("LoadExternalCharacterEx", "CharGen", papyrusCharGen::LoadExternalCharacterEx, registry));
+	a_vm->RegisterFunction("LoadExternalCharacterEx", "CharGen", papyrusCharGen::LoadExternalCharacterEx);
 
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, bool, TESNPC*>("ClearPreset", "CharGen", papyrusCharGen::ClearPreset, registry));
+	a_vm->RegisterFunction("ClearPreset", "CharGen", papyrusCharGen::ClearPreset);
 
-	registry->RegisterFunction(
-		new NativeFunction0<StaticFunctionTag, void>("ClearPresets", "CharGen", papyrusCharGen::ClearPresets, registry));
+	a_vm->RegisterFunction("ClearPresets", "CharGen", papyrusCharGen::ClearPresets);
 
-	registry->RegisterFunction(
-		new NativeFunction0<StaticFunctionTag, bool>("IsExternalEnabled", "CharGen", papyrusCharGen::IsExternalEnabled, registry));
+	a_vm->RegisterFunction("IsExternalEnabled", "CharGen", papyrusCharGen::IsExternalEnabled);
 
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, void, BSFixedString>("ExportHead", "CharGen", papyrusCharGen::ExportHead, registry));
+	a_vm->RegisterFunction("ExportHead", "CharGen", papyrusCharGen::ExportHead);
 
-	registry->RegisterFunction(
-		new NativeFunction1<StaticFunctionTag, void, BSFixedString>("ExportSlot", "CharGen", papyrusCharGen::ExportSlot, registry));
+	a_vm->RegisterFunction("ExportSlot", "CharGen", papyrusCharGen::ExportSlot);
 
-	registry->RegisterFunction(
-		new NativeFunction4<StaticFunctionTag, bool, Actor*, BSFixedString, BGSColorForm*, UInt32>("LoadCharacterPresetEx", "CharGen", papyrusCharGen::LoadCharacterPresetEx, registry));
+	a_vm->RegisterFunction("LoadCharacterPresetEx", "CharGen", papyrusCharGen::LoadCharacterPresetEx);
 
-	registry->RegisterFunction(
-		new NativeFunction2<StaticFunctionTag, void, Actor*, BSFixedString>("SaveCharacterPreset", "CharGen", papyrusCharGen::SaveCharacterPreset, registry));
+	a_vm->RegisterFunction("SaveCharacterPreset", "CharGen", papyrusCharGen::SaveCharacterPreset);
 }

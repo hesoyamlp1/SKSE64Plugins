@@ -2,20 +2,27 @@
 
 #include <vector>
 #include <string>
+#include <string_view>
 #include <algorithm>
 #include <functional> 
 #include <cctype>
 #include <locale>
+#include <fstream>
+#include <filesystem>
 
-#include "skse64/GameTypes.h"
-#include "skse64/GameStreams.h"
+#include <RE/B/BSResourceNiBinaryStream.h>
+#include <RE/T/TESFile.h>
 #include "StringTable.h"
+#include <cstdint>
 
-class TESRace;
-class BGSHeadPart;
-struct ModInfo;
-class TESLevCharacter;
-class TESNPC;
+namespace RE
+{
+	class TESRace;
+	class BGSHeadPart;
+	class TESLevCharacter;
+	class TESNPC;
+	class TESForm;
+}
 
 namespace std {
 	extern inline std::string &ltrim(std::string &s);
@@ -25,54 +32,126 @@ namespace std {
 }
 
 namespace BSFileUtil {
-	bool ReadLine(BSResourceNiBinaryStream* fin, std::string * str);
+	bool ReadLine(RE::BSResourceNiBinaryStream* fin, std::string * str);
 
 	template<typename Container>
-	void ReadAll(BSResourceNiBinaryStream* fin, Container & c)
+	void ReadAll(RE::BSResourceNiBinaryStream* fin, Container & c)
 	{
 		char ch;
-		UInt32 ret = fin->Read(&ch, 1);
-		while (ret > 0) {
+		while (fin->get(ch)) {
 			c.push_back(ch);
-			ret = fin->Read(&ch, 1);
 		}
 	}
+	bool IsActive(const RE::TESFile* modInfo);
 }
 
 namespace FileUtils
 {
-	void GetAllFiles(LPCTSTR lpFolder, LPCTSTR lpFilePattern, std::vector<SKEEFixedString> & filePaths);
+	void GetAllFiles(const char* lpFolder, const char* lpFilePattern, std::vector<SKEEFixedString> & filePaths);
+
+	// Creates every directory component of `path` (legacy IFileStream::MakeAllDirs).
+	void MakeAllDirs(const char* path);
 }
 
-TESRace * GetRaceByName(std::string & raceName);
-BGSHeadPart * GetHeadPartByName(std::string & headPartName);
+// Minimal binary file stream backed by std::fstream. Replaces the legacy
+// skse64 common/IFileStream for the subset of its API the plugin uses.
+class BinaryStream
+{
+public:
+	BinaryStream() = default;
+	explicit BinaryStream(const char* path) { Open(path); }
 
-ModInfo* GetModInfoByFormID(UInt32 formId, bool allowLight = true);
+	bool Open(const char* path)
+	{
+		Close();
+		m_file.open(path, std::ios::in | std::ios::out | std::ios::binary);
+		return m_file.is_open();
+	}
 
-std::string GetFormIdentifier(TESForm * form);
-TESForm * GetFormFromIdentifier(const std::string & formIdentifier);
+	bool Create(const char* path)
+	{
+		Close();
+		m_file.open(path, std::ios::in | std::ios::out | std::ios::trunc | std::ios::binary);
+		return m_file.is_open();
+	}
 
-void ForEachMod(std::function<void(ModInfo *)> functor);
+	void Close()
+	{
+		if (m_file.is_open())
+		{
+			m_file.close();
+		}
+	}
+
+	void ReadBuf(void* buf, std::uint32_t length)
+	{
+		m_file.read(static_cast<char*>(buf), static_cast<std::streamsize>(length));
+	}
+
+	void WriteBuf(const void* buf, std::uint32_t length)
+	{
+		m_file.write(static_cast<const char*>(buf), static_cast<std::streamsize>(length));
+	}
+
+	void Write8(std::uint8_t value)   { m_file.put(static_cast<char>(value)); }
+	void Write16(std::uint16_t value) { m_file.write(reinterpret_cast<const char*>(&value), sizeof(value)); }
+	void Write32(std::uint32_t value) { m_file.write(reinterpret_cast<const char*>(&value), sizeof(value)); }
+	void WriteFloat(float value)      { m_file.write(reinterpret_cast<const char*>(&value), sizeof(value)); }
+
+	std::int64_t GetOffset()
+	{
+		return static_cast<std::int64_t>(m_file.tellp());
+	}
+
+	void SetOffset(std::int64_t offset)
+	{
+		m_file.seekp(offset, std::ios::beg);
+		m_file.seekg(offset, std::ios::beg);
+	}
+
+	void Skip(std::int64_t bytes)
+	{
+		SetOffset(GetOffset() + bytes);
+	}
+
+private:
+	std::fstream m_file;
+};
+
+RE::TESRace * GetRaceByName(std::string & raceName);
+RE::BGSHeadPart * GetHeadPartByName(std::string & headPartName);
+
+RE::TESFile* GetModInfoByFormID(std::uint32_t formId, bool allowLight = true);
+
+std::string GetFormIdentifier(RE::TESForm * form);
+RE::TESForm * GetFormFromIdentifier(const std::string & formIdentifier);
+
+void ForEachMod(std::function<void(RE::TESFile *)> functor);
 
 template<int MaxBuf>
 class BSResourceTextFile
 {
 public:
-	BSResourceTextFile(BSResourceNiBinaryStream* file) : fin(file) { }
+	BSResourceTextFile(RE::BSResourceNiBinaryStream* file) : fin(file) { }
 
 	bool ReadLine(std::string* str)
 	{
-		UInt32 ret = fin->ReadLine((char*)buf, MaxBuf, '\n');
-		if (ret > 0) {
-			*str = buf;
-			return true;
+		str->clear();
+		char ch;
+		while (fin->get(ch)) {
+			if (ch == '\n') {
+				return true;
+			}
+			if (ch != '\r') {
+				str->push_back(ch);
+			}
 		}
-		return false;
+		return !str->empty();
 	}
 
 protected:
-	BSResourceNiBinaryStream * fin;
+	RE::BSResourceNiBinaryStream * fin;
 	char buf[MaxBuf];
 };
 
-void VisitLeveledCharacter(TESLevCharacter * character, std::function<void(TESNPC*)> functor);
+void VisitLeveledCharacter(RE::TESLevCharacter * character, std::function<void(RE::TESNPC*)> functor);

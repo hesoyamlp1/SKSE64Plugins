@@ -1,8 +1,10 @@
 #include "CDXBrush.h"
+#include <REX/W32/KERNEL32.h>
 #include "CDXMesh.h"
 #include "CDXUndo.h"
 #include "CDXShader.h"
 #include "CDXMaterial.h"
+#include <cstdint>
 
 using namespace DirectX;
 
@@ -180,7 +182,7 @@ CDXHitIndexMap CDXBasicHitBrush::GetHitIndices(CDXPickInfo & pickInfo, CDXEditab
 	if (!pVertices)
 		return hitVertex;
 
-	for (UInt16 i = 0; i < mesh->GetVertexCount(); i++) {
+	for (std::uint16_t i = 0; i < mesh->GetVertexCount(); i++) {
 		if (FilterVertex(mesh, pVertices, i))
 			continue;
 
@@ -235,8 +237,8 @@ bool CDXBrushPickerUpdate::Pick(CDXPickInfo & pickInfo, CDXMesh * mesh, bool isM
 
 CDXMaskAddBrush::CDXMaskAddBrush() : CDXBasicHitBrush()
 {
-	for (UInt32 p = 0; p < CDXBrush::kBrushProperties; p++)
-		for (UInt32 v = 0; v < CDXBrush::kBrushPropertyValues; v++)
+	for (std::uint32_t p = 0; p < CDXBrush::kBrushProperties; p++)
+		for (std::uint32_t v = 0; v < CDXBrush::kBrushPropertyValues; v++)
 			m_property[p][v] = g_brushProperties[CDXBrush::kBrushType_Mask_Add][p][v];
 }
 
@@ -269,8 +271,8 @@ bool CDXMaskAddBrush::UpdateStroke(CDXPickInfo & pickInfo, CDXEditableMesh * mes
 
 CDXMaskSubtractBrush::CDXMaskSubtractBrush() : CDXMaskAddBrush()
 {
-	for (UInt32 p = 0; p < CDXBrush::kBrushProperties; p++)
-		for (UInt32 v = 0; v < CDXBrush::kBrushPropertyValues; v++)
+	for (std::uint32_t p = 0; p < CDXBrush::kBrushProperties; p++)
+		for (std::uint32_t v = 0; v < CDXBrush::kBrushPropertyValues; v++)
 			m_property[p][v] = g_brushProperties[CDXBrush::kBrushType_Mask_Subtract][p][v];
 }
 
@@ -286,8 +288,8 @@ bool CDXMaskSubtractBrush::FilterVertex(CDXEditableMesh * mesh, CDXMeshVert * pV
 
 CDXInflateBrush::CDXInflateBrush() : CDXBasicHitBrush()
 {
-	for (UInt32 p = 0; p < CDXBrush::kBrushProperties; p++)
-		for (UInt32 v = 0; v < CDXBrush::kBrushPropertyValues; v++)
+	for (std::uint32_t p = 0; p < CDXBrush::kBrushProperties; p++)
+		for (std::uint32_t v = 0; v < CDXBrush::kBrushPropertyValues; v++)
 			m_property[p][v] = g_brushProperties[CDXBrush::kBrushType_Inflate][p][v];
 }
 
@@ -328,8 +330,8 @@ bool CDXInflateBrush::UpdateStroke(CDXPickInfo & pickInfo, CDXEditableMesh * mes
 
 CDXDeflateBrush::CDXDeflateBrush() : CDXInflateBrush()
 {
-	for (UInt32 p = 0; p < CDXBrush::kBrushProperties; p++)
-		for (UInt32 v = 0; v < CDXBrush::kBrushPropertyValues; v++)
+	for (std::uint32_t p = 0; p < CDXBrush::kBrushProperties; p++)
+		for (std::uint32_t v = 0; v < CDXBrush::kBrushPropertyValues; v++)
 			m_property[p][v] = g_brushProperties[CDXBrush::kBrushType_Deflate][p][v];
 }
 
@@ -340,8 +342,8 @@ CDXStrokePtr CDXDeflateBrush::CreateStroke(CDXBrush * brush, CDXEditableMesh * m
 
 CDXSmoothBrush::CDXSmoothBrush() : CDXBasicHitBrush()
 {
-	for (UInt32 p = 0; p < CDXBrush::kBrushProperties; p++)
-		for (UInt32 v = 0; v < CDXBrush::kBrushPropertyValues; v++)
+	for (std::uint32_t p = 0; p < CDXBrush::kBrushProperties; p++)
+		for (std::uint32_t v = 0; v < CDXBrush::kBrushPropertyValues; v++)
 			m_property[p][v] = g_brushProperties[CDXBrush::kBrushType_Smooth][p][v];
 }
 
@@ -385,8 +387,8 @@ bool CDXSmoothBrush::UpdateStroke(CDXPickInfo & pickInfo, CDXEditableMesh * mesh
 
 CDXMoveBrush::CDXMoveBrush() : CDXBasicHitBrush()
 {
-	for (UInt32 p = 0; p < CDXBrush::kBrushProperties; p++)
-		for (UInt32 v = 0; v < CDXBrush::kBrushPropertyValues; v++)
+	for (std::uint32_t p = 0; p < CDXBrush::kBrushProperties; p++)
+		for (std::uint32_t v = 0; v < CDXBrush::kBrushPropertyValues; v++)
 			m_property[p][v] = g_brushProperties[CDXBrush::kBrushType_Move][p][v];
 }
 
@@ -418,7 +420,7 @@ bool CDXMoveBrush::BeginStroke(CDXPickInfo & pickInfo, CDXEditableMesh * mesh, b
 #include <cstdarg>
 #include <cwchar>
 #include <cstdlib>
-#include <windows.h>
+
 
 struct DebugOutImpl {
 	DebugOutImpl(const char* location, int line, bool enabled_ = true)
@@ -444,9 +446,9 @@ struct DebugOutImpl {
 private:
 	static std::string wtoa(const wchar_t* ptr, size_t len = -1){
 		if (len == -1) len = wcslen(ptr);
-		std::string r(WideCharToMultiByte(CP_THREAD_ACP, 0, ptr, len, nullptr, 0, 0, 0), '\0');
+		std::string r(REX::W32::WideCharToMultiByte(CP_THREAD_ACP, 0, ptr, len, nullptr, 0, 0, 0), '\0');
 		if (r.size() == 0) throw std::system_error(GetLastError(), std::system_category());
-		if (0 == WideCharToMultiByte(CP_THREAD_ACP, 0, ptr, len, &r[0], r.size(), 0, 0))
+		if (0 == REX::W32::WideCharToMultiByte(CP_THREAD_ACP, 0, ptr, len, &r[0], r.size(), 0, 0))
 			throw std::system_error(GetLastError(), std::system_category(), "error converting wide string to narrow");
 		return r;
 	}

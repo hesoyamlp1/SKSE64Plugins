@@ -1,144 +1,153 @@
 #pragma once
 
-#include "skse64/GameThreads.h"
-#include "skse64/GameTypes.h"
-
-#include "skse64/NiTypes.h"
-#include "skse64/NiObjects.h"
-#include "skse64/NiSerialization.h"
+#include <RE/RTTI.h>
+#include <RE/B/BSFixedString.h>
+#include <RE/N/NiPoint3.h>
+#include <RE/N/NiColor.h>
+#include <RE/N/NiSmartPointer.h>
+#include <RE/N/NiNode.h>
+#include <RE/N/NiAVObject.h>
+#include <RE/B/BSGeometry.h>
+#include <RE/N/NiExtraData.h>
+#include <RE/N/NiStream.h>
+#include <RE/N/NiBinaryStream.h>
+#include <SKSE/API.h>
+#include <SKSE/Interfaces.h>
 
 #include <functional>
+#include <cstdint>
+namespace RE
+{
+	class RE::BGSHeadPart;
+	class RE::BSFaceGenNiNode;
+	class RE::BSGeometry;
+	class RE::TESNPC;
+}
 
-class NiTexture;
-class NiTriBasedGeom;
-class TESNPC;
-class BGSHeadPart;
-class BSFaceGenNiNode;
-class BSGeometry;
-class NiGeometry;
 class NiTriStripsData;
 class NiBinaryStream;
-struct SKSESerializationInterface;
 class InventoryEntryData;
 class TESObjectARMO;
 class TESObjectARMA;
 
-class SKSETaskExportHead : public TaskDelegate
+class SKSETaskExportHead : public SKSE::detail::TaskDelegate
 {
+public:
 	virtual void Run();
 	virtual void Dispose() { delete this; }
 
-public:
-	SKSETaskExportHead(Actor * actor, BSFixedString nifPath, BSFixedString ddsPath);
+	SKSETaskExportHead(RE::Actor* actor, RE::BSFixedString nifPath, RE::BSFixedString ddsPath);
 
-	UInt32			m_formId;
-	BSFixedString	m_nifPath;
-	BSFixedString	m_ddsPath;
+	std::uint32_t			m_formId;
+	RE::BSFixedString		m_nifPath;
+	RE::BSFixedString		m_ddsPath;
 };
 
-class SKSETaskExportTintMask : public TaskDelegate
+class SKSETaskExportTintMask : public SKSE::detail::TaskDelegate
 {
-	virtual void Run();
-	virtual void Dispose() { delete this; }
-
 public:
-	SKSETaskExportTintMask(BSFixedString filePath, BSFixedString fileName) : m_filePath(filePath), m_fileName(fileName) {};
-
-	BSFixedString	m_filePath;
-	BSFixedString	m_fileName;
-};
-
-class SKSETaskRefreshTintMask : public TaskDelegate
-{
 	virtual void Run();
 	virtual void Dispose() { delete this; };
 
-public:
-	SKSETaskRefreshTintMask(Actor * actor, BSFixedString ddsPath);
+	SKSETaskExportTintMask(RE::BSFixedString filePath, RE::BSFixedString fileName) : m_filePath(filePath), m_fileName(fileName) {};
 
-	UInt32			m_formId;
-	BSFixedString	m_ddsPath;
+	RE::BSFixedString		m_filePath;
+	RE::BSFixedString		m_fileName;
 };
 
-class SKSEUpdateFaceModel : public TaskDelegate
+class SKSETaskRefreshTintMask : public SKSE::detail::TaskDelegate
 {
+public:
+	virtual void Run();
+	virtual void Dispose() { delete this; };
+
+	SKSETaskRefreshTintMask(RE::Actor* actor, RE::BSFixedString ddsPath);
+
+	std::uint32_t			m_formId;
+	RE::BSFixedString		m_ddsPath;
+};
+
+class SKSEUpdateFaceModel : public SKSE::detail::TaskDelegate
+{
+public:
 	virtual void Run();
 	virtual void Dispose() { delete this; }
 
-public:
-	SKSEUpdateFaceModel(Actor * actor);
+	SKSEUpdateFaceModel(RE::Actor* actor);
 
-	UInt32			m_formId;
+	std::uint32_t			m_formId;
 };
 
-
-TESForm* GetWornForm(Actor* thisActor, UInt32 mask);
-TESForm* GetSkinForm(Actor* thisActor, UInt32 mask);
-BSGeometry* GetFirstShaderType(NiAVObject* object, UInt32 shaderType);
+RE::TESForm* GetWornForm(RE::Actor* thisActor, std::uint32_t mask);
+RE::TESForm* GetSkinForm(RE::Actor* thisActor, std::uint32_t mask);
+RE::BSGeometry* GetFirstShaderType(RE::NiAVObject* object, std::uint32_t shaderType);
 
 class NiAVObjectVisitor
 {
 public:
-	virtual bool Accept(NiAVObject* object) = 0;
+	virtual bool Accept(RE::NiAVObject* object) = 0;
 };
 
 class NiExtraDataFinder : public NiAVObjectVisitor
 {
 public:
-	NiExtraDataFinder(BSFixedString name) : m_name(name), m_data(NULL) { }
+	NiExtraDataFinder(RE::BSFixedString name) : m_name(name), m_data(nullptr) { }
 
-	virtual bool Accept(NiAVObject* object);
+	virtual bool Accept(RE::NiAVObject* object);
 
-	NiExtraData* m_data;
-	BSFixedString m_name;
+	RE::NiExtraData* m_data;
+	RE::BSFixedString m_name;
 };
 
-void VisitBipedNodes(TESObjectREFR* refr, std::function<void(bool, UInt32, NiNode*, TESForm*, TESForm*, NiAVObject*)> functor);
-void VisitEquippedNodes(Actor* actor, UInt32 slotMask, std::function<void(TESObjectARMO*, TESObjectARMA*, NiAVObject*, bool)> functor);
-void VisitAllWornItems(Actor* thisActor, UInt32 slotMask, std::function<void(InventoryEntryData*)> functor);
+void VisitBipedNodes(RE::TESObjectREFR* refr, std::function<void(bool, std::uint32_t, RE::NiNode*, RE::TESForm*, RE::TESForm*, RE::NiAVObject*)> functor);
+void VisitEquippedNodes(RE::Actor* actor, std::uint32_t slotMask, std::function<void(RE::TESObjectARMO*, RE::TESObjectARMA*, RE::NiAVObject*, bool)> functor);
+void VisitAllWornItems(RE::Actor* thisActor, std::uint32_t slotMask, std::function<void(RE::InventoryEntryData*)> functor);
 
-void VisitSkeletalRoots(TESObjectREFR* ref, std::function<void(NiNode*, bool)> functor);
-void VisitArmorAddon(Actor* actor, TESObjectARMO* armor, TESObjectARMA* arma, std::function<void(bool, NiNode*, NiAVObject*)> functor);
-NiExtraData* FindExtraData(NiAVObject* object, BSFixedString name);
+void VisitSkeletalRoots(RE::TESObjectREFR* ref, std::function<void(RE::NiNode*, bool)> functor);
+void VisitArmorAddon(RE::Actor* actor, RE::TESObjectARMO* armor, RE::TESObjectARMA* arma, std::function<void(bool, RE::NiNode*, RE::NiAVObject*)> functor);
+RE::NiExtraData* FindExtraData(RE::NiAVObject* object, RE::BSFixedString name);
 
-bool ResolveAnyForm(SKSESerializationInterface* intfc, UInt32 handle, UInt32* newHandle);
-bool ResolveAnyHandle(SKSESerializationInterface* intfc, UInt64 handle, UInt64* newHandle);
+bool ResolveAnyForm(SKSE::SerializationInterface* intfc, std::uint32_t handle, std::uint32_t* newHandle);
+bool ResolveAnyHandle(SKSE::SerializationInterface* intfc, std::uint64_t handle, std::uint64_t* newHandle);
 
-bool IsSlotMatch(TESForm* pForm, UInt32 mask);
+bool IsSlotMatch(RE::TESForm* pForm, std::uint32_t mask);
 
-TESObjectARMO* GetActorSkin(Actor* actor);
-BGSTextureSet * GetTextureSetForPart(TESNPC * npc, BGSHeadPart * headPart);
-std::pair<BGSTextureSet*, BGSHeadPart*> GetTextureSetForPartByName(TESNPC * npc, BSFixedString partName);
-BSGeometry * GetHeadGeometry(Actor * actor, UInt32 partType);
-void ExportTintMaskDDS(Actor * actor, BSFixedString filePath);
-NiAVObject * GetObjectByHeadPart(BSFaceGenNiNode * faceNode, BGSHeadPart * headPart);
+RE::TESObjectARMO* GetActorSkin(RE::Actor* actor);
+RE::BGSTextureSet* GetTextureSetForPart(RE::TESNPC* npc, RE::BGSHeadPart* headPart);
+std::pair<RE::BGSTextureSet*, RE::BGSHeadPart*> GetTextureSetForPartByName(RE::TESNPC* npc, RE::BSFixedString partName);
+RE::BSGeometry* GetHeadGeometry(RE::Actor* actor, std::uint32_t partType);
+void ExportTintMaskDDS(RE::Actor* actor, RE::BSFixedString filePath);
+RE::NiAVObject* GetObjectByHeadPart(RE::BSFaceGenNiNode* faceNode, RE::BGSHeadPart* headPart);
 
-bool SaveRenderedDDS(NiTexture * pkTexture, const char * pcFileName);
+bool SaveRenderedDDS(RE::NiTexture* pkTexture, const char* pcFileName);
 
-bool VisitObjects(NiAVObject * parent, std::function<bool(NiAVObject*)> functor);
-bool VisitGeometry(NiAVObject* parent, std::function<bool(BSGeometry*)> functor);
+bool VisitObjects(RE::NiAVObject* parent, std::function<bool(RE::NiAVObject*)> functor);
+bool VisitGeometry(RE::NiAVObject* parent, std::function<bool(RE::BSGeometry*)> functor);
 
-namespace NifUtils
+// Legacy TESObjectREFR::GetFaceGenNiNode (vfunc 0x61). CommonLib exposes the same
+// slot as Character::GetFaceNodeSkinned() (0x61); Actor derives from Character.
+inline RE::BSFaceGenNiNode* GetFaceGenNiNode(RE::Actor* a_actor)
 {
-	NiExtraData* GetExtraData(NiObjectNET* object, BSFixedString name);
+	if (!a_actor)
+		return nullptr;
+	return a_actor->GetFaceNodeSkinned();
 }
-
 
 class GeometryVisitor
 {
 public:
-	virtual bool Accept(BSGeometry* geometry) = 0;
+	virtual bool Accept(RE::BSGeometry* geometry) = 0;
 };
 
-bool VisitGeometry(NiAVObject* object, GeometryVisitor* visitor);
+bool VisitGeometry(RE::NiAVObject* object, GeometryVisitor* visitor);
 
-NiTransform GetGeometryTransform(BSGeometry * geometry);
-NiTransform GetLegacyGeometryTransform(NiGeometry * geometry);
+RE::NiTransform GetGeometryTransform(RE::BSGeometry* geometry);
+RE::NiTransform GetLegacyGeometryTransform(RE::NiGeometry* geometry);
 
-UInt16	GetStripLengthSum(NiTriStripsData * strips);
-void GetTriangleIndices(NiTriStripsData * strips, UInt16 i, UInt16 v0, UInt16 v1, UInt16 v2);
+std::uint16_t GetStripLengthSum(RE::NiTriStripsData* strips);
+void GetTriangleIndices(RE::NiTriStripsData* strips, std::uint16_t i, std::uint16_t& v0, std::uint16_t& v1, std::uint16_t& v2);
 
-NiAVObjectPtr GetRootNode(NiAVObjectPtr object, bool refRoot = false);
+RE::NiAVObject* GetRootNode(RE::NiAVObject* object, bool refRoot = false);
 
 class NifStreamWrapper
 {
@@ -146,9 +155,14 @@ public:
 	NifStreamWrapper();
 	~NifStreamWrapper();
 
-	bool LoadStream(NiBinaryStream* stream);
-	bool VisitObjects(std::function<bool(NiObject*)> functor);
+	bool LoadStream(RE::NiBinaryStream* stream);
+	bool VisitObjects(std::function<bool(RE::NiObject*)> functor);
+
+	// mem is a byte buffer standing in for a NiStream; the game API writes
+	// through it, so expose a non-const pointer from this const accessor.
+	RE::NiStream* get() const { return reinterpret_cast<RE::NiStream*>(const_cast<std::uint8_t*>(&mem[0])); }
+	RE::NiStream* operator->() const { return get(); }
 
 protected:
-	UInt8 mem[sizeof(NiStream)];
+	std::uint8_t mem[sizeof(RE::NiStream)];
 };

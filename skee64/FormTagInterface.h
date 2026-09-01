@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IPluginInterface.h"
+#include "SafeDataHolder.h"
 #include "StringTable.h"
 
 #include <mutex>
@@ -30,13 +31,13 @@ public:
     virtual skee_u32 GetVersion() override { return kCurrentPluginVersion; }
     virtual void Revert() { };
 
-	virtual bool AddTag(TESForm* form, const char* tag) override;
-	virtual bool RemoveTag(TESForm* form, const char* tag) override;
-	virtual bool HasTags(TESForm* form) override;
-	virtual bool HasTag(TESForm* form, const char* tag) override;
+	virtual bool AddTag(RE::TESForm* form, const char* tag) override;
+	virtual bool RemoveTag(RE::TESForm* form, const char* tag) override;
+	virtual bool HasTags(RE::TESForm* form) override;
+	virtual bool HasTag(RE::TESForm* form, const char* tag) override;
 
 	// Visits all Tags on a given EditorID
-	virtual void GetTags(TESForm* form, TagVisitor& visitor) override;
+	virtual void GetTags(RE::TESForm* form, TagVisitor& visitor) override;
 
 	// Visits all EditorIDs which have tags
 	virtual void GetForms(FormVisitor& visitor) override;

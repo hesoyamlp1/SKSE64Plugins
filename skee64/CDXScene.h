@@ -6,6 +6,7 @@
 #include "CDXTypes.h"
 #include <vector>
 #include <memory>
+#include <cstdint>
 
 class CDXCamera;
 class CDXD3DDevice;
@@ -34,7 +35,7 @@ public:
 	virtual void End(CDXCamera * camera, CDXD3DDevice * device) { };
 
 	size_t GetNumMeshes() { return m_meshes.size(); }
-	CDXMesh * GetNthMesh(UInt32 i) { return m_meshes.at(i); }
+	CDXMesh * GetNthMesh(std::uint32_t i) { return m_meshes.at(i); }
 
 	void AddMesh(CDXMesh * mesh);
 	bool Pick(CDXCamera * camera, int x, int y, CDXPicker & picker);

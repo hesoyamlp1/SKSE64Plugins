@@ -4,15 +4,16 @@
 #include "CDXRenderState.h"
 #include "CDXShaderFactory.h"
 
-#include "skse64/GameTypes.h"
-#include "skse64/NiTypes.h"
+#include <RE/B/BSFixedString.h>
+#include <RE/N/NiSmartPointer.h>
+#include <RE/N/NiTexture.h>
 
 #include "StringTable.h"
 
 #include <map>
 #include <vector>
+#include <cstdint>
 
-class NiTexture;
 class CDXPixelShaderCache;
 
 class CDXNifTextureRenderer : public CDXTextureRenderer, public CDXRenderState
@@ -25,12 +26,12 @@ public:
 	{
 		SKEEFixedString texture;
 		SKEEFixedString technique = "normal";
-		UInt32 color = 0xFFFFFF;
+		std::uint32_t color = 0xFFFFFF;
 		CDXTextureRenderer::TextureType textureType = CDXTextureRenderer::TextureType::Mask;
 	};
 
-	bool ApplyMasksToTexture(CDXD3DDevice* device, NiPointer<NiTexture> texture, std::map<SInt32, MaskData> & masks, const BSFixedString & name, NiPointer<NiTexture> & output);
+	bool ApplyMasksToTexture(CDXD3DDevice* device, RE::NiPointer<RE::NiSourceTexture> texture, std::map<std::int32_t, MaskData> & masks, const RE::BSFixedString & name, RE::NiPointer<RE::NiSourceTexture> & output);
 
 private:
-	std::vector<NiPointer<NiTexture>> m_textures;
+	std::vector<RE::NiPointer<RE::NiSourceTexture>> m_textures;
 };

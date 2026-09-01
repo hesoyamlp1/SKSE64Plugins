@@ -1,17 +1,13 @@
 #include <algorithm>
+#include "SKEETasks.h"
+#include <SKSE/Events.h>
+#include <SKSE/API.h>
 #include <unordered_set>
 #include <iterator>
 
-#include "skse64/GameRTTI.h"
-#include "skse64/GameReferences.h"
-#include "skse64/GameObjects.h"
-#include "skse64/GameExtraData.h"
 
-#include "skse64/NiNodes.h"
 
-#include "skse64/PluginAPI.h"
 
-#include "skse64/PapyrusEvents.h"
 
 #include "ActorUpdateManager.h"
 #include "ItemDataInterface.h"
@@ -19,11 +15,13 @@
 #include "ShaderUtilities.h"
 #include "OverrideInterface.h"
 #include "NifUtils.h"
+#include <RE/T/TESObjectARMO.h>
+// RE/P/PlayerInfo.h not in CommonLib
 #include "Utilities.h"
+#include <cstdint>
 
 extern ActorUpdateManager	g_actorUpdateManager;
-extern SKSETaskInterface	* g_task;
-extern SKSEMessagingInterface * g_messaging;
+extern const SKSE::TaskInterface* g_task;
 extern TintMaskInterface	g_tintMaskInterface;
 extern ItemDataInterface	g_itemDataInterface;
 extern StringTable			g_stringTable;
@@ -33,51 +31,53 @@ skee_u32 ItemDataInterface::GetVersion()
 	return kCurrentPluginVersion;
 }
 
-bool ModifiedItemFinder::Accept(InventoryEntryData* pEntryData)
+RE::BSContainer::ForEachResult ModifiedItemFinder::Visit(RE::InventoryEntryData* pEntryData)
 {
 	if (!pEntryData)
-		return true;
+		return RE::BSContainer::ForEachResult::kContinue;
 
-	ExtendDataList* pExtendList = pEntryData->extendDataList;
+	RE::BSSimpleList<RE::ExtraDataList*>* pExtendList = pEntryData->extraLists;
 	if (!pExtendList)
-		return true;
+		return RE::BSContainer::ForEachResult::kContinue;
 
-	SInt32 n = 0;
-	BaseExtraList* pExtraDataList = pExtendList->GetNthItem(n);
-	while (pExtraDataList)
+	for (auto it = pExtendList->begin(); it != pExtendList->end(); ++it)
 	{
+		RE::ExtraDataList* pExtraDataList = *it;
+		if (!pExtraDataList)
+			continue;
+
 		bool isMatch = false;
 		bool isWorn = false;
 
 		// Check if the item is worn
-		bool hasWorn = pExtraDataList->HasType(kExtraData_Worn);
-		bool hasWornLeft = pExtraDataList->HasType(kExtraData_WornLeft);
+		bool hasWorn = pExtraDataList->HasType(RE::ExtraDataType::kWorn);
+		bool hasWornLeft = pExtraDataList->HasType(RE::ExtraDataType::kWornLeft);
 		if (hasWorn || hasWornLeft)
 			isWorn = true;
 
 		if ((m_identifier.type & IItemDataInterface::Identifier::kTypeRank) == IItemDataInterface::Identifier::kTypeRank) {
-			if (pExtraDataList->HasType(kExtraData_Rank)) {
-				ExtraRank * extraRank = static_cast<ExtraRank*>(pExtraDataList->GetByType(kExtraData_Rank));
-				if (m_identifier.rankId == extraRank->rank)
+			if (pExtraDataList->HasType(RE::ExtraDataType::kRank)) {
+				RE::ExtraRank* extraRank = pExtraDataList->GetByType<RE::ExtraRank>();
+				if (extraRank && m_identifier.rankId == extraRank->rank)
 					isMatch = true;
 			}
 		}
 		
 		if ((m_identifier.type & IItemDataInterface::Identifier::kTypeUID) == IItemDataInterface::Identifier::kTypeUID) {
-			if (pExtraDataList->HasType(kExtraData_UniqueID)) {
-				ExtraUniqueID * extraUID = static_cast<ExtraUniqueID*>(pExtraDataList->GetByType(kExtraData_UniqueID));
-				if (m_identifier.uid == extraUID->uniqueId && m_identifier.ownerForm == extraUID->ownerFormId)
+			if (pExtraDataList->HasType(RE::ExtraDataType::kUniqueID)) {
+				RE::ExtraUniqueID* extraUID = pExtraDataList->GetByType<RE::ExtraUniqueID>();
+				if (extraUID && m_identifier.uid == extraUID->uniqueID && m_identifier.ownerForm == extraUID->baseID)
 					isMatch = true;
 			}
 		}
 		
 		if ((m_identifier.type & IItemDataInterface::Identifier::kTypeSlot) == IItemDataInterface::Identifier::kTypeSlot) {
 			if (isWorn) {
-				TESObjectARMO * armor = DYNAMIC_CAST(pEntryData->type, TESForm, TESObjectARMO);
+				RE::TESObjectARMO* armor = pEntryData->object ? pEntryData->object->As<RE::TESObjectARMO>() : nullptr;
 
 				// It's armor and we don't have a slot mask search
 				if (armor && m_identifier.slotMask != 0) {
-					if ((armor->bipedObject.GetSlotMask() & m_identifier.slotMask) != 0)
+					if ((armor->GetSlotMask().underlying() & m_identifier.slotMask) != 0)
 						isMatch = true;
 				}
 				// Is not an armor, we don't have a slot mask search, and it's equipped
@@ -89,20 +89,17 @@ bool ModifiedItemFinder::Accept(InventoryEntryData* pEntryData)
 		}
 
 		if (isMatch) {
-			m_found.pForm = pEntryData->type;
+			m_found.pForm = pEntryData->object;
 			m_found.pExtraData = pExtraDataList;
 			m_found.isWorn = isWorn;
-			return false;
+			return RE::BSContainer::ForEachResult::kStop;
 		}
-
-		n++;
-		pExtraDataList = pExtendList->GetNthItem(n);
 	}
 
-	return true;
+	return RE::BSContainer::ForEachResult::kContinue;
 }
 
-bool ResolveModifiedIdentifier(TESObjectREFR * reference, IItemDataInterface::Identifier & identifier, ModifiedItem & itemData)
+bool ResolveModifiedIdentifier(RE::TESObjectREFR * reference, IItemDataInterface::Identifier & identifier, ModifiedItem & itemData)
 {
 	if (!reference)
 		return false;
@@ -110,70 +107,59 @@ bool ResolveModifiedIdentifier(TESObjectREFR * reference, IItemDataInterface::Id
 	if (identifier.IsDirect()) {
 		itemData.pForm = identifier.form;
 		itemData.pExtraData = identifier.extraData;
-		if (reference->baseForm == identifier.form)
+		if (reference->GetBaseObject() == identifier.form)
 			identifier.SetSelf();
 		return (itemData.pForm && itemData.pExtraData);
 	}
 
 	if (identifier.IsSelf()) {
-		itemData.pForm = reference->baseForm;
-		itemData.pExtraData = &reference->extraData;
+		itemData.pForm = reference->GetBaseObject();
+		itemData.pExtraData = &reference->extraList;
 		return (itemData.pForm && itemData.pExtraData);
 	}
 
-	ExtraContainerChanges* pContainerChanges = static_cast<ExtraContainerChanges*>(reference->extraData.GetByType(kExtraData_ContainerChanges));
-	if (pContainerChanges) {
+	RE::ExtraContainerChanges* pContainerChanges = reference->extraList.GetByType<RE::ExtraContainerChanges>();
+	if (pContainerChanges && pContainerChanges->changes) {
 		ModifiedItemFinder itemFinder(identifier);
-		auto data = pContainerChanges->data;
-		if (data) {
-			auto objList = data->objList;
-			if (objList) {
-				objList->Visit(itemFinder);
-				itemData = itemFinder.Found();
-				return (itemData.pForm && itemData.pExtraData);
-			}
-		}
+		pContainerChanges->changes->VisitInventory(reinterpret_cast<RE::InventoryChanges::IItemChangeVisitor&>(itemFinder));
+		itemData = itemFinder.Found();
+		return (itemData.pForm && itemData.pExtraData);
 	}
+
 	return false;
 }
 
-std::shared_ptr<ItemAttributeData> ModifiedItem::GetAttributeData(TESObjectREFR * reference, bool makeUnique, bool allowNewEntry, bool isSelf, UInt32 * idOut)
+std::shared_ptr<ItemAttributeData> ModifiedItem::GetAttributeData(RE::TESObjectREFR * reference, bool makeUnique, bool allowNewEntry, bool isSelf, std::uint32_t * idOut)
 {
-	ExtraRank * rank = NULL;
+	RE::ExtraRank* rank = nullptr;
 
-	if (pExtraData->HasType(kExtraData_Rank)) {
-		rank = static_cast<ExtraRank*>(pExtraData->GetByType(kExtraData_Rank));
+	if (pExtraData->HasType(RE::ExtraDataType::kRank)) {
+		rank = pExtraData->GetByType<RE::ExtraRank>();
 	} else if (makeUnique) {
-		rank = ExtraRank::Create();
-		rank->rank = 0;
-		pExtraData->Add(kExtraData_Rank, rank);
+		rank = new RE::ExtraRank(0);
+		pExtraData->Add(rank);
 	}
 
-	ExtraUniqueID * uniqueId = NULL;
-	if (pExtraData->HasType(kExtraData_UniqueID)) {
-		uniqueId = static_cast<ExtraUniqueID*>(pExtraData->GetByType(kExtraData_UniqueID));
+	RE::ExtraUniqueID* uniqueId = nullptr;
+	if (pExtraData->HasType(RE::ExtraDataType::kUniqueID)) {
+		uniqueId = pExtraData->GetByType<RE::ExtraUniqueID>();
 	} else if (makeUnique && !isSelf) {
-		ExtraContainerChanges* pContainerChanges = static_cast<ExtraContainerChanges*>(reference->extraData.GetByType(kExtraData_ContainerChanges));
-		if (pContainerChanges) {
-			auto containerData = pContainerChanges->data;
-			if (containerData) {
-				CALL_MEMBER_FN(containerData, SetUniqueID)(pExtraData, NULL, pForm);
-				uniqueId = static_cast<ExtraUniqueID*>(pExtraData->GetByType(kExtraData_UniqueID));
-			}
+		RE::ExtraContainerChanges* pContainerChanges = reference->extraList.GetByType<RE::ExtraContainerChanges>();
+		if (pContainerChanges && pContainerChanges->changes) {
+			pContainerChanges->changes->SetUniqueID(pExtraData, nullptr, pForm);
+			uniqueId = pExtraData->GetByType<RE::ExtraUniqueID>();
 		}
 	}
 	else if (!uniqueId && isSelf) {
-		uniqueId = ExtraUniqueID::Create();
-		uniqueId->ownerFormId = reference->formID;
-		uniqueId->uniqueId = 0;
-		pExtraData->Add(kExtraData_UniqueID, uniqueId);
+		uniqueId = new RE::ExtraUniqueID(reference->formID, 0);
+		pExtraData->Add(uniqueId);
 	}
 
 	if (rank) {
 		auto data = g_itemDataInterface.GetData(rank->rank);
 		if (!data && uniqueId && allowNewEntry) {
 			rank->rank = g_itemDataInterface.GetNextRankID();
-			data = g_itemDataInterface.CreateData(rank->rank, uniqueId ? uniqueId->uniqueId : 0, uniqueId ? uniqueId->ownerFormId : 0, pForm->formID);
+			data = g_itemDataInterface.CreateData(rank->rank, uniqueId ? uniqueId->uniqueID : 0, uniqueId ? uniqueId->baseID : 0, pForm->formID);
 			g_itemDataInterface.UseRankID();
 		}
 		if (idOut) {
@@ -185,7 +171,7 @@ std::shared_ptr<ItemAttributeData> ModifiedItem::GetAttributeData(TESObjectREFR 
 	return NULL;
 }
 
-std::shared_ptr<ItemAttributeData> ItemDataInterface::GetExistingData(TESObjectREFR * reference, IItemDataInterface::Identifier & identifier)
+std::shared_ptr<ItemAttributeData> ItemDataInterface::GetExistingData(RE::TESObjectREFR * reference, IItemDataInterface::Identifier & identifier)
 {
 	ModifiedItem foundData;
 	if (ResolveModifiedIdentifier(reference, identifier, foundData)) {
@@ -195,7 +181,7 @@ std::shared_ptr<ItemAttributeData> ItemDataInterface::GetExistingData(TESObjectR
 	return NULL;
 }
 
-NIOVTaskUpdateItemDye::NIOVTaskUpdateItemDye(Actor * actor, IItemDataInterface::Identifier & identifier, UInt32 flags, bool forced, LayerFunctor layerFunctor)
+NIOVTaskUpdateItemDye::NIOVTaskUpdateItemDye(RE::Actor * actor, IItemDataInterface::Identifier & identifier, std::uint32_t flags, bool forced, LayerFunctor layerFunctor)
 {
 	m_formId = actor->formID;
 	m_identifier = identifier;
@@ -206,14 +192,14 @@ NIOVTaskUpdateItemDye::NIOVTaskUpdateItemDye(Actor * actor, IItemDataInterface::
 
 void NIOVTaskUpdateItemDye::Run()
 {
-	TESForm * form = LookupFormByID(m_formId);
-	Actor * actor = DYNAMIC_CAST(form, TESForm, Actor);
+	RE::TESForm * form = RE::TESForm::LookupByID(m_formId);
+	RE::Actor * actor = form ? form->As<RE::Actor>() : nullptr;
 	if (actor) {
 		ModifiedItem foundData;
 		if (ResolveModifiedIdentifier(actor, m_identifier, foundData)) {
 			auto data = foundData.GetAttributeData(actor, false, true, m_identifier.IsSelf());
 			if (!data && !m_forced) {
-				_DMESSAGE("%s - Failed to acquire item attribute data", __FUNCTION__);
+				SKSE::log::debug("{} - Failed to acquire item attribute data", __FUNCTION__);
 				return;
 			}
 
@@ -221,13 +207,13 @@ void NIOVTaskUpdateItemDye::Run()
 			if (!foundData.isWorn)
 				return;
 
-			TESObjectARMO * armor = DYNAMIC_CAST(foundData.pForm, TESForm, TESObjectARMO);
+			RE::TESObjectARMO * armor = foundData.pForm ? foundData.pForm->As<RE::TESObjectARMO>() : nullptr;
 			if (armor) {
-				for (UInt32 i = 0; i < armor->armorAddons.count; i++)
+				for (std::uint32_t i = 0; i < armor->armorAddons.size(); i++)
 				{
-					TESObjectARMA * arma = NULL;
-					if (armor->armorAddons.GetNthItem(i, arma)) {
-						VisitArmorAddon(actor, armor, arma, [&](bool isFirstPerson, NiAVObject * rootNode, NiAVObject * parent)
+					RE::TESObjectARMA* arma = armor->armorAddons[i];
+					if (arma) {
+						VisitArmorAddon(actor, armor, arma, [&](bool isFirstPerson, RE::NiAVObject * rootNode, RE::NiAVObject * parent)
 						{
 							g_tintMaskInterface.ApplyMasks(actor, isFirstPerson, armor, arma, parent, m_flags, data, m_layerFunctor);
 						});
@@ -238,11 +224,11 @@ void NIOVTaskUpdateItemDye::Run()
 	}
 }
 
-skee_u32 ItemDataInterface::GetItemUniqueID(TESObjectREFR * reference, IItemDataInterface::Identifier & identifier, bool makeUnique)
+skee_u32 ItemDataInterface::GetItemUniqueID(RE::TESObjectREFR * reference, IItemDataInterface::Identifier & identifier, bool makeUnique)
 {
 	ModifiedItem foundData;
 	if (ResolveModifiedIdentifier(reference, identifier, foundData)) {
-		UInt32 id = 0;
+		std::uint32_t id = 0;
 		auto data = foundData.GetAttributeData(reference, makeUnique, true, identifier.IsSelf(), &id);
 		if (data) {
 			return id;
@@ -260,7 +246,7 @@ void ItemDataInterface::SetItemTextureLayerColor(skee_u32 uniqueID, skee_i32 tex
 	}
 }
 
-void ItemDataInterface::Impl_SetItemTextureLayerBlendMode(UInt32 uniqueID, SInt32 textureIndex, SInt32 layerIndex, SKEEFixedString blendMode)
+void ItemDataInterface::Impl_SetItemTextureLayerBlendMode(std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex, SKEEFixedString blendMode)
 {
 	auto data = GetData(uniqueID);
 	if (data) {
@@ -276,7 +262,7 @@ void ItemDataInterface::SetItemTextureLayerType(skee_u32 uniqueID, skee_i32 text
 	}
 }
 
-void ItemDataInterface::Impl_SetItemTextureLayerTexture(UInt32 uniqueID, SInt32 textureIndex, SInt32 layerIndex, SKEEFixedString texture)
+void ItemDataInterface::Impl_SetItemTextureLayerTexture(std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex, SKEEFixedString texture)
 {
 	auto data = GetData(uniqueID);
 	if (data) {
@@ -295,7 +281,7 @@ skee_u32 ItemDataInterface::GetItemTextureLayerColor(skee_u32 uniqueID, skee_i32
 	return 0;
 }
 
-SKEEFixedString ItemDataInterface::Impl_GetItemTextureLayerBlendMode(UInt32 uniqueID, SInt32 textureIndex, SInt32 layerIndex)
+SKEEFixedString ItemDataInterface::Impl_GetItemTextureLayerBlendMode(std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex)
 {
 	auto data = GetData(uniqueID);
 	if (data)
@@ -339,7 +325,7 @@ bool ItemDataInterface::GetItemTextureLayerTexture(skee_u32 uniqueID, skee_i32 t
 	return false;
 }
 
-SKEEFixedString ItemDataInterface::Impl_GetItemTextureLayerTexture(UInt32 uniqueID, SInt32 textureIndex, SInt32 layerIndex)
+SKEEFixedString ItemDataInterface::Impl_GetItemTextureLayerTexture(std::uint32_t uniqueID, std::int32_t textureIndex, std::int32_t layerIndex)
 {
 	auto data = GetData(uniqueID);
 	if (data)
@@ -390,9 +376,9 @@ void ItemDataInterface::ClearItemTextureLayer(skee_u32 uniqueID, skee_i32 textur
 	}
 }
 
-std::shared_ptr<ItemAttributeData> ItemDataInterface::GetData(UInt32 rankId)
+std::shared_ptr<ItemAttributeData> ItemDataInterface::GetData(std::uint32_t rankId)
 {
-	SimpleLocker lock(&m_lock);
+	std::lock_guard<std::recursive_mutex> lock(m_lock);
 	if (rankId == kInvalidRank)
 		return nullptr;
 
@@ -410,9 +396,9 @@ std::shared_ptr<ItemAttributeData> ItemDataInterface::GetData(UInt32 rankId)
 	return nullptr;
 }
 
-TESForm * ItemDataInterface::GetFormFromUniqueID(skee_u32 uniqueID)
+RE::TESForm * ItemDataInterface::GetFormFromUniqueID(skee_u32 uniqueID)
 {
-	SimpleLocker lock(&m_lock);
+	std::lock_guard<std::recursive_mutex> lock(m_lock);
 	if (uniqueID == kInvalidRank)
 		return nullptr;
 
@@ -424,15 +410,15 @@ TESForm * ItemDataInterface::GetFormFromUniqueID(skee_u32 uniqueID)
 	});
 
 	if (it != m_data.end()) {
-		return LookupFormByID((*it).formId);
+		return RE::TESForm::LookupByID((*it).formId);
 	}
 
 	return nullptr;
 }
 
-TESForm * ItemDataInterface::GetOwnerOfUniqueID(skee_u32 uniqueID)
+RE::TESForm * ItemDataInterface::GetOwnerOfUniqueID(skee_u32 uniqueID)
 {
-	SimpleLocker lock(&m_lock);
+	std::lock_guard<std::recursive_mutex> lock(m_lock);
 	if (uniqueID == kInvalidRank)
 		return NULL;
 
@@ -444,7 +430,7 @@ TESForm * ItemDataInterface::GetOwnerOfUniqueID(skee_u32 uniqueID)
 	});
 
 	if (it != m_data.end()) {
-		return LookupFormByID((*it).ownerForm);
+		return RE::TESForm::LookupByID((*it).ownerForm);
 	}
 
 	return nullptr;
@@ -471,7 +457,7 @@ bool ItemDataInterface::GetItemData(skee_u32 uniqueID, const char* key, IItemDat
 	return false;
 }
 
-SKEEFixedString ItemDataInterface::Impl_GetItemData(UInt32 uniqueID, SKEEFixedString key)
+SKEEFixedString ItemDataInterface::Impl_GetItemData(std::uint32_t uniqueID, SKEEFixedString key)
 {
 	auto data = GetData(uniqueID);
 	if (data)
@@ -481,7 +467,7 @@ SKEEFixedString ItemDataInterface::Impl_GetItemData(UInt32 uniqueID, SKEEFixedSt
 	return "";
 }
 
-void ItemDataInterface::Impl_SetItemData(UInt32 uniqueID, SKEEFixedString key, SKEEFixedString value)
+void ItemDataInterface::Impl_SetItemData(std::uint32_t uniqueID, SKEEFixedString key, SKEEFixedString value)
 {
 	auto data = GetData(uniqueID);
 	if (data)
@@ -490,7 +476,7 @@ void ItemDataInterface::Impl_SetItemData(UInt32 uniqueID, SKEEFixedString key, S
 	}
 }
 
-void ItemDataInterface::Impl_ClearItemData(UInt32 uniqueID, SKEEFixedString key)
+void ItemDataInterface::Impl_ClearItemData(std::uint32_t uniqueID, SKEEFixedString key)
 {
 	auto data = GetData(uniqueID);
 	if (data)
@@ -499,7 +485,7 @@ void ItemDataInterface::Impl_ClearItemData(UInt32 uniqueID, SKEEFixedString key)
 	}
 }
 
-std::shared_ptr<ItemAttributeData> ItemDataInterface::CreateData(UInt32 rankId, UInt16 uid, UInt32 ownerId, UInt32 formId)
+std::shared_ptr<ItemAttributeData> ItemDataInterface::CreateData(std::uint32_t rankId, std::uint16_t uid, std::uint32_t ownerId, std::uint32_t formId)
 {
 	EraseByRank(rankId);
 	
@@ -510,9 +496,9 @@ std::shared_ptr<ItemAttributeData> ItemDataInterface::CreateData(UInt32 rankId, 
 	return data;
 }
 
-bool ItemDataInterface::UpdateUIDByRank(UInt32 rankId, UInt16 uid, UInt32 formId)
+bool ItemDataInterface::UpdateUIDByRank(std::uint32_t rankId, std::uint16_t uid, std::uint32_t formId)
 {
-	SimpleLocker lock(&m_lock);
+	std::lock_guard<std::recursive_mutex> lock(m_lock);
 
 	auto it = std::find_if(m_data.begin(), m_data.end(), [&](ItemAttribute& item)
 	{
@@ -528,9 +514,9 @@ bool ItemDataInterface::UpdateUIDByRank(UInt32 rankId, UInt16 uid, UInt32 formId
 	return it != m_data.end();
 }
 
-bool ItemDataInterface::UpdateUID(UInt16 oldId, UInt32 oldFormId, UInt16 newId, UInt32 newFormId)
+bool ItemDataInterface::UpdateUID(std::uint16_t oldId, std::uint32_t oldFormId, std::uint16_t newId, std::uint32_t newFormId)
 {
-	SimpleLocker lock(&m_lock);
+	std::lock_guard<std::recursive_mutex> lock(m_lock);
 
 	auto it = std::find_if(m_data.begin(), m_data.end(), [&](ItemAttribute& item)
 	{
@@ -546,9 +532,9 @@ bool ItemDataInterface::UpdateUID(UInt16 oldId, UInt32 oldFormId, UInt16 newId, 
 	return it != m_data.end();
 }
 
-bool ItemDataInterface::EraseByRank(UInt32 rankId)
+bool ItemDataInterface::EraseByRank(std::uint32_t rankId)
 {
-	SimpleLocker lock(&m_lock);
+	std::lock_guard<std::recursive_mutex> lock(m_lock);
 
 	auto it = std::find_if(m_data.begin(), m_data.end(), [&](ItemAttribute& item)
 	{
@@ -567,9 +553,9 @@ bool ItemDataInterface::EraseByRank(UInt32 rankId)
 	return false;
 }
 
-bool ItemDataInterface::EraseByUID(UInt32 uid, UInt32 formId)
+bool ItemDataInterface::EraseByUID(std::uint32_t uid, std::uint32_t formId)
 {
-	SimpleLocker lock(&m_lock);
+	std::lock_guard<std::recursive_mutex> lock(m_lock);
 
 	auto it = std::find_if(m_data.begin(), m_data.end(), [&](ItemAttribute& item)
 	{
@@ -581,11 +567,14 @@ bool ItemDataInterface::EraseByUID(UInt32 uid, UInt32 formId)
 	});
 
 	if (it != m_data.end()) {
-		auto eventDispatcher = static_cast<EventDispatcher<SKSEModCallbackEvent>*>(g_messaging->GetEventDispatcher(SKSEMessagingInterface::kDispatcher_ModEvent));
-		if (eventDispatcher) {
-			TESForm * form = LookupFormByID((*it).formId);
-			SKSEModCallbackEvent evn("NiOverride_Internal_EraseUID", "", (*it).uid, form);
-			eventDispatcher->SendEvent(&evn);
+		if (auto* modEventSource = SKSE::GetModCallbackEventSource()) {
+			RE::TESForm* form = RE::TESForm::LookupByID((*it).formId);
+			SKSE::ModCallbackEvent evn;
+			evn.eventName = "NiOverride_Internal_EraseUID";
+			evn.strArg = "";
+			evn.numArg = (*it).uid;
+			evn.sender = form;
+			modEventSource->SendEvent(&evn);
 		}
 
 		m_data.erase(it);
@@ -595,50 +584,50 @@ bool ItemDataInterface::EraseByUID(UInt32 uid, UInt32 formId)
 	return false;
 }
 
-void ItemDataInterface::UpdateInventoryItemDye(UInt32 rankId, TESObjectARMO * armor, NiAVObject * rootNode)
+void ItemDataInterface::UpdateInventoryItemDye(std::uint32_t rankId, RE::TESObjectARMO * armor, RE::NiAVObject * rootNode)
 {
-	g_task->AddTask(new NIOVTaskDeferredMask((*g_thePlayer), false, armor, nullptr, rootNode, rankId ? g_itemDataInterface.GetData(rankId) : nullptr));
+	SKEE_AddTask(g_task, new NIOVTaskDeferredMask(RE::PlayerCharacter::GetSingleton(), false, armor, nullptr, rootNode, rankId ? g_itemDataInterface.GetData(rankId) : nullptr));
 }
 
 void ItemDataInterface::ForEachItemAttribute(std::function<void(const ItemAttribute&)> functor)
 {
-	SimpleLocker lock(&m_lock);
+	std::lock_guard<std::recursive_mutex> lock(m_lock);
 	for (auto& attribute : m_data)
 	{
 		functor(attribute);
 	}
 }
 
-void ItemDataInterface::OnAttach(TESObjectREFR * refr, TESObjectARMO * armor, TESObjectARMA * addon, NiAVObject * object, bool isFirstPerson, NiNode * skeleton, NiNode * root)
+void ItemDataInterface::OnAttach(RE::TESObjectREFR * refr, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::NiAVObject * object, bool isFirstPerson, RE::NiNode * skeleton, RE::NiNode * root)
 {
-	UInt32 armorMask = armor->bipedObject.GetSlotMask();
-	Actor * actor = DYNAMIC_CAST(refr, TESForm, Actor);
+	std::uint32_t armorMask = armor->GetSlotMask().underlying();
+	RE::Actor * actor = refr ? refr->As<RE::Actor>() : nullptr;
 	if (actor) {
 		IItemDataInterface::Identifier identifier;
 		identifier.SetSlotMask(armorMask);
-		g_task->AddTask(new NIOVTaskDeferredMask(refr, isFirstPerson, armor, addon, object, g_itemDataInterface.GetExistingData(actor, identifier)));
+		SKEE_AddTask(g_task, new NIOVTaskDeferredMask(refr, isFirstPerson, armor, addon, object, g_itemDataInterface.GetExistingData(actor, identifier)));
 	}
 }
 
 void ItemDataInterface::Revert()
 {
-	SimpleLocker lock(&m_lock);
+	std::lock_guard<std::recursive_mutex> lock(m_lock);
 	std::vector<ItemAttribute> copy = m_data;
 	m_data.clear();
 
 	// We need to trigger a dye update after wiping data to reset
 	for (auto & itemAttribute : copy)
 	{
-		TESForm * ownerForm = LookupFormByID(itemAttribute.ownerForm);
-		TESForm * itemForm = LookupFormByID(itemAttribute.formId);
+		RE::TESForm * ownerForm = RE::TESForm::LookupByID(itemAttribute.ownerForm);
+		RE::TESForm * itemForm = RE::TESForm::LookupByID(itemAttribute.formId);
 
-		Actor * actor = DYNAMIC_CAST(ownerForm, TESForm, Actor);
-		TESObjectARMO * armor = DYNAMIC_CAST(itemForm, TESForm, TESObjectARMO);
+		RE::Actor * actor = ownerForm ? ownerForm->As<RE::Actor>() : nullptr;
+		RE::TESObjectARMO * armor = itemForm ? itemForm->As<RE::TESObjectARMO>() : nullptr;
 		if (actor && armor) {
 			IItemDataInterface::Identifier identifier;
 			identifier.SetRankID(itemAttribute.rank);
 			identifier.SetUniqueID(itemAttribute.uid, itemAttribute.ownerForm);
-			identifier.SetSlotMask(armor->bipedObject.GetSlotMask());
+			identifier.SetSlotMask(armor->GetSlotMask().underlying());
 			m_loadQueue.push_back(new NIOVTaskUpdateItemDye(actor, identifier, TintMaskInterface::kUpdate_All, true));
 		}
 	}
@@ -647,13 +636,13 @@ void ItemDataInterface::Revert()
 
 void DyeMap::Revert()
 {
-	SimpleLocker lock(&m_lock);
+	std::lock_guard<std::recursive_mutex> lock(m_lock);
 	m_data.clear();
 }
 
-bool DyeMap::IsValidDye(TESForm * form)
+bool DyeMap::IsValidDye(RE::TESForm * form)
 {
-	SimpleLocker lock(&m_lock);
+	std::lock_guard<std::recursive_mutex> lock(m_lock);
 
 	auto it = m_data.find(form->formID);
 	if (it != m_data.end()) {
@@ -663,9 +652,9 @@ bool DyeMap::IsValidDye(TESForm * form)
 	return false;
 }
 
-UInt32 DyeMap::GetDyeColor(TESForm * form)
+std::uint32_t DyeMap::GetDyeColor(RE::TESForm * form)
 {
-	SimpleLocker lock(&m_lock);
+	std::lock_guard<std::recursive_mutex> lock(m_lock);
 
 	auto it = m_data.find(form->formID);
 	if (it != m_data.end()) {
@@ -675,31 +664,31 @@ UInt32 DyeMap::GetDyeColor(TESForm * form)
 	return 0;
 }
 
-void DyeMap::RegisterDyeForm(TESForm * form, UInt32 color)
+void DyeMap::RegisterDyeForm(RE::TESForm * form, std::uint32_t color)
 {
-	SimpleLocker lock(&m_lock);
+	std::lock_guard<std::recursive_mutex> lock(m_lock);
 	m_data[form->formID] = color;
 }
 
-void DyeMap::UnregisterDyeForm(TESForm * form)
+void DyeMap::UnregisterDyeForm(RE::TESForm * form)
 {
-	SimpleLocker lock(&m_lock);
+	std::lock_guard<std::recursive_mutex> lock(m_lock);
 	auto it = m_data.find(form->formID);
 	if (it != m_data.end())
 		m_data.erase(it);
 }
 
-void ItemAttributeData::TintData::Save(SKSESerializationInterface * intfc, UInt32 kVersion)
+void ItemAttributeData::TintData::Save(SKSE::SerializationInterface * intfc, std::uint32_t kVersion)
 {
 	struct DataMap
 	{
-		UInt32* color = nullptr;
+		std::uint32_t* color = nullptr;
 		StringTableItem* texture = nullptr;
 		StringTableItem* blendMode = nullptr;
-		UInt8* type = nullptr;
+		std::uint8_t* type = nullptr;
 	};
 
-	std::unordered_map<SInt32, DataMap> layerMap;
+	std::unordered_map<std::int32_t, DataMap> layerMap;
 	for (auto & element : m_colorMap)
 	{
 		layerMap[element.first].color = &element.second;
@@ -717,16 +706,16 @@ void ItemAttributeData::TintData::Save(SKSESerializationInterface * intfc, UInt3
 		layerMap[element.first].type = &element.second;
 	}
 
-	UInt32 numTints = layerMap.size();
+	std::uint32_t numTints = layerMap.size();
 	intfc->WriteRecordData(&numTints, sizeof(numTints));
 
 	for (auto tint : layerMap)
 	{
-		SInt32 maskIndex = tint.first;
+		std::int32_t maskIndex = tint.first;
 		auto & layerData = tint.second;
 
 		intfc->WriteRecordData(&maskIndex, sizeof(maskIndex));
-		UInt8 overrideFlags = 0;
+		std::uint8_t overrideFlags = 0;
 		if (layerData.color) overrideFlags |= OverrideFlags::kColor;
 		if (layerData.texture) overrideFlags |= OverrideFlags::kTextureMap;
 		if (layerData.blendMode) overrideFlags |= OverrideFlags::kBlendMap;
@@ -749,34 +738,34 @@ void ItemAttributeData::TintData::Save(SKSESerializationInterface * intfc, UInt3
 	}
 }
 
-bool ItemAttributeData::TintData::Load(SKSESerializationInterface * intfc, UInt32 kVersion, const StringIdMap & stringTable)
+bool ItemAttributeData::TintData::Load(SKSE::SerializationInterface * intfc, std::uint32_t kVersion, const StringIdMap & stringTable)
 {
 	bool error = false;
 
-	UInt32 tintCount;
+	std::uint32_t tintCount;
 	if (!intfc->ReadRecordData(&tintCount, sizeof(tintCount)))
 	{
-		_ERROR("%s - Error loading tint count", __FUNCTION__);
+		SKSE::log::error("{} - Error loading tint count", __FUNCTION__);
 		error = true;
 		return error;
 	}
 
-	for (UInt32 i = 0; i < tintCount; i++)
+	for (std::uint32_t i = 0; i < tintCount; i++)
 	{
-		SInt32 maskIndex = 0;
+		std::int32_t maskIndex = 0;
 		if (!intfc->ReadRecordData(&maskIndex, sizeof(maskIndex)))
 		{
-			_ERROR("%s - Error loading mask index", __FUNCTION__);
+			SKSE::log::error("{} - Error loading mask index", __FUNCTION__);
 			error = true;
 			return error;
 		}
 
-		UInt8 overrideFlags = 0;
+		std::uint8_t overrideFlags = 0;
 		if (kVersion >= ItemDataInterface::kSerializationVersion2)
 		{
 			if (!intfc->ReadRecordData(&overrideFlags, sizeof(overrideFlags)))
 			{
-				_ERROR("%s - Error loading override flags", __FUNCTION__);
+				SKSE::log::error("{} - Error loading override flags", __FUNCTION__);
 				error = true;
 				return error;
 			}
@@ -784,10 +773,10 @@ bool ItemAttributeData::TintData::Load(SKSESerializationInterface * intfc, UInt3
 
 		if (kVersion == ItemDataInterface::kSerializationVersion1)
 		{
-			UInt32 maskColor = 0;
+			std::uint32_t maskColor = 0;
 			if (!intfc->ReadRecordData(&maskColor, sizeof(maskColor)))
 			{
-				_ERROR("%s - Error loading mask color", __FUNCTION__);
+				SKSE::log::error("{} - Error loading mask color", __FUNCTION__);
 				error = true;
 				return error;
 			}
@@ -797,10 +786,10 @@ bool ItemAttributeData::TintData::Load(SKSESerializationInterface * intfc, UInt3
 		{
 			if (overrideFlags & OverrideFlags::kColor)
 			{
-				UInt32 maskColor = 0;
+				std::uint32_t maskColor = 0;
 				if (!intfc->ReadRecordData(&maskColor, sizeof(maskColor)))
 				{
-					_ERROR("%s - Error loading mask color", __FUNCTION__);
+					SKSE::log::error("{} - Error loading mask color", __FUNCTION__);
 					error = true;
 					return error;
 				}
@@ -817,10 +806,10 @@ bool ItemAttributeData::TintData::Load(SKSESerializationInterface * intfc, UInt3
 			}
 			if (overrideFlags & OverrideFlags::kTypeMap)
 			{
-				UInt8 textureType = 0;
+				std::uint8_t textureType = 0;
 				if (!intfc->ReadRecordData(&textureType, sizeof(textureType)))
 				{
-					_ERROR("%s - Error loading blend mode", __FUNCTION__);
+					SKSE::log::error("{} - Error loading blend mode", __FUNCTION__);
 					error = true;
 					return error;
 				}
@@ -832,58 +821,64 @@ bool ItemAttributeData::TintData::Load(SKSESerializationInterface * intfc, UInt3
 	return error;
 }
 
-void ItemAttributeData::Save(SKSESerializationInterface * intfc, UInt32 kVersion)
+void ItemAttributeData::Save(SKSE::SerializationInterface * intfc, std::uint32_t kVersion)
 {
 	utils::scoped_lock<> locker(m_lock);
-	UInt32 numSubrecords = m_tintData.size() + m_data.size();
+	std::uint32_t numSubrecords = m_tintData.size() + m_data.size();
 
 	intfc->WriteRecordData(&numSubrecords, sizeof(numSubrecords));
 
 	for (auto& layer : m_tintData)
 	{
-		intfc->OpenRecord('TINT', kVersion);
+		if (!intfc->OpenRecord('TINT', kVersion)) {
+			SKSE::log::error("{} - Failed to open record", __FUNCTION__);
+		}
 
-		SInt32 layerIndex = layer.first;
+		std::int32_t layerIndex = layer.first;
 		intfc->WriteRecordData(&layerIndex, sizeof(layerIndex));
 
 		layer.second.Save(intfc, kVersion);
 	}
 	for (auto& kvp : m_data)
 	{
-		intfc->OpenRecord('IKVP', kVersion);
+		if (!intfc->OpenRecord('IKVP', kVersion)) {
+			SKSE::log::error("{} - Failed to open record", __FUNCTION__);
+		}
 		g_stringTable.WriteString(intfc, kvp.first);
 		g_stringTable.WriteString(intfc, kvp.second);
 	}
 }
 
-bool ItemAttributeData::Load(SKSESerializationInterface * intfc, UInt32 kVersion, const StringIdMap & stringTable)
+bool ItemAttributeData::Load(SKSE::SerializationInterface * intfc, std::uint32_t kVersion, const StringIdMap & stringTable)
 {
-	UInt32 type, length, version;
+	std::uint32_t type, length, version;
 	bool error = false;
 
 	// Handle count
-	UInt32 numSubrecords = 0;
+	std::uint32_t numSubrecords = 0;
 	if (!intfc->ReadRecordData(&numSubrecords, sizeof(numSubrecords)))
 	{
-		_ERROR("%s - Error loading number of attribute sub records", __FUNCTION__);
+		SKSE::log::error("{} - Error loading number of attribute sub records", __FUNCTION__);
 		error = true;
 		return error;
 	}
 
-	for (UInt32 i = 0; i < numSubrecords; i++)
+	for (std::uint32_t i = 0; i < numSubrecords; i++)
 	{
-		if (intfc->GetNextRecordInfo(&type, &version, &length))
+		if (intfc->GetNextRecordInfo(type, version, length))
 		{
-			switch (type)
+			std::uint32_t ownerForm = 0, itemForm = 0;
+				std::uint64_t ownerHandle = 0, itemHandle = 0, newOwnerHandle = 0, newItemHandle = 0;
+				switch (type)
 			{
 				case 'TINT':
 					{
-						SInt32 layerIndex = 0;
+						std::int32_t layerIndex = 0;
 						if (version >= ItemDataInterface::kSerializationVersion2)
 						{
 							if (!intfc->ReadRecordData(&layerIndex, sizeof(layerIndex)))
 							{
-								_ERROR("%s - Error loading layer count", __FUNCTION__);
+								SKSE::log::error("{} - Error loading layer count", __FUNCTION__);
 								continue;
 							}
 						}
@@ -908,7 +903,7 @@ bool ItemAttributeData::Load(SKSESerializationInterface * intfc, UInt32 kVersion
 					break;
 				}
 				default:
-					_ERROR("%s - Error loading unexpected chunk type %08X (%.4s)", __FUNCTION__, type, reinterpret_cast<char*>(&type));
+					SKSE::log::error("{} - Error loading unexpected chunk type {:08X} ({:.4})", __FUNCTION__, type, std::string(reinterpret_cast<char*>(&type), 4));
 					error = true;
 					break;
 			}
@@ -918,35 +913,39 @@ bool ItemAttributeData::Load(SKSESerializationInterface * intfc, UInt32 kVersion
 	return error;
 }
 
-EventResult ItemDataInterface::ReceiveEvent(TESUniqueIDChangeEvent * evn, EventDispatcher<TESUniqueIDChangeEvent>* dispatcher)
+RE::BSEventNotifyControl ItemDataInterface::ProcessEvent(const RE::TESUniqueIDChangeEvent* evn, RE::BSTEventSource<RE::TESUniqueIDChangeEvent>* dispatcher)
 {
-	if (evn->oldOwnerFormId != 0) {
-		g_itemDataInterface.UpdateUID(evn->oldUniqueId, evn->oldOwnerFormId, evn->newUniqueId, evn->newOwnerFormId);
+	if (evn->oldBaseID != 0) {
+		g_itemDataInterface.UpdateUID(evn->oldUniqueID, evn->oldBaseID, evn->newUniqueID, evn->newBaseID);
 	}
-	if (evn->newOwnerFormId == 0) {
-		g_itemDataInterface.EraseByUID(evn->oldUniqueId, evn->oldOwnerFormId);
+	if (evn->newBaseID == 0) {
+		g_itemDataInterface.EraseByUID(evn->oldUniqueID, evn->oldBaseID);
 	}
-	return EventResult::kEvent_Continue;
+	return RE::BSEventNotifyControl::kContinue;
 }
 
-void ItemDataInterface::Save(SKSESerializationInterface * intfc, UInt32 kVersion)
+void ItemDataInterface::Save(SKSE::SerializationInterface * intfc, std::uint32_t kVersion)
 {
-	intfc->OpenRecord('ITEE', kVersion);
+	if (!intfc->OpenRecord('ITEE', kVersion)) {
+		SKSE::log::error("{} - Failed to open record", __FUNCTION__);
+	}
 
-	UInt32 nextRank = m_nextRank;
+	std::uint32_t nextRank = m_nextRank;
 	intfc->WriteRecordData(&nextRank, sizeof(nextRank));
 
-	UInt32 numItems = m_data.size();
+	std::uint32_t numItems = m_data.size();
 	intfc->WriteRecordData(&numItems, sizeof(numItems));
 
 	for (auto & attribute : m_data) {
-		intfc->OpenRecord('IDAT', kVersion);
+		if (!intfc->OpenRecord('IDAT', kVersion)) {
+			SKSE::log::error("{} - Failed to open record", __FUNCTION__);
+		}
 
-		UInt32 rankId = attribute.rank;
-		UInt16 uid = attribute.uid;
+		std::uint32_t rankId = attribute.rank;
+		std::uint16_t uid = attribute.uid;
 
-		UInt32 ownerFormId = attribute.ownerForm;
-		UInt32 itemFormId = attribute.formId;
+		std::uint32_t ownerFormId = attribute.ownerForm;
+		std::uint32_t itemFormId = attribute.formId;
 		
 		intfc->WriteRecordData(&rankId, sizeof(rankId));
 		intfc->WriteRecordData(&uid, sizeof(uid));
@@ -960,93 +959,93 @@ void ItemDataInterface::Save(SKSESerializationInterface * intfc, UInt32 kVersion
 	}
 }
 
-bool ItemDataInterface::Load(SKSESerializationInterface * intfc, UInt32 kVersion, const StringIdMap & stringTable)
+bool ItemDataInterface::Load(SKSE::SerializationInterface * intfc, std::uint32_t kVersion, const StringIdMap & stringTable)
 {
-	UInt32 type, length, version;
+	std::uint32_t type, length, version;
 	bool error = false;
 
 	// Resolve formIds from any prior queues (if there are entries here its because Revert queued them)
 	for (auto & task : m_loadQueue)
 	{
 		// If the task was queued from a previous save we need to resolve the actor's formId first
-		UInt32 newItemForm = 0;
+		std::uint32_t newItemForm = 0;
 		if (!ResolveAnyForm(intfc, task->m_formId, &newItemForm)) {
-			_WARNING("%s - actor %08X could not be found, skipping dye update", __FUNCTION__, task->m_formId);
+			SKSE::log::warn("{} - actor {:08X} could not be found, skipping dye update", __FUNCTION__, task->m_formId);
 			continue;
 		}
 		task->m_formId = newItemForm;
 	}
 
-	UInt32 nextRank;
+	std::uint32_t nextRank;
 	if (!intfc->ReadRecordData(&nextRank, sizeof(nextRank)))
 	{
-		_ERROR("%s - Error loading next rank ID", __FUNCTION__);
+		SKSE::log::error("{} - Error loading next rank ID", __FUNCTION__);
 		error = true;
 		return error;
 	}
 
 	m_nextRank = nextRank;
 
-	UInt32 numItems;
+	std::uint32_t numItems;
 	if (!intfc->ReadRecordData(&numItems, sizeof(numItems)))
 	{
-		_ERROR("%s - Error loading number of items", __FUNCTION__);
+		SKSE::log::error("{} - Error loading number of items", __FUNCTION__);
 		error = true;
 		return error;
 	}
 
-
-	for (UInt32 i = 0; i < numItems; i++)
+	for (std::uint32_t i = 0; i < numItems; i++)
 	{
-		if (intfc->GetNextRecordInfo(&type, &version, &length))
+		if (intfc->GetNextRecordInfo(type, version, length))
 		{
-			switch (type)
+			std::uint32_t ownerForm = 0, itemForm = 0;
+				std::uint64_t ownerHandle = 0, itemHandle = 0, newOwnerHandle = 0, newItemHandle = 0;
+				switch (type)
 			{
 				case 'IDAT':
 				{
-					UInt32 rankId;
+					std::uint32_t rankId;
 					if (!intfc->ReadRecordData(&rankId, sizeof(rankId)))
 					{
-						_ERROR("%s - Error loading Rank ID", __FUNCTION__);
+						SKSE::log::error("{} - Error loading Rank ID", __FUNCTION__);
 						error = true;
 						return error;
 					}
 
-					UInt16 uid;
+					std::uint16_t uid;
 					if (!intfc->ReadRecordData(&uid, sizeof(uid)))
 					{
-						_ERROR("%s - Error loading Unique ID", __FUNCTION__);
+						SKSE::log::error("{} - Error loading Unique ID", __FUNCTION__);
 						error = true;
 						return error;
 					}
 					
-					UInt32 ownerForm = 0, itemForm = 0;
-					UInt64 ownerHandle = 0, itemHandle = 0, newOwnerHandle = 0, newItemHandle = 0;
+					
 					if (version >= kSerializationVersion2)
 					{
 						if (!intfc->ReadRecordData(&ownerForm, sizeof(ownerForm)))
 						{
-							_ERROR("%s - Error loading owner form", __FUNCTION__);
+							SKSE::log::error("{} - Error loading owner form", __FUNCTION__);
 							error = true;
 							return error;
 						}
 						if (!intfc->ReadRecordData(&itemForm, sizeof(itemForm)))
 						{
-							_ERROR("%s - Error loading item form", __FUNCTION__);
+							SKSE::log::error("{} - Error loading item form", __FUNCTION__);
 							error = true;
 							return error;
 						}
 
-						UInt32 newOwnerForm = 0;
+						std::uint32_t newOwnerForm = 0;
 						if (!ResolveAnyForm(intfc, ownerForm, &newOwnerForm)) {
-							_WARNING("%s - owner %08X could not be found, skipping", __FUNCTION__, ownerForm);
+							SKSE::log::warn("{} - owner {:08X} could not be found, skipping", __FUNCTION__, ownerForm);
 							continue;
 						}
 						newOwnerHandle = newOwnerForm;
 
-						UInt32 newItemForm = 0;
+						std::uint32_t newItemForm = 0;
 						if (!ResolveAnyForm(intfc, itemForm, &newItemForm)) {
-							_WARNING("%s - item %08X could not be found, skipping", __FUNCTION__, itemForm);
+							SKSE::log::warn("{} - item {:08X} could not be found, skipping", __FUNCTION__, itemForm);
 							continue;
 						}
 						newItemHandle = newItemForm;
@@ -1055,54 +1054,55 @@ bool ItemDataInterface::Load(SKSESerializationInterface * intfc, UInt32 kVersion
 					{
 						if (!intfc->ReadRecordData(&ownerHandle, sizeof(ownerHandle)))
 						{
-							_ERROR("%s - Error loading owner handle", __FUNCTION__);
+							SKSE::log::error("{} - Error loading owner handle", __FUNCTION__);
 							error = true;
 							return error;
 						}
 						if (!intfc->ReadRecordData(&itemHandle, sizeof(itemHandle)))
 						{
-							_ERROR("%s - Error loading item handle", __FUNCTION__);
+							SKSE::log::error("{} - Error loading item handle", __FUNCTION__);
 							error = true;
 							return error;
 						}
 						if (!ResolveAnyHandle(intfc, ownerHandle, &newOwnerHandle)) {
-							_WARNING("%s - owner handle %016llX could not be found, skipping", __FUNCTION__, ownerHandle);
+							SKSE::log::warn("{} - owner handle %016llX could not be found, skipping", __FUNCTION__, ownerHandle);
 							continue;
 						}
-						if (!intfc->ResolveHandle(itemHandle, &newItemHandle)) {
-							_WARNING("%s - item handle %016llX could not be found, skipping", __FUNCTION__, itemHandle);
+						RE::VMHandle _resolved;
+						if (!intfc->ResolveHandle(static_cast<RE::VMHandle>(itemHandle), _resolved)) {
+							SKSE::log::warn("{} - item handle %016llX could not be found, skipping", __FUNCTION__, itemHandle);
 							continue;
 						}
-					}
+						newItemHandle = static_cast<std::uint64_t>(_resolved);
 					
 
 					std::shared_ptr<ItemAttributeData> data = std::make_shared<ItemAttributeData>();
 					if (data->Load(intfc, version, stringTable)) {
-						_ERROR("%s - Failed to load item data for owner %016llX item %016llX", __FUNCTION__, ownerHandle, itemHandle);
+						SKSE::log::error("{} - Failed to load item data for owner %016llX item %016llX", __FUNCTION__, ownerHandle, itemHandle);
 						error = true;
 						return error;
 					}
 
 					if (rankId != kInvalidRank) {
-						UInt32 ownerFormId = newOwnerHandle & 0xFFFFFFFF;
-						UInt32 itemFormId = newItemHandle & 0xFFFFFFFF;
+						std::uint32_t ownerFormId = newOwnerHandle & 0xFFFFFFFF;
+						std::uint32_t itemFormId = newItemHandle & 0xFFFFFFFF;
 
 						Lock();
 						m_data.push_back({rankId, uid, ownerFormId, itemFormId, data});
 						Release();
 
-						TESForm* ownerForm = LookupFormByID(ownerFormId);
-						Actor* actor = DYNAMIC_CAST(ownerForm, TESForm, Actor);
-						TESForm * itemForm = LookupFormByID(itemFormId);
+						RE::TESForm* ownerForm = RE::TESForm::LookupByID(ownerFormId);
+						RE::Actor* actor = ownerForm ? ownerForm->As<RE::Actor>() : nullptr;
+						RE::TESForm * itemForm = RE::TESForm::LookupByID(itemFormId);
 						if (actor)
 						{
 							IItemDataInterface::Identifier identifier;
 							identifier.SetRankID(rankId);
 							identifier.SetUniqueID(uid, ownerFormId);
 
-							TESObjectARMO* armor = DYNAMIC_CAST(itemForm, TESForm, TESObjectARMO);
+							RE::TESObjectARMO* armor = itemForm ? itemForm->As<RE::TESObjectARMO>() : nullptr;
 							if (armor) {
-								identifier.SetSlotMask(armor->bipedObject.GetSlotMask());
+								identifier.SetSlotMask(armor->GetSlotMask().underlying());
 							}
 
 							m_loadQueue.push_back(new NIOVTaskUpdateItemDye(actor, identifier, TintMaskInterface::kUpdate_All, false));
@@ -1111,11 +1111,12 @@ bool ItemDataInterface::Load(SKSESerializationInterface * intfc, UInt32 kVersion
 				}
 				break;
 				default:
-					_ERROR("Error loading unexpected chunk type %08X (%.4s)", type, reinterpret_cast<char*>(&type));
+					SKSE::log::error("Error loading unexpected chunk type {:08X} ({:.4})", type, std::string(reinterpret_cast<char*>(&type), 4));
 					error = true;
 					break;
 			}
 		}
+	}
 	}
 
 	// Sort task list
@@ -1152,31 +1153,31 @@ bool ItemDataInterface::Load(SKSESerializationInterface * intfc, UInt32 kVersion
 	return error;
 }
 
-void ItemAttributeData::SetLayerColor(SInt32 textureIndex, SInt32 layerIndex, UInt32 color)
+void ItemAttributeData::SetLayerColor(std::int32_t textureIndex, std::int32_t layerIndex, std::uint32_t color)
 {
 	utils::scoped_lock<> locker(m_lock);
 	m_tintData[textureIndex].m_colorMap[layerIndex] = color;
 }
 
-void ItemAttributeData::SetLayerType(SInt32 textureIndex, SInt32 layerIndex, UInt32 type)
+void ItemAttributeData::SetLayerType(std::int32_t textureIndex, std::int32_t layerIndex, std::uint32_t type)
 {
 	utils::scoped_lock<> locker(m_lock);
-	m_tintData[textureIndex].m_typeMap[layerIndex] = static_cast<UInt8>(type);
+	m_tintData[textureIndex].m_typeMap[layerIndex] = static_cast<std::uint8_t>(type);
 }
 
-void ItemAttributeData::SetLayerBlendMode(SInt32 textureIndex, SInt32 layerIndex, SKEEFixedString blendMode)
+void ItemAttributeData::SetLayerBlendMode(std::int32_t textureIndex, std::int32_t layerIndex, SKEEFixedString blendMode)
 {
 	utils::scoped_lock<> locker(m_lock);
 	m_tintData[textureIndex].m_blendMap[layerIndex] = g_stringTable.GetString(blendMode);
 }
 
-void ItemAttributeData::SetLayerTexture(SInt32 textureIndex, SInt32 layerIndex, SKEEFixedString texture)
+void ItemAttributeData::SetLayerTexture(std::int32_t textureIndex, std::int32_t layerIndex, SKEEFixedString texture)
 {
 	utils::scoped_lock<> locker(m_lock);
 	m_tintData[textureIndex].m_textureMap[layerIndex] = g_stringTable.GetString(texture);
 }
 
-UInt32 ItemAttributeData::GetLayerColor(SInt32 textureIndex, SInt32 layerIndex)
+std::uint32_t ItemAttributeData::GetLayerColor(std::int32_t textureIndex, std::int32_t layerIndex)
 {
 	utils::scoped_lock<> locker(m_lock);
 	auto layerData = m_tintData.find(textureIndex);
@@ -1190,7 +1191,7 @@ UInt32 ItemAttributeData::GetLayerColor(SInt32 textureIndex, SInt32 layerIndex)
 	return 0;
 }
 
-UInt32 ItemAttributeData::GetLayerType(SInt32 textureIndex, SInt32 layerIndex)
+std::uint32_t ItemAttributeData::GetLayerType(std::int32_t textureIndex, std::int32_t layerIndex)
 {
 	utils::scoped_lock<> locker(m_lock);
 	auto layerData = m_tintData.find(textureIndex);
@@ -1204,7 +1205,7 @@ UInt32 ItemAttributeData::GetLayerType(SInt32 textureIndex, SInt32 layerIndex)
 	return -1;
 }
 
-SKEEFixedString ItemAttributeData::GetLayerBlendMode(SInt32 textureIndex, SInt32 layerIndex)
+SKEEFixedString ItemAttributeData::GetLayerBlendMode(std::int32_t textureIndex, std::int32_t layerIndex)
 {
 	utils::scoped_lock<> locker(m_lock);
 	auto layerData = m_tintData.find(textureIndex);
@@ -1218,7 +1219,7 @@ SKEEFixedString ItemAttributeData::GetLayerBlendMode(SInt32 textureIndex, SInt32
 	return SKEEFixedString("");
 }
 
-SKEEFixedString ItemAttributeData::GetLayerTexture(SInt32 textureIndex, SInt32 layerIndex)
+SKEEFixedString ItemAttributeData::GetLayerTexture(std::int32_t textureIndex, std::int32_t layerIndex)
 {
 	utils::scoped_lock<> locker(m_lock);
 	auto layerData = m_tintData.find(textureIndex);
@@ -1232,7 +1233,7 @@ SKEEFixedString ItemAttributeData::GetLayerTexture(SInt32 textureIndex, SInt32 l
 	return SKEEFixedString("");
 }
 
-void ItemAttributeData::ClearLayerColor(SInt32 textureIndex, SInt32 layerIndex)
+void ItemAttributeData::ClearLayerColor(std::int32_t textureIndex, std::int32_t layerIndex)
 {
 	utils::scoped_lock<> locker(m_lock);
 	auto layerData = m_tintData.find(textureIndex);
@@ -1250,7 +1251,7 @@ void ItemAttributeData::ClearLayerColor(SInt32 textureIndex, SInt32 layerIndex)
 	}
 }
 
-void ItemAttributeData::ClearLayerType(SInt32 textureIndex, SInt32 layerIndex)
+void ItemAttributeData::ClearLayerType(std::int32_t textureIndex, std::int32_t layerIndex)
 {
 	utils::scoped_lock<> locker(m_lock);
 	auto layerData = m_tintData.find(textureIndex);
@@ -1268,7 +1269,7 @@ void ItemAttributeData::ClearLayerType(SInt32 textureIndex, SInt32 layerIndex)
 	}
 }
 
-void ItemAttributeData::ClearLayerBlendMode(SInt32 textureIndex, SInt32 layerIndex)
+void ItemAttributeData::ClearLayerBlendMode(std::int32_t textureIndex, std::int32_t layerIndex)
 {
 	utils::scoped_lock<> locker(m_lock);
 	auto layerData = m_tintData.find(textureIndex);
@@ -1286,7 +1287,7 @@ void ItemAttributeData::ClearLayerBlendMode(SInt32 textureIndex, SInt32 layerInd
 	}
 }
 
-void ItemAttributeData::ClearLayerTexture(SInt32 textureIndex, SInt32 layerIndex)
+void ItemAttributeData::ClearLayerTexture(std::int32_t textureIndex, std::int32_t layerIndex)
 {
 	utils::scoped_lock<> locker(m_lock);
 	auto layerData = m_tintData.find(textureIndex);
@@ -1304,7 +1305,7 @@ void ItemAttributeData::ClearLayerTexture(SInt32 textureIndex, SInt32 layerIndex
 	}
 }
 
-void ItemAttributeData::ClearLayer(SInt32 textureIndex)
+void ItemAttributeData::ClearLayer(std::int32_t textureIndex)
 {
 	utils::scoped_lock<> locker(m_lock);
 	auto layerData = m_tintData.find(textureIndex);
@@ -1351,7 +1352,7 @@ void ItemAttributeData::ClearData(SKEEFixedString key)
 	}
 }
 
-void ItemAttributeData::ForEachLayer(std::function<bool(SInt32, TintData&)> functor)
+void ItemAttributeData::ForEachLayer(std::function<bool(std::int32_t, TintData&)> functor)
 {
 	utils::scoped_lock<> locker(m_lock);
 	for (auto it : m_tintData)
@@ -1363,7 +1364,7 @@ void ItemAttributeData::ForEachLayer(std::function<bool(SInt32, TintData&)> func
 	}
 }
 
-bool ItemAttributeData::GetLayer(SInt32 layerIndex, std::function<void(TintData&)> functor)
+bool ItemAttributeData::GetLayer(std::int32_t layerIndex, std::function<void(TintData&)> functor)
 {
 	utils::scoped_lock<> locker(m_lock);
 	auto it = m_tintData.find(layerIndex);

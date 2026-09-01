@@ -4,42 +4,43 @@
 #include <unordered_map>
 
 #include "FileUtils.h"
+#include "RaceMenuTypes.h"
+#include <cstdint>
+namespace RE
+{
+	class BGSHeadPart;
+}
 
-class BGSHeadPart;
-class SliderArray;
-class RaceMenuSlider;
-
-typedef std::vector<BGSHeadPart*> HeadPartList;
+typedef std::vector<RE::BGSHeadPart*> HeadPartList;
 
 class PartEntry
 {
 public:
-	BGSHeadPart * defaultPart = nullptr;
+	RE::BGSHeadPart * defaultPart = nullptr;
 	HeadPartList partList;
 };
 
-class PartSet : public std::unordered_map<UInt32, PartEntry>
+class PartSet : public std::unordered_map<std::uint32_t, PartEntry>
 {
 public:
 	class Visitor
 	{
 	public:
-		virtual bool Accept(UInt32 key, BGSHeadPart * part) { return false; };
+		virtual bool Accept(std::uint32_t key, RE::BGSHeadPart * part) { return false; };
 	};
 
-	void LoadSliders(SliderArray * sliderArray, RaceMenuSlider * slider);
+	void LoadSliders(RE::RaceMenuSliderArray * sliderArray, RE::RaceMenuSlider * slider);
 
-	void AddPart(UInt32 key, BGSHeadPart* part);
+	void AddPart(std::uint32_t key, RE::BGSHeadPart* part);
 	void Visit(Visitor & visitor);
 
-	HeadPartList * GetPartList(UInt32 key);
-	BGSHeadPart * GetDefaultPart(UInt32 key);
-	void SetDefaultPart(UInt32 key, BGSHeadPart* part);
-	SInt32 GetPartIndex(HeadPartList * headPartList, BGSHeadPart * headPart);
-	BGSHeadPart * GetPartByIndex(HeadPartList * headPartList, UInt32 index);
+	HeadPartList * GetPartList(std::uint32_t key);
+	RE::BGSHeadPart * GetDefaultPart(std::uint32_t key);
+	void SetDefaultPart(std::uint32_t key, RE::BGSHeadPart* part);
+	std::int32_t GetPartIndex(HeadPartList * headPartList, RE::BGSHeadPart * headPart);
+	RE::BGSHeadPart * GetPartByIndex(HeadPartList * headPartList, std::uint32_t index);
 
 	void Revert();
 };
-
 
 void ReadPartReplacements(std::string fixedPath, std::string modPath, std::string fileName);

@@ -1,94 +1,91 @@
 #pragma once
 
-class VMClassRegistry;
-struct StaticFunctionTag;
-class TESObjectREFR;
-class TESObjectARMO;
-class TESObjectARMA;
-class TESObjectWEAP;
-
-#include "skse64/GameTypes.h"
-
+#include "RE/B/BSFixedString.h"
+#include "RE/I/IVirtualMachine.h"
+#include <cstdint>
+namespace RE
+{
+	class TESObjectREFR;
+	class TESObjectARMO;
+	class TESObjectARMA;
+	class TESObjectWEAP;
+}
 namespace papyrusNiOverride
 {
-	void RegisterFuncs(VMClassRegistry* registry);
+	void RegisterFuncs(RE::BSScript::IVirtualMachine* a_vm);
 
 	// Armor Overrides
-	bool HasOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, TESObjectARMO * armor, TESObjectARMA * addon, BSFixedString nodeName, UInt32 key, UInt32 index);
+	bool HasOverride(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, bool isFemale, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index);
 
 	template<typename T>
-	void AddOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, TESObjectARMO * armor, TESObjectARMA * addon, BSFixedString nodeName, UInt32 key, UInt32 index, T dataType, bool persist);
+	void AddOverride(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, bool isFemale, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index, T dataType, bool persist);
 
 	template<typename T>
-	T GetOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, TESObjectARMO * armor, TESObjectARMA * addon, BSFixedString nodeName, UInt32 key, UInt32 index);
+	T GetOverride(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, bool isFemale, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index);
 
 	template<typename T>
-	T GetArmorAddonProperty(StaticFunctionTag* base, TESObjectREFR * refr, bool firstPerson, TESObjectARMO * armor, TESObjectARMA * addon, BSFixedString nodeName, UInt32 key, UInt32 index);
-
+	T GetArmorAddonProperty(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, bool firstPerson, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index);
 
 	// Node Overrides
-	bool HasNodeOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, BSFixedString nodeName, UInt32 key, UInt32 index);
+	bool HasNodeOverride(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, bool isFemale, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index);
 
 	template<typename T>
-	void AddNodeOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, BSFixedString nodeName, UInt32 key, UInt32 index, T dataType, bool persist);
+	void AddNodeOverride(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, bool isFemale, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index, T dataType, bool persist);
 
 	template<typename T>
-	T GetNodeOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, BSFixedString nodeName, UInt32 key, UInt32 index);
+	T GetNodeOverride(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, bool isFemale, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index);
 
 	template<typename T>
-	T GetNodeProperty(StaticFunctionTag* base, TESObjectREFR * refr, bool firstPerson, BSFixedString nodeName, UInt32 key, UInt32 index);
-
+	T GetNodeProperty(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, bool firstPerson, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index);
 
 	// Weapon overrides
-	bool HasWeaponOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, bool firstPerson, TESObjectWEAP * weapon, BSFixedString nodeName, UInt32 key, UInt32 index);
+	bool HasWeaponOverride(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, bool isFemale, bool firstPerson, RE::TESObjectWEAP* weapon, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index);
 
 	template<typename T>
-	void AddWeaponOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, bool firstPerson, TESObjectWEAP * weapon, BSFixedString nodeName, UInt32 key, UInt32 index, T dataType, bool persist);
+	void AddWeaponOverride(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, bool isFemale, bool firstPerson, RE::TESObjectWEAP* weapon, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index, T dataType, bool persist);
 
 	template<typename T>
-	T GetWeaponOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, bool firstPerson, TESObjectWEAP * weapon, BSFixedString nodeName, UInt32 key, UInt32 index);
+	T GetWeaponOverride(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, bool isFemale, bool firstPerson, RE::TESObjectWEAP* weapon, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index);
 
 	template<typename T>
-	T GetWeaponProperty(StaticFunctionTag* base, TESObjectREFR * refr, bool firstPerson, TESObjectWEAP * weapon, BSFixedString nodeName, UInt32 key, UInt32 index);
+	T GetWeaponProperty(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, bool firstPerson, RE::TESObjectWEAP* weapon, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index);
 
+	void RemoveAllOverrides(RE::StaticFunctionTag* base);
+	void RemoveAllReferenceOverrides(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr);
+	void RemoveAllArmorOverrides(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, bool isFemale, RE::TESObjectARMO* armor);
+	void RemoveAllArmorAddonOverrides(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, bool isFemale, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon);
+	void RemoveAllArmorAddonNodeOverrides(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, bool isFemale, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, RE::BSFixedString nodeName);
+	void RemoveArmorAddonOverride(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, bool isFemale, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index);
 
-	void RemoveAllOverrides(StaticFunctionTag* base);
-	void RemoveAllReferenceOverrides(StaticFunctionTag* base, TESObjectREFR * refr);
-	void RemoveAllArmorOverrides(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, TESObjectARMO * armor);
-	void RemoveAllArmorAddonOverrides(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, TESObjectARMO * armor, TESObjectARMA * addon);
-	void RemoveAllArmorAddonNodeOverrides(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, TESObjectARMO * armor, TESObjectARMA * addon, BSFixedString nodeName);
-	void RemoveArmorAddonOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, TESObjectARMO * armor, TESObjectARMA * addon, BSFixedString nodeName, UInt32 key, UInt32 index);
+	void RemoveAllNodeOverrides(RE::StaticFunctionTag* base);
+	void RemoveAllReferenceNodeOverrides(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr);
+	void RemoveAllNodeNameOverrides(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, bool isFemale, RE::BSFixedString nodeName);
+	void RemoveNodeOverride(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, bool isFemale, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index);
 
-	void RemoveAllNodeOverrides(StaticFunctionTag* base);
-	void RemoveAllReferenceNodeOverrides(StaticFunctionTag* base, TESObjectREFR * refr);
-	void RemoveAllNodeNameOverrides(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, BSFixedString nodeName);
-	void RemoveNodeOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, BSFixedString nodeName, UInt32 key, UInt32 index);
+	void RemoveAllWeaponBasedOverrides(RE::StaticFunctionTag* base);
+	void RemoveAllReferenceWeaponOverrides(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr);
+	void RemoveAllWeaponOverrides(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, bool isFemale, bool firstPerson, RE::TESObjectWEAP* weapon);
+	void RemoveAllWeaponNodeOverrides(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, bool isFemale, bool firstPerson, RE::TESObjectWEAP* weapon, RE::BSFixedString nodeName);
+	void RemoveWeaponOverride(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, bool isFemale, bool firstPerson, RE::TESObjectWEAP* weapon, RE::BSFixedString nodeName, std::uint32_t key, std::uint32_t index);
 
-	void RemoveAllWeaponBasedOverrides(StaticFunctionTag* base);
-	void RemoveAllReferenceWeaponOverrides(StaticFunctionTag* base, TESObjectREFR * refr);
-	void RemoveAllWeaponOverrides(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, bool firstPerson, TESObjectWEAP * weapon);
-	void RemoveAllWeaponNodeOverrides(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, bool firstPerson, TESObjectWEAP * weapon, BSFixedString nodeName);
-	void RemoveWeaponOverride(StaticFunctionTag* base, TESObjectREFR * refr, bool isFemale, bool firstPerson, TESObjectWEAP * weapon, BSFixedString nodeName, UInt32 key, UInt32 index);
+	std::uint32_t GetNumBodyOverlays(RE::StaticFunctionTag* base);
+	std::uint32_t GetNumHandOverlays(RE::StaticFunctionTag* base);
+	std::uint32_t GetNumFeetOverlays(RE::StaticFunctionTag* base);
+	std::uint32_t GetNumFaceOverlays(RE::StaticFunctionTag* base);
 
+	std::uint32_t GetNumSpellBodyOverlays(RE::StaticFunctionTag* base);
+	std::uint32_t GetNumSpellHandOverlays(RE::StaticFunctionTag* base);
+	std::uint32_t GetNumSpellFeetOverlays(RE::StaticFunctionTag* base);
+	std::uint32_t GetNumSpellFaceOverlays(RE::StaticFunctionTag* base);
 
-	UInt32 GetNumBodyOverlays(StaticFunctionTag* base);
-	UInt32 GetNumHandOverlays(StaticFunctionTag* base);
-	UInt32 GetNumFeetOverlays(StaticFunctionTag* base);
-	UInt32 GetNumFaceOverlays(StaticFunctionTag* base);
+	void AddOverlays(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr);
+	bool HasOverlays(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr);
+	void RemoveOverlays(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr);
+	void RevertOverlays(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr);
+	void RevertOverlay(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, RE::BSFixedString nodeName, std::uint32_t armorMask, std::uint32_t addonMask);
 
-	UInt32 GetNumSpellBodyOverlays(StaticFunctionTag* base);
-	UInt32 GetNumSpellHandOverlays(StaticFunctionTag* base);
-	UInt32 GetNumSpellFeetOverlays(StaticFunctionTag* base);
-	UInt32 GetNumSpellFaceOverlays(StaticFunctionTag* base);
-
-	void AddOverlays(StaticFunctionTag* base, TESObjectREFR * refr);
-	bool HasOverlays(StaticFunctionTag* base, TESObjectREFR * refr);
-	void RemoveOverlays(StaticFunctionTag* base, TESObjectREFR * refr);
-	void RevertOverlays(StaticFunctionTag* base, TESObjectREFR * refr);
-	void RevertOverlay(StaticFunctionTag* base, TESObjectREFR * refr, BSFixedString nodeName, UInt32 armorMask, UInt32 addonMask);
-
-	void SetBodyMorph(StaticFunctionTag* base, TESObjectREFR * refr, BSFixedString morphName, BSFixedString keyName, float value);
-	float GetBodyMorph(StaticFunctionTag* base, TESObjectREFR * refr, BSFixedString morphName, BSFixedString keyName);
-	void ClearBodyMorph(StaticFunctionTag* base, TESObjectREFR * refr, BSFixedString morphName, BSFixedString keyName);
-	void UpdateItemTextureLayers(StaticFunctionTag * base, TESObjectREFR * refr, UInt32 uniqueID);
+	void SetBodyMorph(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, RE::BSFixedString morphName, RE::BSFixedString keyName, float value);
+	float GetBodyMorph(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, RE::BSFixedString morphName, RE::BSFixedString keyName);
+	void ClearBodyMorph(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, RE::BSFixedString morphName, RE::BSFixedString keyName);
+	void UpdateItemTextureLayers(RE::StaticFunctionTag* base, RE::TESObjectREFR* refr, std::uint32_t uniqueID);
 }

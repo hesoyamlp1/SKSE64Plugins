@@ -1,47 +1,43 @@
 #include "ActorArmorTangentUpdater.h"
 
-#include "skse64/GameReferences.h"
-#include "skse64/GameFormComponents.h"
 
-#include "skse64/NiGeometry.h"
-#include "skse64/NiProperties.h"
+#include "RE/N/NiGeometry.h"
 
 #include <functional>
 
 #include "NifUtils.h"
+#include <cstdint>
 
-void ActorArmorTangentUpdater::OnAttach(TESObjectREFR* refr, TESObjectARMO* armor, TESObjectARMA* addon, NiAVObject* object, bool isFirstPerson, NiNode* skeleton, NiNode* root)
+void ActorArmorTangentUpdater::OnAttach(RE::TESObjectREFR* refr, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, RE::NiAVObject* object, bool isFirstPerson, RE::NiNode* skeleton, RE::NiNode* root)
 {
-	if (refr && refr->formType == Character::kTypeID)
+	if (refr && refr->IsActor())
 	{
-		TESObjectARMO* skinForm = nullptr;
-		Character* actor = static_cast<Character*>(refr);
-		TESNPC* actorBase = static_cast<TESNPC*>(actor->baseForm);
-		UInt8 gender = 0;
+		RE::TESObjectARMO* skinForm = nullptr;
+		RE::Actor* actor = refr ? refr->As<RE::Actor>() : nullptr;
+		RE::TESNPC* actorBase = actor->GetActorBase();
+		std::uint8_t gender = 0;
 
-		TESRace* race = actor->race;
+		RE::TESRace* race = actor->GetRace();
 		if (actorBase) {
 			if (!race) {
-				race = actorBase->race.race;
+				race = actorBase->GetRace();
 			}
-			skinForm = actorBase->skinForm.skin;
-			gender = CALL_MEMBER_FN(actorBase, GetSex)();
+			gender = static_cast<std::uint8_t>(actorBase->GetSex());
 		}
 
 		if (!skinForm && race) {
-			skinForm = race->skin.skin;
+			skinForm = race->skin;
 		}
 
 		if (skinForm)
 		{
-			std::function<BGSTextureSet* ()> GetTextureSet = [=]()
+			std::function<RE::BGSTextureSet* ()> GetTextureSet = [=]()
 			{
-				BGSTextureSet* textureSet = nullptr;
-				for (UInt32 i = 0; i < skinForm->armorAddons.count; ++i)
+				RE::BGSTextureSet* textureSet = nullptr;
+				for (std::uint32_t i = 0; i < skinForm->armorAddons.size(); ++i)
 				{
-					TESObjectARMA* arma = nullptr;
-					skinForm->armorAddons.GetNthItem(i, arma);
-					if (addon->biped.GetSlotMask() & arma->biped.GetSlotMask() && arma->isValidRace(race))
+					RE::TESObjectARMA* arma = skinForm->armorAddons[i];
+					if (addon->GetSlotMask().underlying() & arma->GetSlotMask().underlying() && arma->IsValidRace(race))
 					{
 						textureSet = arma->skinTextures[gender];
 						break;
@@ -51,22 +47,22 @@ void ActorArmorTangentUpdater::OnAttach(TESObjectREFR* refr, TESObjectARMO* armo
 				return textureSet;
 			};
 
-			BGSTextureSet* textureSet = nullptr;
-			VisitGeometry(object, [&textureSet, &GetTextureSet, refr, armor, addon](BSGeometry* geometry)
+			RE::BGSTextureSet* textureSet = nullptr;
+			VisitGeometry(object, [&textureSet, &GetTextureSet, refr, armor, addon](RE::BSGeometry* geometry)
 			{
-				BSShaderProperty* shaderProperty = niptr_cast<BSShaderProperty>(geometry->m_spEffectState);
-				if (shaderProperty && ni_is_type(shaderProperty->GetRTTI(), BSLightingShaderProperty) && shaderProperty->shaderFlags1 & BSShaderProperty::kSLSF1_Model_Space_Normals)
+				RE::BSShaderProperty* shaderProperty = geometry->GetGeometryRuntimeData().shaderProperty.get();
+				if (shaderProperty && shaderProperty->flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals))
 				{
-					BSLightingShaderMaterial* material = (BSLightingShaderMaterial*)shaderProperty->material;
-					if (material && material->GetShaderType() == BSLightingShaderMaterial::kShaderType_FaceGenRGBTint)
+					RE::BSLightingShaderMaterial* material = static_cast<RE::BSLightingShaderMaterial*>(shaderProperty->material);
+					if (material && material->GetFeature() == RE::BSShaderMaterial::Feature::kFaceGenRGBTint)
 					{
 						if (!textureSet)
 						{
 							textureSet = GetTextureSet();
 						}
-						if (textureSet && !(textureSet->flags & BGSTextureSet::kFlagHasModelSpaceNormalMap))
+						if (textureSet && !(textureSet->flags.all(RE::BGSTextureSet::Flag::kHasModelSpaceNormalMap)))
 						{
-							shaderProperty->shaderFlags1 &= ~BSShaderProperty::kSLSF1_Model_Space_Normals;
+							shaderProperty->SetFlags(RE::BSShaderProperty::EShaderPropertyFlag8::kModelSpaceNormals, false);
 						}
 					}
 				}

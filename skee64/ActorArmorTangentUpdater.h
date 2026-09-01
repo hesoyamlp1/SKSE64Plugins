@@ -1,16 +1,10 @@
 #pragma once
 
-#include "skee64/IPluginInterface.h"
-
-class TESObjectREFR;
-class TESObjectARMO;
-class TESObjectARMA;
-class NiAVObject;
-class NiNode;
+#include "IPluginInterface.h"
 
 class ActorArmorTangentUpdater : public IAddonAttachmentInterface
 {
 public:
 	// Inherited via IAddonAttachmentInterface
-	virtual void OnAttach(TESObjectREFR* refr, TESObjectARMO* armor, TESObjectARMA* addon, NiAVObject* object, bool isFirstPerson, NiNode* skeleton, NiNode* root) override;
+	virtual void OnAttach(RE::TESObjectREFR* refr, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, RE::NiAVObject* object, bool isFirstPerson, RE::NiNode* skeleton, RE::NiNode* root) override;
 };

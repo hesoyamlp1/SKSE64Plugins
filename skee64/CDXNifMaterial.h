@@ -2,15 +2,15 @@
 
 #include "CDXMaterial.h"
 
-#include "skse64/NiTypes.h"
-#include "skse64/NiTextures.h"
+#include <RE/N/NiSmartPointer.h>
+#include <RE/N/NiTexture.h>
 
 class CDXNifMaterial : public CDXMaterial
 {
 public:
-	// Holds a reference to the NiTexture to keep it from being destroyed
-	void SetNiTexture(int index, NiTexture* texture);
+	// Holds a reference to the RE::NiTexture to keep it from being destroyed
+	void SetNiTexture(int index, RE::NiTexture* texture);
 	
 private:
-	NiPointer<NiTexture> m_pTextures[5];
+	RE::NiPointer<RE::NiTexture> m_pTextures[5];
 };

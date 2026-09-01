@@ -3,9 +3,6 @@
 #include "IPluginInterface.h"
 
 #include <unordered_map>
-
-struct SKSESerializationInterface;
-
 class PluginInterface : public IPluginInterface
 {
 public:

@@ -6,6 +6,7 @@
 #include "CDXUndo.h"
 #include "CDXEditableMesh.h"
 #include "CDXPicker.h"
+#include <cstdint>
 
 class CDXBrush;
 
@@ -22,7 +23,6 @@ public:
 		double			falloff;
 	};
 
-
 	enum StrokeType {
 		kStrokeType_None = 0,
 		kStrokeType_Mask_Add,
@@ -38,7 +38,7 @@ public:
 	virtual void Begin(CDXPickInfo & pickInfo) = 0;
 	virtual void Update(Info * pickInfo) = 0;
 	virtual void End() = 0;
-	virtual void Apply(SInt32 i) = 0;
+	virtual void Apply(std::int32_t i) = 0;
 	virtual size_t Length() = 0;
 
 	CDXVec GetOrigin() { return m_origin; }
@@ -64,7 +64,7 @@ public:
 	virtual UndoType GetUndoType();
 	virtual void Begin(CDXPickInfo & pickInfo);
 	virtual void End() { };
-	virtual void Apply(SInt32 i) { };
+	virtual void Apply(std::int32_t i) { };
 };
 
 class CDXBasicHitStroke : public CDXBasicStroke
@@ -140,7 +140,6 @@ public:
 	virtual StrokeType GetStrokeType();
 	virtual void Update(Info * strokeInfo);
 };
-
 
 class CDXMoveStroke : public CDXBasicStroke
 {

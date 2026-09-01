@@ -6,10 +6,11 @@
 #include "CDXEditableMesh.h"
 #include "CDXMaterial.h"
 
-#include "skse64/NiTypes.h"
+#include <RE/B/BSTriShape.h>
+#include <RE/N/NiGeometry.h>
+#include <RE/N/NiGeometryData.h>
+#include <RE/N/NiSmartPointer.h>
 
-class NiGeometry;
-class BSTriShape;
 class CDXScene;
 class CDXShader;
 class CDXD3DDevice;
@@ -21,8 +22,8 @@ public:
 	virtual ~CDXNifMesh();
 
 	virtual const char* GetName() const override { return ""; }
-	virtual NiGeometry* GetLegacyGeometry() { return nullptr; }
-	virtual BSTriShape* GetGeometry() { return nullptr; }
+	virtual RE::NiGeometry* GetLegacyGeometry() { return nullptr; }
+	virtual RE::BSTriShape* GetGeometry() { return nullptr; }
 	virtual bool IsMorphable() const
 	{
 #ifdef CDX_MUTEX
@@ -47,18 +48,18 @@ public:
 	CDXLegacyNifMesh();
 	virtual ~CDXLegacyNifMesh();
 
-	static CDXLegacyNifMesh * Create(CDXD3DDevice * pDevice, NiGeometry * geometry);
+	static CDXLegacyNifMesh * Create(CDXD3DDevice * pDevice, RE::NiGeometry * geometry);
 	virtual const char* GetName() const override;
-	virtual NiGeometry* GetLegacyGeometry() override
+	virtual RE::NiGeometry* GetLegacyGeometry() override
 	{
 #ifdef CDX_MUTEX
 		std::lock_guard<std::mutex> guard(m_mutex);
 #endif
-		return m_geometry;
+		return m_geometry.get();
 	}
 
 private:
-	NiPointer<NiGeometry> m_geometry;
+	RE::NiPointer<RE::NiGeometry> m_geometry;
 };
 
 class CDXBSTriShapeMesh : public CDXNifMesh
@@ -67,19 +68,19 @@ public:
 	CDXBSTriShapeMesh();
 	virtual ~CDXBSTriShapeMesh();
 
-	static CDXBSTriShapeMesh * Create(CDXD3DDevice * pDevice, BSTriShape * geometry);
+	static CDXBSTriShapeMesh * Create(CDXD3DDevice * pDevice, RE::BSTriShape * geometry);
 
 	virtual const char* GetName() const override;
-	virtual BSTriShape* GetGeometry() override
+	virtual RE::BSTriShape* GetGeometry() override
 	{
 #ifdef CDX_MUTEX
 		std::lock_guard<std::mutex> guard(m_mutex);
 #endif
-		return m_geometry;
+		return m_geometry.get();
 	}
 
 private:
-	NiPointer<BSTriShape> m_geometry;
+	RE::NiPointer<RE::BSTriShape> m_geometry;
 };
 
 #endif

@@ -4,15 +4,18 @@
 #include "CDXShaderCompile.h"
 #include "CDXShaderFactory.h"
 #include "CDXTypes.h"
+#include <cstdint>
+
+
 
 CDXTextureRenderer::CDXTextureRenderer()
 {
 	m_shaderCache = nullptr;
 	m_source = nullptr;
-	ZeroMemory(&m_srcDesc, sizeof(D3D11_TEXTURE2D_DESC));
-	ZeroMemory(&m_dstDesc, sizeof(D3D11_TEXTURE2D_DESC));
-	m_dstDesc.Width = 8;
-	m_dstDesc.Height = 8;
+	ZeroMemory(&m_srcDesc, sizeof(REX::W32::D3D11_TEXTURE2D_DESC));
+	ZeroMemory(&m_dstDesc, sizeof(REX::W32::D3D11_TEXTURE2D_DESC));
+	m_dstDesc.width = 8;
+	m_dstDesc.height = 8;
 	m_vertexBuffer = nullptr;
 	m_indexBuffer = nullptr;
 	m_vertexShader = nullptr;
@@ -39,20 +42,20 @@ bool CDXTextureRenderer::Initialize(CDXD3DDevice * device, CDXShaderFactory * fa
 		return false;
 	}
 
-	Microsoft::WRL::ComPtr<ID3D11Device> pDevice = device->GetDevice();
+	REX::W32::ComPtr<REX::W32::ID3D11Device> pDevice = device->GetDevice();
 
-	D3D11_BLEND_DESC blendStateDescription;
-	ZeroMemory(&blendStateDescription, sizeof(D3D11_BLEND_DESC));
+	REX::W32::D3D11_BLEND_DESC blendStateDescription;
+	ZeroMemory(&blendStateDescription, sizeof(REX::W32::D3D11_BLEND_DESC));
 
 	// Create an alpha enabled blend state description.
-	blendStateDescription.RenderTarget[0].BlendEnable = FALSE;
-	blendStateDescription.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
-	blendStateDescription.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
-	blendStateDescription.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
-	blendStateDescription.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_SRC_ALPHA;
-	blendStateDescription.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_DEST_ALPHA;
-	blendStateDescription.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
-	blendStateDescription.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+	blendStateDescription.renderTarget[0].blendEnable = FALSE;
+	blendStateDescription.renderTarget[0].srcBlend = REX::W32::D3D11_BLEND_SRC_ALPHA;
+	blendStateDescription.renderTarget[0].destBlend = REX::W32::D3D11_BLEND_INV_SRC_ALPHA;
+	blendStateDescription.renderTarget[0].blendOp = REX::W32::D3D11_BLEND_OP_ADD;
+	blendStateDescription.renderTarget[0].srcBlendAlpha = REX::W32::D3D11_BLEND_SRC_ALPHA;
+	blendStateDescription.renderTarget[0].destBlendAlpha = REX::W32::D3D11_BLEND_DEST_ALPHA;
+	blendStateDescription.renderTarget[0].blendOpAlpha = REX::W32::D3D11_BLEND_OP_ADD;
+	blendStateDescription.renderTarget[0].renderTargetWriteMask = REX::W32::D3D11_COLOR_WRITE_ENABLE_ALL;
 
 	// Create the blend state using the description.
 	HRESULT result = pDevice->CreateBlendState(&blendStateDescription, m_alphaEnableBlendingState.ReleaseAndGetAddressOf());
@@ -68,12 +71,12 @@ bool CDXTextureRenderer::InitializeVertices(CDXD3DDevice * device)
 {
 	std::unique_ptr<VertexType[]> vertices;
 	std::unique_ptr<unsigned long[]> indices;
-	D3D11_BUFFER_DESC vertexBufferDesc, indexBufferDesc;
-	D3D11_SUBRESOURCE_DATA vertexData, indexData;
+	REX::W32::D3D11_BUFFER_DESC vertexBufferDesc, indexBufferDesc;
+	REX::W32::D3D11_SUBRESOURCE_DATA vertexData, indexData;
 	HRESULT result;
 	int i;
 
-	Microsoft::WRL::ComPtr<ID3D11Device> pDevice = device->GetDevice();
+	REX::W32::ComPtr<REX::W32::ID3D11Device> pDevice = device->GetDevice();
 
 	// Set the number of vertices in the vertex array.
 	m_vertexCount = 6;
@@ -105,17 +108,17 @@ bool CDXTextureRenderer::InitializeVertices(CDXD3DDevice * device)
 	}
 
 	// Set up the description of the static vertex buffer.
-	vertexBufferDesc.Usage = D3D11_USAGE_DYNAMIC;
-	vertexBufferDesc.ByteWidth = sizeof(VertexType) * m_vertexCount;
-	vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-	vertexBufferDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-	vertexBufferDesc.MiscFlags = 0;
-	vertexBufferDesc.StructureByteStride = 0;
+	vertexBufferDesc.usage = REX::W32::D3D11_USAGE_DYNAMIC;
+	vertexBufferDesc.byteWidth = sizeof(VertexType) * m_vertexCount;
+	vertexBufferDesc.bindFlags = REX::W32::D3D11_BIND_VERTEX_BUFFER;
+	vertexBufferDesc.cpuAccessFlags = REX::W32::D3D11_CPU_ACCESS_WRITE;
+	vertexBufferDesc.miscFlags = 0;
+	vertexBufferDesc.structureByteStride = 0;
 
 	// Give the subresource structure a pointer to the vertex data.
-	vertexData.pSysMem = vertices.get();
-	vertexData.SysMemPitch = 0;
-	vertexData.SysMemSlicePitch = 0;
+	vertexData.sysMem = vertices.get();
+	vertexData.sysMemPitch = 0;
+	vertexData.sysMemSlicePitch = 0;
 
 	// Now create the vertex buffer.
 	result = pDevice->CreateBuffer(&vertexBufferDesc, &vertexData, m_vertexBuffer.ReleaseAndGetAddressOf());
@@ -125,17 +128,17 @@ bool CDXTextureRenderer::InitializeVertices(CDXD3DDevice * device)
 	}
 
 	// Set up the description of the static index buffer.
-	indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-	indexBufferDesc.ByteWidth = sizeof(unsigned long) * m_indexCount;
-	indexBufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
-	indexBufferDesc.CPUAccessFlags = 0;
-	indexBufferDesc.MiscFlags = 0;
-	indexBufferDesc.StructureByteStride = 0;
+	indexBufferDesc.usage = REX::W32::D3D11_USAGE_DEFAULT;
+	indexBufferDesc.byteWidth = sizeof(unsigned long) * m_indexCount;
+	indexBufferDesc.bindFlags = REX::W32::D3D11_BIND_INDEX_BUFFER;
+	indexBufferDesc.cpuAccessFlags = 0;
+	indexBufferDesc.miscFlags = 0;
+	indexBufferDesc.structureByteStride = 0;
 
 	// Give the subresource structure a pointer to the index data.
-	indexData.pSysMem = indices.get();
-	indexData.SysMemPitch = 0;
-	indexData.SysMemSlicePitch = 0;
+	indexData.sysMem = indices.get();
+	indexData.sysMemPitch = 0;
+	indexData.sysMemSlicePitch = 0;
 
 	// Create the index buffer.
 	result = pDevice->CreateBuffer(&indexBufferDesc, &indexData, m_indexBuffer.ReleaseAndGetAddressOf());
@@ -147,29 +150,28 @@ bool CDXTextureRenderer::InitializeVertices(CDXD3DDevice * device)
 	return true;
 }
 
-
 bool CDXTextureRenderer::InitializeVertexShader(CDXD3DDevice * device, CDXShaderFactory * factory, CDXShaderFile * sourceFile, CDXShaderFile * precompiledFile)
 {
 	HRESULT result;
-	Microsoft::WRL::ComPtr<ID3D11Device> pDevice = device->GetDevice();
+	REX::W32::ComPtr<REX::W32::ID3D11Device> pDevice = device->GetDevice();
 	std::stringstream errors;
 
-	D3D11_INPUT_ELEMENT_DESC polygonLayout[2];
-	polygonLayout[0].SemanticName = "POSITION";
-	polygonLayout[0].SemanticIndex = 0;
-	polygonLayout[0].Format = DXGI_FORMAT_R32G32B32_FLOAT;
-	polygonLayout[0].InputSlot = 0;
-	polygonLayout[0].AlignedByteOffset = 0;
-	polygonLayout[0].InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA;
-	polygonLayout[0].InstanceDataStepRate = 0;
+	REX::W32::D3D11_INPUT_ELEMENT_DESC polygonLayout[2];
+	polygonLayout[0].semanticName = "POSITION";
+	polygonLayout[0].semanticIndex = 0;
+	polygonLayout[0].format = REX::W32::DXGI_FORMAT_R32G32B32_FLOAT;
+	polygonLayout[0].inputSlot = 0;
+	polygonLayout[0].alignedByteOffset = 0;
+	polygonLayout[0].inputSlotClass = REX::W32::D3D11_INPUT_PER_VERTEX_DATA;
+	polygonLayout[0].instanceDataStepRate = 0;
 
-	polygonLayout[1].SemanticName = "TEXCOORD";
-	polygonLayout[1].SemanticIndex = 0;
-	polygonLayout[1].Format = DXGI_FORMAT_R32G32_FLOAT;
-	polygonLayout[1].InputSlot = 0;
-	polygonLayout[1].AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT;
-	polygonLayout[1].InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA;
-	polygonLayout[1].InstanceDataStepRate = 0;
+	polygonLayout[1].semanticName = "TEXCOORD";
+	polygonLayout[1].semanticIndex = 0;
+	polygonLayout[1].format = REX::W32::DXGI_FORMAT_R32G32_FLOAT;
+	polygonLayout[1].inputSlot = 0;
+	polygonLayout[1].alignedByteOffset = 0xFFFFFFFF;
+	polygonLayout[1].inputSlotClass = REX::W32::D3D11_INPUT_PER_VERTEX_DATA;
+	polygonLayout[1].instanceDataStepRate = 0;
 
 	// Get a count of the elements in the layout.
 	unsigned int numElements = sizeof(polygonLayout) / sizeof(polygonLayout[0]);
@@ -180,13 +182,13 @@ bool CDXTextureRenderer::InitializeVertexShader(CDXD3DDevice * device, CDXShader
 	}
 
 	// Setup the description of the dynamic constant buffer that is in the vertex shader.
-	D3D11_BUFFER_DESC constantBufferDesc;
-	constantBufferDesc.Usage = D3D11_USAGE_DYNAMIC;
-	constantBufferDesc.ByteWidth = sizeof(ConstantBufferType);
-	constantBufferDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-	constantBufferDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-	constantBufferDesc.MiscFlags = 0;
-	constantBufferDesc.StructureByteStride = 0;
+	REX::W32::D3D11_BUFFER_DESC constantBufferDesc;
+	constantBufferDesc.usage = REX::W32::D3D11_USAGE_DYNAMIC;
+	constantBufferDesc.byteWidth = sizeof(ConstantBufferType);
+	constantBufferDesc.bindFlags = REX::W32::D3D11_BIND_CONSTANT_BUFFER;
+	constantBufferDesc.cpuAccessFlags = REX::W32::D3D11_CPU_ACCESS_WRITE;
+	constantBufferDesc.miscFlags = 0;
+	constantBufferDesc.structureByteStride = 0;
 
 	// Create the constant buffer pointer so we can access the vertex shader constant buffer from within this class.
 	result = pDevice->CreateBuffer(&constantBufferDesc, nullptr, m_constantBuffer.ReleaseAndGetAddressOf());
@@ -195,24 +197,24 @@ bool CDXTextureRenderer::InitializeVertexShader(CDXD3DDevice * device, CDXShader
 		return false;
 	}
 
-	D3D11_BUFFER_DESC sBufferDesc;
-	sBufferDesc.Usage = D3D11_USAGE_DYNAMIC;
-	sBufferDesc.ByteWidth = sizeof(LayerData);
-	sBufferDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-	sBufferDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-	sBufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
-	sBufferDesc.StructureByteStride = sizeof(LayerData);
+	REX::W32::D3D11_BUFFER_DESC sBufferDesc;
+	sBufferDesc.usage = REX::W32::D3D11_USAGE_DYNAMIC;
+	sBufferDesc.byteWidth = sizeof(LayerData);
+	sBufferDesc.bindFlags = REX::W32::D3D11_BIND_SHADER_RESOURCE;
+	sBufferDesc.cpuAccessFlags = REX::W32::D3D11_CPU_ACCESS_WRITE;
+	sBufferDesc.miscFlags = REX::W32::D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+	sBufferDesc.structureByteStride = sizeof(LayerData);
 	result = pDevice->CreateBuffer(&sBufferDesc, nullptr, m_structuredBuffer.ReleaseAndGetAddressOf());
 	if (FAILED(result))
 	{
 		return false;
 	}
 
-	D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
+	REX::W32::D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
 	ZeroMemory(&srvDesc, sizeof(srvDesc));
-	srvDesc.Format = DXGI_FORMAT_UNKNOWN;
-	srvDesc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
-	srvDesc.Buffer.ElementWidth = 1;
+	srvDesc.format = REX::W32::DXGI_FORMAT_UNKNOWN;
+	srvDesc.viewDimension = REX::W32::D3D11_SRV_DIMENSION_BUFFER;
+	srvDesc.buffer.elementWidth = 1;
 	result = pDevice->CreateShaderResourceView(m_structuredBuffer.Get(), &srvDesc, m_structuredBufferView.ReleaseAndGetAddressOf());
 	if (FAILED(result))
 	{
@@ -220,23 +222,23 @@ bool CDXTextureRenderer::InitializeVertexShader(CDXD3DDevice * device, CDXShader
 	}
 
 	// Create a texture sampler state description.
-	D3D11_SAMPLER_DESC samplerDesc;
-	samplerDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
-	samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
-	samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
-	samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
-	samplerDesc.MipLODBias = 0.0f;
-	samplerDesc.MaxAnisotropy = 1;
-	samplerDesc.ComparisonFunc = D3D11_COMPARISON_ALWAYS;
-	samplerDesc.BorderColor[0] = 0;
-	samplerDesc.BorderColor[1] = 0;
-	samplerDesc.BorderColor[2] = 0;
-	samplerDesc.BorderColor[3] = 0;
-	samplerDesc.MinLOD = 0;
-	samplerDesc.MaxLOD = D3D11_FLOAT32_MAX;
+	REX::W32::D3D11_SAMPLER_DESC samplerDesc;
+	samplerDesc.filter = REX::W32::D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+	samplerDesc.addressU = REX::W32::D3D11_TEXTURE_ADDRESS_WRAP;
+	samplerDesc.addressV = REX::W32::D3D11_TEXTURE_ADDRESS_WRAP;
+	samplerDesc.addressW = REX::W32::D3D11_TEXTURE_ADDRESS_WRAP;
+	samplerDesc.mipLODBias = 0.0f;
+	samplerDesc.maxAnisotropy = 1;
+	samplerDesc.comparisonFunc = REX::W32::D3D11_COMPARISON_ALWAYS;
+	samplerDesc.borderColor[0] = 0;
+	samplerDesc.borderColor[1] = 0;
+	samplerDesc.borderColor[2] = 0;
+	samplerDesc.borderColor[3] = 0;
+	samplerDesc.minLOD = 0;
+	samplerDesc.maxLOD = REX::W32::D3D11_FLOAT32_MAX;
 
 	// Create the texture sampler state.
-	result = pDevice->CreateSamplerState(&samplerDesc, &m_sampleState);
+	result = pDevice->CreateSamplerState(&samplerDesc, m_sampleState.GetAddressOf());
 	if (FAILED(result))
 	{
 		return false;
@@ -250,7 +252,6 @@ void CDXTextureRenderer::Render(CDXD3DDevice * device, bool clear)
 	unsigned int stride;
 	unsigned int offset;
 
-
 	// Set vertex buffer stride and offset.
 	stride = sizeof(VertexType);
 	offset = 0;
@@ -258,23 +259,23 @@ void CDXTextureRenderer::Render(CDXD3DDevice * device, bool clear)
 	auto pDevice = device->GetDevice();
 	auto pDeviceContext = device->GetDeviceContext();
 
-	if (m_source)
+	if (m_source.Get())
 	{
 		if (!UpdateConstantBuffer(device))
 		{
 			return;
 		}
 
-		D3D11_VIEWPORT viewport;
-		viewport.Width = (float)GetWidth();
-		viewport.Height = (float)GetHeight();
-		viewport.MinDepth = 0.0f;
-		viewport.MaxDepth = 1.0f;
-		viewport.TopLeftX = 0.0f;
-		viewport.TopLeftY = 0.0f;
+		REX::W32::D3D11_VIEWPORT viewport;
+		viewport.width = (float)GetWidth();
+		viewport.height = (float)GetHeight();
+		viewport.minDepth = 0.0f;
+		viewport.maxDepth = 1.0f;
+		viewport.topLeftX = 0.0f;
+		viewport.topLeftY = 0.0f;
 		pDeviceContext->RSSetViewports(1, &viewport);
 
-		ID3D11RenderTargetView* renderTarget[] = { m_renderTargetView.Get() };
+		REX::W32::ID3D11RenderTargetView* renderTarget[] = { m_renderTargetView.Get() };
 		pDeviceContext->OMSetRenderTargets(1, renderTarget, nullptr);
 
 		float blendFactor[4];
@@ -297,46 +298,46 @@ void CDXTextureRenderer::Render(CDXD3DDevice * device, bool clear)
 		}
 
 		// Set the vertex buffer to active in the input assembler so it can be rendered.
-		ID3D11Buffer* vertexBuffer[] = { m_vertexBuffer.Get() };
+		REX::W32::ID3D11Buffer* vertexBuffer[] = { m_vertexBuffer.Get() };
 		pDeviceContext->IASetVertexBuffers(0, 1, vertexBuffer, &stride, &offset);
 
 		// Set the index buffer to active in the input assembler so it can be rendered.
-		pDeviceContext->IASetIndexBuffer(m_indexBuffer.Get(), DXGI_FORMAT_R32_UINT, 0);
+		pDeviceContext->IASetIndexBuffer(m_indexBuffer.Get(), REX::W32::DXGI_FORMAT_R32_UINT, 0);
 
 		// Set the type of primitive that should be rendered from this vertex buffer, in this case triangles.
-		pDeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		pDeviceContext->IASetPrimitiveTopology(REX::W32::D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 		// Set the vertex layout
 		pDeviceContext->IASetInputLayout(m_layout.Get());
 
 		// Now set the constant buffer in the vertex shader with the updated values.
-		ID3D11Buffer* constBuffer[] = { m_constantBuffer.Get() };
+		REX::W32::ID3D11Buffer* constBuffer[] = { m_constantBuffer.Get() };
 		pDeviceContext->VSSetConstantBuffers(0, 1, constBuffer);
 
 		// Set the vertex and pixel shaders that will be used to render this triangle.
 		pDeviceContext->VSSetShader(m_vertexShader.Get(), nullptr, 0);
 
 		// Set the sampler state in the pixel shader.
-		ID3D11SamplerState* samplers[] = { m_sampleState.Get() };
+		REX::W32::ID3D11SamplerState* samplers[] = { m_sampleState.Get() };
 		pDeviceContext->PSSetSamplers(0, 1, samplers);
 
 		// Get all the array slices and perform the same shader series on them all
-		std::vector<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>> subresources;
+		std::vector<REX::W32::ComPtr<REX::W32::ID3D11ShaderResourceView>> subresources;
 		if (SplitSubresources(device, m_srcDesc, m_source, subresources))
 		{
 			for (size_t j = 0; j < subresources.size(); ++j)
 			{
 				RenderShaders(device, subresources[j]);
 
-				D3D11_BOX sourceRegion;
+				REX::W32::D3D11_BOX sourceRegion;
 				sourceRegion.left = 0;
-				sourceRegion.right = m_srcDesc.Width;
+				sourceRegion.right = m_srcDesc.width;
 				sourceRegion.top = 0;
-				sourceRegion.bottom = m_srcDesc.Height;
+				sourceRegion.bottom = m_srcDesc.height;
 				sourceRegion.front = 0;
 				sourceRegion.back = 1;
 
-				pDeviceContext->CopySubresourceRegion(m_multiTexture.Get(), D3D11CalcSubresource(0, j, 1), 0, 0, 0, m_renderTargetTexture.Get(), D3D11CalcSubresource(0, 0, 1), &sourceRegion);
+				pDeviceContext->CopySubresourceRegion(m_multiTexture.Get(), (0 + (j * 1)), 0, 0, 0, m_renderTargetTexture.Get(), (0 + (0 * 1)), &sourceRegion);
 			}
 		}
 		else
@@ -346,22 +347,22 @@ void CDXTextureRenderer::Render(CDXD3DDevice * device, bool clear)
 	}
 }
 
-void CDXTextureRenderer::RenderShaders(CDXD3DDevice * device, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> sourceView)
+void CDXTextureRenderer::RenderShaders(CDXD3DDevice * device, REX::W32::ComPtr<REX::W32::ID3D11ShaderResourceView> sourceView)
 {
 	auto pDevice = device->GetDevice();
 	auto pDeviceContext = device->GetDeviceContext();
 
 	size_t i = 0;
-	ID3D11ShaderResourceView* source = sourceView.Get();
+	REX::W32::ID3D11ShaderResourceView* source = sourceView.Get();
 	do
 	{
 		ResourceData & resource = m_resources.at(i);
 		auto shader = m_shaderCache->GetShader(device, resource.m_shader);
-		if (!shader) {
+		if (!shader.Get()) {
 			shader = m_shaderCache->GetShader(device, "normal");
 		}
 
-		ID3D11ShaderResourceView* resources[] = {
+		REX::W32::ID3D11ShaderResourceView* resources[] = {
 			source,
 			resource.m_resource.Get(),
 			m_structuredBufferView.Get()
@@ -380,27 +381,27 @@ void CDXTextureRenderer::RenderShaders(CDXD3DDevice * device, Microsoft::WRL::Co
 	} while (i < m_resources.size());
 }
 
-Microsoft::WRL::ComPtr<ID3D11Texture2D> CDXTextureRenderer::GetTexture()
+REX::W32::ComPtr<REX::W32::ID3D11Texture2D> CDXTextureRenderer::GetTexture()
 {
-	if (m_srcDesc.ArraySize > 1)
+	if (m_srcDesc.arraySize > 1)
 	{
 		return m_multiTexture;
 	}
 	return m_renderTargetTexture;
 }
 
-Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> CDXTextureRenderer::GetResourceView()
+REX::W32::ComPtr<REX::W32::ID3D11ShaderResourceView> CDXTextureRenderer::GetResourceView()
 {
-	if (m_srcDesc.ArraySize > 1)
+	if (m_srcDesc.arraySize > 1)
 	{
 		return m_multiResourceView;
 	}
 	return m_shaderResourceView;
 }
 
-void CDXTextureRenderer::AddLayer(const Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> & texture, const TextureType & type, const std::string & technique, const XMFLOAT4 & maskColor)
+void CDXTextureRenderer::AddLayer(const REX::W32::ComPtr<REX::W32::ID3D11ShaderResourceView> & texture, const TextureType & type, const std::string & technique, const XMFLOAT4 & maskColor)
 {
-	m_resources.push_back({ { 0, static_cast<UInt32>(type), maskColor }, texture, technique });
+	m_resources.push_back({ { 0, static_cast<std::uint32_t>(type), maskColor }, texture, technique });
 }
 
 void CDXTextureRenderer::Release()
@@ -420,29 +421,30 @@ void CDXTextureRenderer::Release()
 	m_multiResourceView = nullptr;
 }
 
-bool CDXTextureRenderer::SetTexture(CDXD3DDevice * device, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> texture, DXGI_FORMAT target)
+bool CDXTextureRenderer::SetTexture(CDXD3DDevice * device, REX::W32::ComPtr<REX::W32::ID3D11ShaderResourceView> texture, REX::W32::DXGI_FORMAT target)
 {
 	m_source = texture;
 
-	if (m_source)
+	if (m_source.Get())
 	{
-		Microsoft::WRL::ComPtr<ID3D11Device> pDevice = device->GetDevice();
+		REX::W32::ComPtr<REX::W32::ID3D11Device> pDevice = device->GetDevice();
 
-		Microsoft::WRL::ComPtr<ID3D11Resource> pResource;
-		m_source->GetResource(&pResource);
+		REX::W32::ComPtr<REX::W32::ID3D11Resource> pResource;
+		m_source->GetResource(pResource.GetAddressOf());
 
-		Microsoft::WRL::ComPtr<ID3D11Texture2D> pTexture;
-		HRESULT result = pResource.As(&pTexture);
+		REX::W32::ComPtr<REX::W32::ID3D11Texture2D> pTexture;
+		static constexpr REX::W32::IID iidTex2D{ 0x724608d1, 0xbc3e, 0x4bac, { 0x97, 0x64, 0x5b, 0x5f, 0x21, 0x0a, 0x5b, 0xb7 } };
+		HRESULT result = pResource->QueryInterface(iidTex2D, (void**)pTexture.GetAddressOf());
 		if (FAILED(result))
 		{
-			_ERROR("%s - Failed to acquire texture from resource", __FUNCTION__);
+			SKSE::log::error("{} - Failed to acquire texture from resource", __FUNCTION__);
 			return false;
 		}
 
 		pTexture->GetDesc(&m_srcDesc);
 
 		// Only regenerate the resources if the dimensions changed
-		if (m_srcDesc.Width != m_dstDesc.Width || m_srcDesc.Height != m_dstDesc.Height || m_srcDesc.ArraySize != m_dstDesc.ArraySize)
+		if (m_srcDesc.width != m_dstDesc.width || m_srcDesc.height != m_dstDesc.height || m_srcDesc.arraySize != m_dstDesc.arraySize)
 		{
 			m_renderTargetTexture = nullptr;
 			m_renderTargetView = nullptr;
@@ -457,25 +459,24 @@ bool CDXTextureRenderer::SetTexture(CDXD3DDevice * device, Microsoft::WRL::ComPt
 			return true;
 		}
 
-
 		ZeroMemory(&m_dstDesc, sizeof(m_dstDesc));
 
 		// Setup the render target texture description.
-		m_dstDesc.Width = m_srcDesc.Width;
-		m_dstDesc.Height = m_srcDesc.Height;
-		m_dstDesc.MipLevels = 1;
-		m_dstDesc.ArraySize = 1;
-		m_dstDesc.Format = target;
-		m_dstDesc.SampleDesc.Count = 1;
-		m_dstDesc.SampleDesc.Quality = 0;
-		m_dstDesc.Usage = D3D11_USAGE_DEFAULT;
-		m_dstDesc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-		m_dstDesc.CPUAccessFlags = 0;
-		m_dstDesc.MiscFlags = 0;
+		m_dstDesc.width = m_srcDesc.width;
+		m_dstDesc.height = m_srcDesc.height;
+		m_dstDesc.mipLevels = 1;
+		m_dstDesc.arraySize = 1;
+		m_dstDesc.format = target;
+		m_dstDesc.sampleDesc.count = 1;
+		m_dstDesc.sampleDesc.quality = 0;
+		m_dstDesc.usage = REX::W32::D3D11_USAGE_DEFAULT;
+		m_dstDesc.bindFlags = REX::W32::D3D11_BIND_RENDER_TARGET | REX::W32::D3D11_BIND_SHADER_RESOURCE;
+		m_dstDesc.cpuAccessFlags = 0;
+		m_dstDesc.miscFlags = 0;
 
 		if (!UpdateVertexBuffer(device))
 		{
-			_ERROR("%s - Failed to update vertex buffer", __FUNCTION__);
+			SKSE::log::error("{} - Failed to update vertex buffer", __FUNCTION__);
 			return false;
 		}
 
@@ -483,50 +484,50 @@ bool CDXTextureRenderer::SetTexture(CDXD3DDevice * device, Microsoft::WRL::ComPt
 		result = pDevice->CreateTexture2D(&m_dstDesc, NULL, m_renderTargetTexture.ReleaseAndGetAddressOf());
 		if (FAILED(result))
 		{
-			_ERROR("%s - Failed to create render target texture", __FUNCTION__);
+			SKSE::log::error("{} - Failed to create render target texture", __FUNCTION__);
 			return false;
 		}
 
 		result = pDevice->CreateTexture2D(&m_dstDesc, NULL, m_intermediateTexture.ReleaseAndGetAddressOf());
 		if (FAILED(result))
 		{
-			_ERROR("%s - Failed to create temporary texture", __FUNCTION__);
+			SKSE::log::error("{} - Failed to create temporary texture", __FUNCTION__);
 			return false;
 		}
 
-		D3D11_RENDER_TARGET_VIEW_DESC renderTargetViewDesc;
+		REX::W32::D3D11_RENDER_TARGET_VIEW_DESC renderTargetViewDesc;
 		// Setup the description of the render target view.
-		renderTargetViewDesc.Format = m_dstDesc.Format;
-		renderTargetViewDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
-		renderTargetViewDesc.Texture2D.MipSlice = 0;
+		renderTargetViewDesc.format = m_dstDesc.format;
+		renderTargetViewDesc.viewDimension = REX::W32::D3D11_RTV_DIMENSION_TEXTURE2D;
+		renderTargetViewDesc.texture2D.mipSlice = 0;
 
 		result = pDevice->CreateRenderTargetView(m_renderTargetTexture.Get(), &renderTargetViewDesc, m_renderTargetView.ReleaseAndGetAddressOf());
 		if (FAILED(result))
 		{
-			_ERROR("%s - Failed to create render target", __FUNCTION__);
+			SKSE::log::error("{} - Failed to create render target", __FUNCTION__);
 			return false;
 		}
 
-		D3D11_SHADER_RESOURCE_VIEW_DESC shaderResourceViewDesc;
-		shaderResourceViewDesc.Format = m_dstDesc.Format;
-		shaderResourceViewDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-		shaderResourceViewDesc.Texture2D.MostDetailedMip = 0;
-		shaderResourceViewDesc.Texture2D.MipLevels = 1;
+		REX::W32::D3D11_SHADER_RESOURCE_VIEW_DESC shaderResourceViewDesc;
+		shaderResourceViewDesc.format = m_dstDesc.format;
+		shaderResourceViewDesc.viewDimension = REX::W32::D3D11_SRV_DIMENSION_TEXTURE2D;
+		shaderResourceViewDesc.texture2D.mostDetailedMip = 0;
+		shaderResourceViewDesc.texture2D.mipLevels = 1;
 
 		result = pDevice->CreateShaderResourceView(m_renderTargetTexture.Get(), &shaderResourceViewDesc, m_shaderResourceView.ReleaseAndGetAddressOf());
 		if (FAILED(result))
 		{
-			_ERROR("%s - Failed to create render target resource view", __FUNCTION__);
+			SKSE::log::error("{} - Failed to create render target resource view", __FUNCTION__);
 			return false;
 		}
 		result = pDevice->CreateShaderResourceView(m_intermediateTexture.Get(), &shaderResourceViewDesc, m_intermediateResourceView.ReleaseAndGetAddressOf());
 		if (FAILED(result))
 		{
-			_ERROR("%s - Failed to create temporary resource view", __FUNCTION__);
+			SKSE::log::error("{} - Failed to create temporary resource view", __FUNCTION__);
 			return false;
 		}
 
-		if (m_srcDesc.ArraySize > 1)
+		if (m_srcDesc.arraySize > 1)
 		{
 			if (!CreateSubresourceDestination(device, m_srcDesc, m_multiTexture, m_multiResourceView))
 			{
@@ -540,58 +541,58 @@ bool CDXTextureRenderer::SetTexture(CDXD3DDevice * device, Microsoft::WRL::ComPt
 	return false;
 }
 
-bool CDXTextureRenderer::SplitSubresources(CDXD3DDevice * device, D3D11_TEXTURE2D_DESC desc, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> source, std::vector<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>>& resources)
+bool CDXTextureRenderer::SplitSubresources(CDXD3DDevice * device, REX::W32::D3D11_TEXTURE2D_DESC desc, REX::W32::ComPtr<REX::W32::ID3D11ShaderResourceView> source, std::vector<REX::W32::ComPtr<REX::W32::ID3D11ShaderResourceView>>& resources)
 {
-	if (desc.ArraySize > 1)
+	if (desc.arraySize > 1)
 	{
 		auto pDevice = device->GetDevice();
 		auto pContext = device->GetDeviceContext();
 
-		Microsoft::WRL::ComPtr<ID3D11Resource> pResource;
-		source->GetResource(&pResource);
+		REX::W32::ComPtr<REX::W32::ID3D11Resource> pResource;
+		source->GetResource(pResource.GetAddressOf());
 
-		D3D11_TEXTURE2D_DESC cubeMapDesc = desc;
-		cubeMapDesc.MipLevels = 1;
-		cubeMapDesc.ArraySize = 1;
-		cubeMapDesc.SampleDesc.Count = 1;
-		cubeMapDesc.SampleDesc.Quality = 0;
-		cubeMapDesc.CPUAccessFlags = 0;
-		cubeMapDesc.MiscFlags = 0;
+		REX::W32::D3D11_TEXTURE2D_DESC cubeMapDesc = desc;
+		cubeMapDesc.mipLevels = 1;
+		cubeMapDesc.arraySize = 1;
+		cubeMapDesc.sampleDesc.count = 1;
+		cubeMapDesc.sampleDesc.quality = 0;
+		cubeMapDesc.cpuAccessFlags = 0;
+		cubeMapDesc.miscFlags = 0;
 
-		D3D11_SHADER_RESOURCE_VIEW_DESC shaderResourceViewDesc;
-		shaderResourceViewDesc.Format = cubeMapDesc.Format;
-		shaderResourceViewDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-		shaderResourceViewDesc.Texture2D.MostDetailedMip = 0;
-		shaderResourceViewDesc.Texture2D.MipLevels = 1;
+		REX::W32::D3D11_SHADER_RESOURCE_VIEW_DESC shaderResourceViewDesc;
+		shaderResourceViewDesc.format = cubeMapDesc.format;
+		shaderResourceViewDesc.viewDimension = REX::W32::D3D11_SRV_DIMENSION_TEXTURE2D;
+		shaderResourceViewDesc.texture2D.mostDetailedMip = 0;
+		shaderResourceViewDesc.texture2D.mipLevels = 1;
 
-		for (UINT i = 0; i < desc.ArraySize; ++i)
+		for (UINT i = 0; i < desc.arraySize; ++i)
 		{
 			// Create the render target texture.
-			Microsoft::WRL::ComPtr<ID3D11Texture2D> cubeSideTexture;
+			REX::W32::ComPtr<REX::W32::ID3D11Texture2D> cubeSideTexture;
 			HRESULT result = pDevice->CreateTexture2D(&cubeMapDesc, NULL, cubeSideTexture.ReleaseAndGetAddressOf());
 			if (FAILED(result))
 			{
-				_ERROR("%s - Failed to create cube side texture", __FUNCTION__);
+				SKSE::log::error("{} - Failed to create cube side texture", __FUNCTION__);
 				return false;
 			}
 
-			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> resourceView;
+			REX::W32::ComPtr<REX::W32::ID3D11ShaderResourceView> resourceView;
 			result = pDevice->CreateShaderResourceView(cubeSideTexture.Get(), &shaderResourceViewDesc, resourceView.ReleaseAndGetAddressOf());
 			if (FAILED(result))
 			{
-				_ERROR("%s - Failed to create temporary cubemap resource view", __FUNCTION__);
+				SKSE::log::error("{} - Failed to create temporary cubemap resource view", __FUNCTION__);
 				return false;
 			}
 
-			D3D11_BOX sourceRegion;
+			REX::W32::D3D11_BOX sourceRegion;
 			sourceRegion.left = 0;
-			sourceRegion.right = desc.Width;
+			sourceRegion.right = desc.width;
 			sourceRegion.top = 0;
-			sourceRegion.bottom = desc.Height;
+			sourceRegion.bottom = desc.height;
 			sourceRegion.front = 0;
 			sourceRegion.back = 1;
 
-			pContext->CopySubresourceRegion(cubeSideTexture.Get(), D3D11CalcSubresource(0, 0, 1), 0, 0, 0, pResource.Get(), D3D11CalcSubresource(0, i, desc.MipLevels), &sourceRegion);
+			pContext->CopySubresourceRegion(cubeSideTexture.Get(), (0 + (0 * 1)), 0, 0, 0, pResource.Get(), ((0 + (i * desc.mipLevels))), &sourceRegion);
 
 			resources.push_back(resourceView);
 		}
@@ -602,38 +603,38 @@ bool CDXTextureRenderer::SplitSubresources(CDXD3DDevice * device, D3D11_TEXTURE2
 	return false;
 }
 
-bool CDXTextureRenderer::CreateSubresourceDestination(CDXD3DDevice * device, D3D11_TEXTURE2D_DESC desc, Microsoft::WRL::ComPtr<ID3D11Texture2D>& outTexture, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& outResource)
+bool CDXTextureRenderer::CreateSubresourceDestination(CDXD3DDevice * device, REX::W32::D3D11_TEXTURE2D_DESC desc, REX::W32::ComPtr<REX::W32::ID3D11Texture2D>& outTexture, REX::W32::ComPtr<REX::W32::ID3D11ShaderResourceView>& outResource)
 {
 	auto pDevice = device->GetDevice();
 	auto pContext = device->GetDeviceContext();
 
-	D3D11_TEXTURE2D_DESC cubeMapDesc = desc;
-	cubeMapDesc.Format = m_dstDesc.Format;
-	cubeMapDesc.MipLevels = 1;
-	cubeMapDesc.ArraySize = desc.ArraySize;
-	cubeMapDesc.SampleDesc.Count = 1;
-	cubeMapDesc.SampleDesc.Quality = 0;
-	cubeMapDesc.CPUAccessFlags = 0;
-	cubeMapDesc.MiscFlags = (desc.MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE) ? D3D11_RESOURCE_MISC_TEXTURECUBE : 0;
+	REX::W32::D3D11_TEXTURE2D_DESC cubeMapDesc = desc;
+	cubeMapDesc.format = m_dstDesc.format;
+	cubeMapDesc.mipLevels = 1;
+	cubeMapDesc.arraySize = desc.arraySize;
+	cubeMapDesc.sampleDesc.count = 1;
+	cubeMapDesc.sampleDesc.quality = 0;
+	cubeMapDesc.cpuAccessFlags = 0;
+	cubeMapDesc.miscFlags = (desc.miscFlags & REX::W32::D3D11_RESOURCE_MISC_TEXTURECUBE) ? REX::W32::D3D11_RESOURCE_MISC_TEXTURECUBE : 0;
 
 	// Create the render target texture.
 	HRESULT result = pDevice->CreateTexture2D(&cubeMapDesc, NULL, outTexture.ReleaseAndGetAddressOf());
 	if (FAILED(result))
 	{
-		_ERROR("%s - Failed to create merged texture", __FUNCTION__);
+		SKSE::log::error("{} - Failed to create merged texture", __FUNCTION__);
 		return false;
 	}
 
-	D3D11_SHADER_RESOURCE_VIEW_DESC shaderResourceViewDesc;
-	shaderResourceViewDesc.Format = cubeMapDesc.Format;
-	shaderResourceViewDesc.ViewDimension = (desc.MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE) ? D3D11_SRV_DIMENSION_TEXTURECUBE : D3D11_SRV_DIMENSION_TEXTURE2D;
-	shaderResourceViewDesc.Texture2D.MostDetailedMip = 0;
-	shaderResourceViewDesc.Texture2D.MipLevels = 1;
+	REX::W32::D3D11_SHADER_RESOURCE_VIEW_DESC shaderResourceViewDesc;
+	shaderResourceViewDesc.format = cubeMapDesc.format;
+	shaderResourceViewDesc.viewDimension = (desc.miscFlags & REX::W32::D3D11_RESOURCE_MISC_TEXTURECUBE) ? REX::W32::D3D11_SRV_DIMENSION_TEXTURECUBE : REX::W32::D3D11_SRV_DIMENSION_TEXTURE2D;
+	shaderResourceViewDesc.texture2D.mostDetailedMip = 0;
+	shaderResourceViewDesc.texture2D.mipLevels = 1;
 
 	result = pDevice->CreateShaderResourceView(outTexture.Get(), &shaderResourceViewDesc, outResource.ReleaseAndGetAddressOf());
 	if (FAILED(result))
 	{
-		_ERROR("%s - Failed to create cubemap resource view", __FUNCTION__);
+		SKSE::log::error("{} - Failed to create cubemap resource view", __FUNCTION__);
 		return false;
 	}
 
@@ -642,14 +643,14 @@ bool CDXTextureRenderer::CreateSubresourceDestination(CDXD3DDevice * device, D3D
 
 bool CDXTextureRenderer::UpdateVertexBuffer(CDXD3DDevice * device)
 {
-	if (!m_vertexBuffer)
+	if (!m_vertexBuffer.Get())
 	{
 		return false;
 	}
-	Microsoft::WRL::ComPtr<ID3D11DeviceContext> pDeviceContext = device->GetDeviceContext();
+	REX::W32::ComPtr<REX::W32::ID3D11DeviceContext> pDeviceContext = device->GetDeviceContext();
 
 	HRESULT result;
-	D3D11_MAPPED_SUBRESOURCE mappedResource;
+	REX::W32::D3D11_MAPPED_SUBRESOURCE mappedResource;
 
 	float left, right, top, bottom;
 	std::unique_ptr<VertexType[]> vertices;
@@ -696,14 +697,14 @@ bool CDXTextureRenderer::UpdateVertexBuffer(CDXD3DDevice * device)
 	vertices[5].texture = XMFLOAT2(1.0f, 1.0f);
 
 	// Lock the vertex buffer so it can be written to.
-	result = pDeviceContext->Map(m_vertexBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
+	result = pDeviceContext->Map(m_vertexBuffer.Get(), 0, REX::W32::D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
 	if (FAILED(result))
 	{
 		return false;
 	}
 
 	// Get a pointer to the data in the vertex buffer.
-	verticesPtr = (VertexType*)mappedResource.pData;
+	verticesPtr = (VertexType*)mappedResource.data;
 
 	// Copy the data into the vertex buffer.
 	memcpy(verticesPtr, (void*)vertices.get(), (sizeof(VertexType) * m_vertexCount));
@@ -716,21 +717,21 @@ bool CDXTextureRenderer::UpdateVertexBuffer(CDXD3DDevice * device)
 
 bool CDXTextureRenderer::UpdateConstantBuffer(CDXD3DDevice * device)
 {
-	if (!m_constantBuffer)
+	if (!m_constantBuffer.Get())
 	{
 		return false;
 	}
-	Microsoft::WRL::ComPtr<ID3D11DeviceContext> pDeviceContext = device->GetDeviceContext();
+	REX::W32::ComPtr<REX::W32::ID3D11DeviceContext> pDeviceContext = device->GetDeviceContext();
 
-	D3D11_MAPPED_SUBRESOURCE mappedResource;
-	HRESULT result = pDeviceContext->Map(m_constantBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
+	REX::W32::D3D11_MAPPED_SUBRESOURCE mappedResource;
+	HRESULT result = pDeviceContext->Map(m_constantBuffer.Get(), 0, REX::W32::D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
 	if (FAILED(result))
 	{
 		return false;
 	}
 
 	// Get a pointer to the data in the vertex buffer.
-	ConstantBufferType * dataPtr = (ConstantBufferType*)mappedResource.pData;
+	ConstantBufferType * dataPtr = (ConstantBufferType*)mappedResource.data;
 	dataPtr->world = XMMatrixTranspose(XMMatrixIdentity());
 	dataPtr->view = XMMatrixTranspose(XMMatrixIdentity());
 	XMMATRIX projectionMatrix = XMMatrixOrthographicLH(static_cast<float>(GetWidth()), static_cast<float>(GetHeight()), 1000.0f, 0.1f);
@@ -745,20 +746,20 @@ bool CDXTextureRenderer::UpdateConstantBuffer(CDXD3DDevice * device)
 
 bool CDXTextureRenderer::UpdateStructuredBuffer(CDXD3DDevice * device, const LayerData & layerData)
 {
-	if (!m_structuredBuffer)
+	if (!m_structuredBuffer.Get())
 	{
 		return false;
 	}
-	Microsoft::WRL::ComPtr<ID3D11DeviceContext> pDeviceContext = device->GetDeviceContext();
-	D3D11_MAPPED_SUBRESOURCE mappedResource;
-	HRESULT result = pDeviceContext->Map(m_structuredBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
+	REX::W32::ComPtr<REX::W32::ID3D11DeviceContext> pDeviceContext = device->GetDeviceContext();
+	REX::W32::D3D11_MAPPED_SUBRESOURCE mappedResource;
+	HRESULT result = pDeviceContext->Map(m_structuredBuffer.Get(), 0, REX::W32::D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
 	if (FAILED(result))
 	{
 		return false;
 	}
 
 	// Get a pointer to the data in the vertex buffer.
-	LayerData * dataPtr = (LayerData*)mappedResource.pData;
+	LayerData * dataPtr = (LayerData*)mappedResource.data;
 	memcpy(dataPtr, &layerData, sizeof(LayerData));
 
 	// Unlock the vertex buffer.

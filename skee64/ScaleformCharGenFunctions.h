@@ -1,273 +1,271 @@
 #pragma once
 
-#include "skse64/ScaleformCallbacks.h"
-#include "skse64/GameThreads.h"
-#include "skse64/GameTypes.h"
+#include "RE/G/GFxFunctionHandler.h"
+
 
 class GFxValue;
 class GFxMovieView;
 
-class SKSEScaleform_GetHeadParts : public GFxFunctionHandler
+class SKSEScaleform_GetHeadParts : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_GetModName : public GFxFunctionHandler
+class SKSEScaleform_GetModName : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_GetSliderData : public GFxFunctionHandler
+class SKSEScaleform_GetSliderData : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_GetSliderPartData : public GFxFunctionHandler
+class SKSEScaleform_GetSliderPartData : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args* args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_ReloadSliders : public GFxFunctionHandler
+class SKSEScaleform_ReloadSliders : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_LoadPreset : public GFxFunctionHandler
+class SKSEScaleform_LoadPreset : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_SavePreset : public GFxFunctionHandler
+class SKSEScaleform_SavePreset : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_ReadPreset : public GFxFunctionHandler
+class SKSEScaleform_ReadPreset : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_ImportHead : public GFxFunctionHandler
+class SKSEScaleform_ImportHead : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_LoadImportedHead : public GFxFunctionHandler
+class SKSEScaleform_LoadImportedHead : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_ClearSculptData : public GFxFunctionHandler
+class SKSEScaleform_ClearSculptData : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_ReleaseImportedHead : public GFxFunctionHandler
+class SKSEScaleform_ReleaseImportedHead : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_ExportHead : public GFxFunctionHandler
+class SKSEScaleform_ExportHead : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_GetPlayerPosition : public GFxFunctionHandler
+class SKSEScaleform_GetPlayerPosition : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_GetPlayerRotation : public GFxFunctionHandler
+class SKSEScaleform_GetPlayerRotation : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_SetPlayerRotation : public GFxFunctionHandler
+class SKSEScaleform_SetPlayerRotation : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_GetRaceSexCameraRot : public GFxFunctionHandler
+class SKSEScaleform_GetRaceSexCameraRot : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_GetRaceSexCameraPos : public GFxFunctionHandler
+class SKSEScaleform_GetRaceSexCameraPos : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_SetRaceSexCameraPos : public GFxFunctionHandler
+class SKSEScaleform_SetRaceSexCameraPos : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_CreateMorphEditor : public GFxFunctionHandler
+class SKSEScaleform_CreateMorphEditor : public RE::GFxFunctionHandler
 {
 public:
-	virtual void Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_ReleaseMorphEditor : public GFxFunctionHandler
+class SKSEScaleform_ReleaseMorphEditor : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_BeginRotateMesh : public GFxFunctionHandler
+class SKSEScaleform_BeginRotateMesh : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_DoRotateMesh : public GFxFunctionHandler
+class SKSEScaleform_DoRotateMesh : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_EndRotateMesh : public GFxFunctionHandler
+class SKSEScaleform_EndRotateMesh : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_BeginPanMesh : public GFxFunctionHandler
+class SKSEScaleform_BeginPanMesh : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_DoPanMesh : public GFxFunctionHandler
+class SKSEScaleform_DoPanMesh : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_EndPanMesh : public GFxFunctionHandler
+class SKSEScaleform_EndPanMesh : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_BeginPaintMesh : public GFxFunctionHandler
+class SKSEScaleform_BeginPaintMesh : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_DoPaintMesh : public GFxFunctionHandler
+class SKSEScaleform_DoPaintMesh : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_EndPaintMesh : public GFxFunctionHandler
+class SKSEScaleform_EndPaintMesh : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-
-class SKSEScaleform_DoHoverMesh : public GFxFunctionHandler
+class SKSEScaleform_DoHoverMesh : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_GetCurrentBrush : public GFxFunctionHandler
+class SKSEScaleform_GetCurrentBrush : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_SetCurrentBrush : public GFxFunctionHandler
+class SKSEScaleform_SetCurrentBrush : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_GetBrushes : public GFxFunctionHandler
+class SKSEScaleform_GetBrushes : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_SetBrushData : public GFxFunctionHandler
+class SKSEScaleform_SetBrushData : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_GetMeshes : public GFxFunctionHandler
+class SKSEScaleform_GetMeshes : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_SetMeshData : public GFxFunctionHandler
+class SKSEScaleform_SetMeshData : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_GetActionLimit : public GFxFunctionHandler
+class SKSEScaleform_GetActionLimit : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_UndoAction : public GFxFunctionHandler
+class SKSEScaleform_UndoAction : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_RedoAction : public GFxFunctionHandler
+class SKSEScaleform_RedoAction : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_GoToAction : public GFxFunctionHandler
+class SKSEScaleform_GoToAction : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_GetMeshCameraRadius : public GFxFunctionHandler
+class SKSEScaleform_GetMeshCameraRadius : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_SetMeshCameraRadius : public GFxFunctionHandler
+class SKSEScaleform_SetMeshCameraRadius : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };
 
-class SKSEScaleform_GetExternalFiles : public GFxFunctionHandler
+class SKSEScaleform_GetExternalFiles : public RE::GFxFunctionHandler
 {
 public:
-	virtual void	Invoke(Args * args);
+	void Call(RE::GFxFunctionHandler::Params& a_params) override;
 };

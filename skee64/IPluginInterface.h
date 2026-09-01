@@ -1,25 +1,27 @@
 #pragma once
 
-class TESObjectREFR;
-class NiAVObject;
-class TESObjectARMO;
-class TESObjectARMA;
-class NiNode;
-class NiAVObject;
-class NiTransform;
-class TESForm;
-class BaseExtraList;
-class BGSTextureSet;
-class Actor;
-class BSGeometry;
-class NiSkinPartition;
-class NiBinaryExtraData;
+namespace RE
+{
+	class Actor;
+	class BGSTextureSet;
+	class BSGeometry;
+	class ExtraDataList;
+	class NiAVObject;
+	class NiBinaryExtraData;
+	class NiNode;
+	class NiSkinPartition;
+	class NiTransform;
+	class TESForm;
+	class TESObjectARMA;
+	class TESObjectARMO;
+	class TESObjectREFR;
+}
 
-using skee_u64 = uint64_t;
-using skee_u32 = uint32_t;
-using skee_i32 = int32_t;
-using skee_u16 = uint16_t;
-using skee_u8 = uint8_t;
+using skee_u64 = std::uint64_t;
+using skee_u32 = std::uint32_t;
+using skee_i32 = std::int32_t;
+using skee_u16 = std::uint16_t;
+using skee_u8 = std::uint8_t;
 
 class IPluginInterface
 {
@@ -52,7 +54,7 @@ struct InterfaceExchangeMessage
 class IAddonAttachmentInterface
 {
 public:
-	virtual void OnAttach(TESObjectREFR * refr, TESObjectARMO * armor, TESObjectARMA * addon, NiAVObject * object, bool isFirstPerson, NiNode * skeleton, NiNode * root) = 0;
+	virtual void OnAttach(RE::TESObjectREFR * refr, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::NiAVObject * object, bool isFirstPerson, RE::NiNode * skeleton, RE::NiNode * root) = 0;
 };
 
 class IBodyMorphInterface : public IPluginInterface
@@ -86,54 +88,54 @@ public:
 	class ActorVisitor
 	{
 	public:
-		virtual void Visit(TESObjectREFR*) = 0;
+		virtual void Visit(RE::TESObjectREFR*) = 0;
 	};
 
 	class MorphValueVisitor
 	{
 	public:
-		virtual void Visit(TESObjectREFR *, const char*, const char*, float) = 0;
+		virtual void Visit(RE::TESObjectREFR *, const char*, const char*, float) = 0;
 	};
 	
 	class MorphVisitor
 	{
 	public:
-		virtual void Visit(TESObjectREFR *, const char*) = 0;
+		virtual void Visit(RE::TESObjectREFR *, const char*) = 0;
 	};
 
-	virtual void SetMorph(TESObjectREFR * actor, const char * morphName, const char * morphKey, float relative) = 0;
-	virtual float GetMorph(TESObjectREFR * actor, const char * morphName, const char * morphKey) = 0;
-	virtual void ClearMorph(TESObjectREFR * actor, const char * morphName, const char * morphKey) = 0;
+	virtual void SetMorph(RE::TESObjectREFR * actor, const char * morphName, const char * morphKey, float relative) = 0;
+	virtual float GetMorph(RE::TESObjectREFR * actor, const char * morphName, const char * morphKey) = 0;
+	virtual void ClearMorph(RE::TESObjectREFR * actor, const char * morphName, const char * morphKey) = 0;
 
-	virtual float GetBodyMorphs(TESObjectREFR * actor, const char * morphName) = 0;
-	virtual void ClearBodyMorphNames(TESObjectREFR * actor, const char * morphName) = 0;
+	virtual float GetBodyMorphs(RE::TESObjectREFR * actor, const char * morphName) = 0;
+	virtual void ClearBodyMorphNames(RE::TESObjectREFR * actor, const char * morphName) = 0;
 
-	virtual void VisitMorphs(TESObjectREFR * actor, MorphVisitor & visitor) = 0;
-	virtual void VisitKeys(TESObjectREFR * actor, const char * name, MorphKeyVisitor & visitor) = 0;
-	virtual void VisitMorphValues(TESObjectREFR * actor, MorphValueVisitor & visitor) = 0;
+	virtual void VisitMorphs(RE::TESObjectREFR * actor, MorphVisitor & visitor) = 0;
+	virtual void VisitKeys(RE::TESObjectREFR * actor, const char * name, MorphKeyVisitor & visitor) = 0;
+	virtual void VisitMorphValues(RE::TESObjectREFR * actor, MorphValueVisitor & visitor) = 0;
 
-	virtual void ClearMorphs(TESObjectREFR * actor) = 0;
+	virtual void ClearMorphs(RE::TESObjectREFR * actor) = 0;
 
-	virtual void ApplyVertexDiff(TESObjectREFR * refr, NiAVObject * rootNode, bool erase = false) = 0;
+	virtual void ApplyVertexDiff(RE::TESObjectREFR * refr, RE::NiAVObject * rootNode, bool erase = false) = 0;
 
-	virtual void ApplyBodyMorphs(TESObjectREFR * refr, bool deferUpdate = true) = 0;
-	virtual void UpdateModelWeight(TESObjectREFR * refr, bool immediate = false) = 0;
+	virtual void ApplyBodyMorphs(RE::TESObjectREFR * refr, bool deferUpdate = true) = 0;
+	virtual void UpdateModelWeight(RE::TESObjectREFR * refr, bool immediate = false) = 0;
 
 	virtual void SetCacheLimit(skee_u64 limit) = 0;
-	virtual bool HasMorphs(TESObjectREFR * actor) = 0;
-	virtual skee_u32 EvaluateBodyMorphs(TESObjectREFR * actor) = 0;
+	virtual bool HasMorphs(RE::TESObjectREFR * actor) = 0;
+	virtual skee_u32 EvaluateBodyMorphs(RE::TESObjectREFR * actor) = 0;
 
-	virtual bool HasBodyMorph(TESObjectREFR * actor, const char * morphName, const char * morphKey) = 0;
-	virtual bool HasBodyMorphName(TESObjectREFR * actor, const char * morphName) = 0;
-	virtual bool HasBodyMorphKey(TESObjectREFR * actor, const char * morphKey) = 0;
-	virtual void ClearBodyMorphKeys(TESObjectREFR * actor, const char * morphKey) = 0;
+	virtual bool HasBodyMorph(RE::TESObjectREFR * actor, const char * morphName, const char * morphKey) = 0;
+	virtual bool HasBodyMorphName(RE::TESObjectREFR * actor, const char * morphName) = 0;
+	virtual bool HasBodyMorphKey(RE::TESObjectREFR * actor, const char * morphKey) = 0;
+	virtual void ClearBodyMorphKeys(RE::TESObjectREFR * actor, const char * morphKey) = 0;
 	virtual void VisitStrings(StringVisitor & visitor) = 0;
 	virtual void VisitActors(ActorVisitor & visitor) = 0;
 	virtual skee_u64 ClearMorphCache() = 0;
 
 	// This callback occurs after RM alters the vertex buffer of the shape, but before it copies it to other partitions, and before re-upload to GPU
 	// Order controls the execution order of registered callbacks, descending order
-	using MorphShapeCallback = void (*)(TESObjectREFR* refr, NiAVObject* rootNode, BSGeometry* geometry, NiSkinPartition* skinPartition, NiBinaryExtraData* unmodifiedVertexBuffer);
+	using MorphShapeCallback = void (*)(RE::TESObjectREFR* refr, RE::NiAVObject* rootNode, RE::BSGeometry* geometry, RE::NiSkinPartition* skinPartition, RE::NiBinaryExtraData* unmodifiedVertexBuffer);
 	virtual void AddMorphShapeCallback(MorphShapeCallback cb, skee_u64 order = 0) = 0;
 };
 
@@ -170,44 +172,43 @@ public:
 		virtual bool VisitScaleMode(const char* node, const char* key, skee_u32 scaleMode) = 0;
 	};
 
-	virtual bool HasNodeTransformPosition(TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name) = 0;
-	virtual bool HasNodeTransformRotation(TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name) = 0;
-	virtual bool HasNodeTransformScale(TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name) = 0;
-	virtual bool HasNodeTransformScaleMode(TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name) = 0;
+	virtual bool HasNodeTransformPosition(RE::TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name) = 0;
+	virtual bool HasNodeTransformRotation(RE::TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name) = 0;
+	virtual bool HasNodeTransformScale(RE::TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name) = 0;
+	virtual bool HasNodeTransformScaleMode(RE::TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name) = 0;
 
-	virtual void AddNodeTransformPosition(TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name, Position& position) = 0; // X,Y,Z
-	virtual void AddNodeTransformRotation(TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name, Rotation& rotation) = 0; // Euler angles
-	virtual void AddNodeTransformScale(TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name, float scale) = 0;
-	virtual void AddNodeTransformScaleMode(TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name, skee_u32 scaleMode) = 0;
+	virtual void AddNodeTransformPosition(RE::TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name, Position& position) = 0; // X,Y,Z
+	virtual void AddNodeTransformRotation(RE::TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name, Rotation& rotation) = 0; // Euler angles
+	virtual void AddNodeTransformScale(RE::TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name, float scale) = 0;
+	virtual void AddNodeTransformScaleMode(RE::TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name, skee_u32 scaleMode) = 0;
 
-	virtual Position GetNodeTransformPosition(TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name) = 0;
-	virtual Rotation GetNodeTransformRotation(TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name) = 0;
-	virtual float GetNodeTransformScale(TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name) = 0;
-	virtual skee_u32 GetNodeTransformScaleMode(TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name) = 0;
+	virtual Position GetNodeTransformPosition(RE::TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name) = 0;
+	virtual Rotation GetNodeTransformRotation(RE::TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name) = 0;
+	virtual float GetNodeTransformScale(RE::TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name) = 0;
+	virtual skee_u32 GetNodeTransformScaleMode(RE::TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name) = 0;
 
-	virtual bool RemoveNodeTransformPosition(TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name) = 0;
-	virtual bool RemoveNodeTransformRotation(TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name) = 0;
-	virtual bool RemoveNodeTransformScale(TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name) = 0;
-	virtual bool RemoveNodeTransformScaleMode(TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name) = 0;
+	virtual bool RemoveNodeTransformPosition(RE::TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name) = 0;
+	virtual bool RemoveNodeTransformRotation(RE::TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name) = 0;
+	virtual bool RemoveNodeTransformScale(RE::TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name) = 0;
+	virtual bool RemoveNodeTransformScaleMode(RE::TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node, const char* name) = 0;
 
-	virtual bool RemoveNodeTransform(TESObjectREFR* refr, bool firstPerson, bool isFemale, const char* node, const char* name) = 0;
-	virtual void RemoveAllReferenceTransforms(TESObjectREFR* refr) = 0;
+	virtual bool RemoveNodeTransform(RE::TESObjectREFR* refr, bool firstPerson, bool isFemale, const char* node, const char* name) = 0;
+	virtual void RemoveAllReferenceTransforms(RE::TESObjectREFR* refr) = 0;
 
-	virtual bool GetOverrideNodeTransform(TESObjectREFR* refr, bool firstPerson, bool isFemale, const char* node, const char* name, skee_u16 key, NiTransform* result) = 0;
+	virtual bool GetOverrideNodeTransform(RE::TESObjectREFR* refr, bool firstPerson, bool isFemale, const char* node, const char* name, skee_u16 key, RE::NiTransform* result) = 0;
 
-	virtual void UpdateNodeAllTransforms(TESObjectREFR* ref) = 0;
+	virtual void UpdateNodeAllTransforms(RE::TESObjectREFR* ref) = 0;
 
-	virtual void VisitNodes(TESObjectREFR* refr, bool firstPerson, bool isFemale, NodeVisitor& visitor) = 0;
-	virtual void UpdateNodeTransforms(TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node) = 0;
+	virtual void VisitNodes(RE::TESObjectREFR* refr, bool firstPerson, bool isFemale, NodeVisitor& visitor) = 0;
+	virtual void UpdateNodeTransforms(RE::TESObjectREFR* ref, bool firstPerson, bool isFemale, const char* node) = 0;
 };
 
 class IAttachmentInterface : public IPluginInterface
 {
 public:
-	virtual bool AttachMesh(TESObjectREFR* ref, const char* nifPath, const char* name, bool firstPerson, bool replace, const char** filter, skee_u32 filterSize, NiAVObject*& out, char* err, skee_u64 errBufLen) = 0;
-	virtual bool DetachMesh(TESObjectREFR* ref, const char* name, bool firstPerson) = 0;
+	virtual bool AttachMesh(RE::TESObjectREFR* ref, const char* nifPath, const char* name, bool firstPerson, bool replace, const char** filter, skee_u32 filterSize, RE::NiAVObject*& out, char* err, skee_u64 errBufLen) = 0;
+	virtual bool DetachMesh(RE::TESObjectREFR* ref, const char* name, bool firstPerson) = 0;
 };
-
 
 class IItemDataInterface : public IPluginInterface
 {
@@ -247,8 +248,8 @@ public:
 		skee_u32			weaponSlot = 0;
 		skee_u32			slotMask = 0;
 		skee_u32			rankId = 0;
-		TESForm* form = nullptr;
-		BaseExtraList* extraData = nullptr;
+		RE::TESForm* form = nullptr;
+		RE::ExtraDataList* extraData = nullptr;
 
 		void SetRankID(skee_u32 _rank)
 		{
@@ -267,7 +268,7 @@ public:
 			uid = _uid;
 			ownerForm = _ownerForm;
 		}
-		void SetDirect(TESForm* _baseForm, BaseExtraList* _extraData)
+		void SetDirect(RE::TESForm* _baseForm, RE::ExtraDataList* _extraData)
 		{
 			type |= kTypeDirect;
 			form = _baseForm;
@@ -296,7 +297,7 @@ public:
 		virtual void Visit(const char*) = 0;
 	};
 
-	virtual skee_u32 GetItemUniqueID(TESObjectREFR* reference, Identifier& identifier, bool makeUnique) = 0; // Make unique will create an identifier if it does not exist for the specified item
+	virtual skee_u32 GetItemUniqueID(RE::TESObjectREFR* reference, Identifier& identifier, bool makeUnique) = 0; // Make unique will create an identifier if it does not exist for the specified item
 	virtual void SetItemTextureLayerColor(skee_u32 uniqueID, skee_i32 textureIndex, skee_i32 layerIndex, skee_u32 color) = 0;
 	virtual void SetItemTextureLayerType(skee_u32 uniqueID, skee_i32 textureIndex, skee_i32 layerIndex, skee_u32 type) = 0;
 	virtual void SetItemTextureLayerBlendMode(skee_u32 uniqueID, skee_i32 textureIndex, skee_i32 layerIndex, const char* blendMode) = 0;
@@ -313,8 +314,8 @@ public:
 	virtual void ClearItemTextureLayerTexture(skee_u32 uniqueID, skee_i32 textureIndex, skee_i32 layerIndex) = 0;
 	virtual void ClearItemTextureLayer(skee_u32 uniqueID, skee_i32 textureIndex) = 0;
 
-	virtual TESForm* GetFormFromUniqueID(skee_u32 uniqueID) = 0;
-	virtual TESForm* GetOwnerOfUniqueID(skee_u32 uniqueID) = 0;
+	virtual RE::TESForm* GetFormFromUniqueID(skee_u32 uniqueID) = 0;
+	virtual RE::TESForm* GetOwnerOfUniqueID(skee_u32 uniqueID) = 0;
 
 	// Generic key-value pair string interface
 	virtual bool HasItemData(skee_u32 uniqueID, const char* key) = 0;
@@ -327,7 +328,7 @@ class ICommandInterface : public IPluginInterface
 {
 public:
 	// Return true indicates callback was handled and not to proceed to next command with the same command name
-	using CommandCallback = bool (*)(TESObjectREFR* ref, const char* argumentString);
+	using CommandCallback = bool (*)(RE::TESObjectREFR* ref, const char* argumentString);
 	virtual bool RegisterCommand(const char* command, const char* desc, CommandCallback cb) = 0;
 };
 
@@ -368,20 +369,20 @@ public:
 		kSerializationVersion1 = 1,
 		kSerializationVersion = kSerializationVersion1
 	};
-	virtual bool HasOverlays(TESObjectREFR* reference) = 0;
-	virtual void AddOverlays(TESObjectREFR* reference, bool defer = true) = 0;
-	virtual void RemoveOverlays(TESObjectREFR* reference, bool defer = true) = 0;
-	virtual void RevertOverlays(TESObjectREFR* reference, bool resetDiffuse, bool defer = true) = 0;
-	virtual void RevertOverlay(TESObjectREFR* reference, const char* nodeName, skee_u32 armorMask, skee_u32 addonMask, bool resetDiffuse, bool defer = true) = 0;
-	virtual void EraseOverlays(TESObjectREFR* reference, bool defer = true) = 0;
-	virtual void RevertHeadOverlays(TESObjectREFR* reference, bool resetDiffuse, bool defer = true) = 0;
-	virtual void RevertHeadOverlay(TESObjectREFR* reference, const char* nodeName, skee_u32 partType, skee_u32 shaderType, bool resetDiffuse, bool defer = true) = 0;
+	virtual bool HasOverlays(RE::TESObjectREFR* reference) = 0;
+	virtual void AddOverlays(RE::TESObjectREFR* reference, bool defer = true) = 0;
+	virtual void RemoveOverlays(RE::TESObjectREFR* reference, bool defer = true) = 0;
+	virtual void RevertOverlays(RE::TESObjectREFR* reference, bool resetDiffuse, bool defer = true) = 0;
+	virtual void RevertOverlay(RE::TESObjectREFR* reference, const char* nodeName, skee_u32 armorMask, skee_u32 addonMask, bool resetDiffuse, bool defer = true) = 0;
+	virtual void EraseOverlays(RE::TESObjectREFR* reference, bool defer = true) = 0;
+	virtual void RevertHeadOverlays(RE::TESObjectREFR* reference, bool resetDiffuse, bool defer = true) = 0;
+	virtual void RevertHeadOverlay(RE::TESObjectREFR* reference, const char* nodeName, skee_u32 partType, skee_u32 shaderType, bool resetDiffuse, bool defer = true) = 0;
 	enum class OverlayType { Normal, Spell };
 	enum class OverlayLocation { Body, Hand, Feet, Face };
 	virtual skee_u32 GetOverlayCount(OverlayType type, OverlayLocation location) = 0;
 	virtual const char* GetOverlayFormat(OverlayType type, OverlayLocation location) = 0;
 
-	using OverlayInstallCallback = void (*)(TESObjectREFR* ref, NiAVObject* node);
+	using OverlayInstallCallback = void (*)(RE::TESObjectREFR* ref, RE::NiAVObject* node);
 	virtual bool RegisterInstallCallback(const char* key, OverlayInstallCallback cb) = 0;
 	virtual bool UnregisterInstallCallback(const char* key) = 0;
 };
@@ -407,7 +408,7 @@ public:
 		virtual void Float(const float f) = 0;
 		virtual void String(const char* str) = 0;
 		virtual void Bool(const bool b) = 0;
-		virtual void TextureSet(const BGSTextureSet* textureSet) = 0;
+		virtual void TextureSet(const RE::BGSTextureSet* textureSet) = 0;
 	};
 
 	class SetVariant
@@ -419,49 +420,49 @@ public:
 		virtual float Float() { return 0.0f; }
 		virtual const char* String() { return nullptr; }
 		virtual bool Bool() { return false; }
-		virtual BGSTextureSet* TextureSet() { return nullptr; }
+		virtual RE::BGSTextureSet* TextureSet() { return nullptr; }
 	};
 
 	
-	virtual bool HasArmorAddonNode(TESObjectREFR* refr, bool firstPerson, TESObjectARMO* armor, TESObjectARMA* addon, const char* nodeName, bool debug) = 0;
+	virtual bool HasArmorAddonNode(RE::TESObjectREFR* refr, bool firstPerson, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, const char* nodeName, bool debug) = 0;
 
-	virtual bool HasArmorOverride(TESObjectREFR* refr, bool isFemale, TESObjectARMO* armor, TESObjectARMA* addon, const char* nodeName, skee_u16 key, skee_u8 index) = 0;
-	virtual void AddArmorOverride(TESObjectREFR* refr, bool isFemale, TESObjectARMO* armor, TESObjectARMA* addon, const char* nodeName, skee_u16 key, skee_u8 index, SetVariant& value) = 0;
-	virtual bool GetArmorOverride(TESObjectREFR* refr, bool isFemale, TESObjectARMO* armor, TESObjectARMA* addon, const char* nodeName, skee_u16 key, skee_u8 index, GetVariant& visitor) = 0;
-	virtual void RemoveArmorOverride(TESObjectREFR* refr, bool isFemale, TESObjectARMO* armor, TESObjectARMA* addon, const char* nodeName, skee_u16 key, skee_u8 index) = 0;
-	virtual void SetArmorProperties(TESObjectREFR* refr, bool immediate) = 0;
-	virtual void SetArmorProperty(TESObjectREFR* refr, bool firstPerson, TESObjectARMO* armor, TESObjectARMA* addon, const char* nodeName, skee_u16 key, skee_u8 index, SetVariant& value, bool immediate) = 0;
-	virtual bool GetArmorProperty(TESObjectREFR* refr, bool firstPerson, TESObjectARMO* armor, TESObjectARMA* addon, const char* nodeName, skee_u16 key, skee_u8 index, GetVariant& value) = 0;
-	virtual void ApplyArmorOverrides(TESObjectREFR* refr, TESObjectARMO* armor, TESObjectARMA* addon, NiAVObject* object, bool immediate) = 0;
+	virtual bool HasArmorOverride(RE::TESObjectREFR* refr, bool isFemale, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, const char* nodeName, skee_u16 key, skee_u8 index) = 0;
+	virtual void AddArmorOverride(RE::TESObjectREFR* refr, bool isFemale, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, const char* nodeName, skee_u16 key, skee_u8 index, SetVariant& value) = 0;
+	virtual bool GetArmorOverride(RE::TESObjectREFR* refr, bool isFemale, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, const char* nodeName, skee_u16 key, skee_u8 index, GetVariant& visitor) = 0;
+	virtual void RemoveArmorOverride(RE::TESObjectREFR* refr, bool isFemale, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, const char* nodeName, skee_u16 key, skee_u8 index) = 0;
+	virtual void SetArmorProperties(RE::TESObjectREFR* refr, bool immediate) = 0;
+	virtual void SetArmorProperty(RE::TESObjectREFR* refr, bool firstPerson, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, const char* nodeName, skee_u16 key, skee_u8 index, SetVariant& value, bool immediate) = 0;
+	virtual bool GetArmorProperty(RE::TESObjectREFR* refr, bool firstPerson, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, const char* nodeName, skee_u16 key, skee_u8 index, GetVariant& value) = 0;
+	virtual void ApplyArmorOverrides(RE::TESObjectREFR* refr, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, RE::NiAVObject* object, bool immediate) = 0;
 	virtual void RemoveAllArmorOverrides() = 0;
-	virtual void RemoveAllArmorOverridesByReference(TESObjectREFR* reference) = 0;
-	virtual void RemoveAllArmorOverridesByArmor(TESObjectREFR* refr, bool isFemale, TESObjectARMO* armor) = 0;
-	virtual void RemoveAllArmorOverridesByAddon(TESObjectREFR* refr, bool isFemale, TESObjectARMO* armor, TESObjectARMA* addon) = 0;
-	virtual void RemoveAllArmorOverridesByNode(TESObjectREFR* refr, bool isFemale, TESObjectARMO* armor, TESObjectARMA* addon, const char* nodeName) = 0;
+	virtual void RemoveAllArmorOverridesByReference(RE::TESObjectREFR* reference) = 0;
+	virtual void RemoveAllArmorOverridesByArmor(RE::TESObjectREFR* refr, bool isFemale, RE::TESObjectARMO* armor) = 0;
+	virtual void RemoveAllArmorOverridesByAddon(RE::TESObjectREFR* refr, bool isFemale, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon) = 0;
+	virtual void RemoveAllArmorOverridesByNode(RE::TESObjectREFR* refr, bool isFemale, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, const char* nodeName) = 0;
 
-	virtual bool HasNodeOverride(TESObjectREFR* refr, bool isFemale, const char* nodeName, skee_u16 key, skee_u8 index) = 0;
-	virtual void AddNodeOverride(TESObjectREFR* refr, bool isFemale, const char* nodeName, skee_u16 key, skee_u8 index, SetVariant& value) = 0;
-	virtual bool GetNodeOverride(TESObjectREFR* refr, bool isFemale, const char* nodeName, skee_u16 key, skee_u8 index, GetVariant& visitor) = 0;
-	virtual void RemoveNodeOverride(TESObjectREFR* refr, bool isFemale, const char* nodeName, skee_u16 key, skee_u8 index) = 0;
-	virtual void SetNodeProperties(TESObjectREFR* refr, bool immediate) = 0;
-	virtual void SetNodeProperty(TESObjectREFR* refr, bool firstPerson, const char* nodeName, skee_u16 key, skee_u8 index, SetVariant& value, bool immediate) = 0;
-	virtual bool GetNodeProperty(TESObjectREFR* refr, bool firstPerson, const char* nodeName, skee_u16 key, skee_u8 index, GetVariant& value) = 0;
-	virtual void ApplyNodeOverrides(TESObjectREFR* refr, NiAVObject* object, bool immediate) = 0;
+	virtual bool HasNodeOverride(RE::TESObjectREFR* refr, bool isFemale, const char* nodeName, skee_u16 key, skee_u8 index) = 0;
+	virtual void AddNodeOverride(RE::TESObjectREFR* refr, bool isFemale, const char* nodeName, skee_u16 key, skee_u8 index, SetVariant& value) = 0;
+	virtual bool GetNodeOverride(RE::TESObjectREFR* refr, bool isFemale, const char* nodeName, skee_u16 key, skee_u8 index, GetVariant& visitor) = 0;
+	virtual void RemoveNodeOverride(RE::TESObjectREFR* refr, bool isFemale, const char* nodeName, skee_u16 key, skee_u8 index) = 0;
+	virtual void SetNodeProperties(RE::TESObjectREFR* refr, bool immediate) = 0;
+	virtual void SetNodeProperty(RE::TESObjectREFR* refr, bool firstPerson, const char* nodeName, skee_u16 key, skee_u8 index, SetVariant& value, bool immediate) = 0;
+	virtual bool GetNodeProperty(RE::TESObjectREFR* refr, bool firstPerson, const char* nodeName, skee_u16 key, skee_u8 index, GetVariant& value) = 0;
+	virtual void ApplyNodeOverrides(RE::TESObjectREFR* refr, RE::NiAVObject* object, bool immediate) = 0;
 	virtual void RemoveAllNodeOverrides() = 0;
-	virtual void RemoveAllNodeOverridesByReference(TESObjectREFR* reference) = 0;
-	virtual void RemoveAllNodeOverridesByNode(TESObjectREFR* refr, bool isFemale, const char* nodeName) = 0;
+	virtual void RemoveAllNodeOverridesByReference(RE::TESObjectREFR* reference) = 0;
+	virtual void RemoveAllNodeOverridesByNode(RE::TESObjectREFR* refr, bool isFemale, const char* nodeName) = 0;
 
-	virtual bool HasSkinOverride(TESObjectREFR* refr, bool isFemale, bool firstPerson, skee_u32 slotMask, skee_u16 key, skee_u8 index) = 0;
-	virtual void AddSkinOverride(TESObjectREFR* refr, bool isFemale, bool firstPerson, skee_u32 slotMask, skee_u16 key, skee_u8 index, SetVariant& value) = 0;
-	virtual bool GetSkinOverride(TESObjectREFR* refr, bool isFemale, bool firstPerson, skee_u32 slotMask, skee_u16 key, skee_u8 index, GetVariant& visitor) = 0;
-	virtual void RemoveSkinOverride(TESObjectREFR* refr, bool isFemale, bool firstPerson, skee_u32 slotMask, skee_u16 key, skee_u8 index) = 0;
-	virtual void SetSkinProperties(TESObjectREFR* refr, bool immediate) = 0;
-	virtual void SetSkinProperty(TESObjectREFR* refr, bool firstPerson, skee_u32 slotMask, skee_u16 key, skee_u8 index, SetVariant& value, bool immediate) = 0;
-	virtual bool GetSkinProperty(TESObjectREFR* refr, bool firstPerson, skee_u32 slotMask, skee_u16 key, skee_u8 index, GetVariant& value) = 0;
-	virtual void ApplySkinOverrides(TESObjectREFR* refr, bool firstPerson, TESObjectARMO* armor, TESObjectARMA* addon, skee_u32 slotMask, NiAVObject* object, bool immediate) = 0;
+	virtual bool HasSkinOverride(RE::TESObjectREFR* refr, bool isFemale, bool firstPerson, skee_u32 slotMask, skee_u16 key, skee_u8 index) = 0;
+	virtual void AddSkinOverride(RE::TESObjectREFR* refr, bool isFemale, bool firstPerson, skee_u32 slotMask, skee_u16 key, skee_u8 index, SetVariant& value) = 0;
+	virtual bool GetSkinOverride(RE::TESObjectREFR* refr, bool isFemale, bool firstPerson, skee_u32 slotMask, skee_u16 key, skee_u8 index, GetVariant& visitor) = 0;
+	virtual void RemoveSkinOverride(RE::TESObjectREFR* refr, bool isFemale, bool firstPerson, skee_u32 slotMask, skee_u16 key, skee_u8 index) = 0;
+	virtual void SetSkinProperties(RE::TESObjectREFR* refr, bool immediate) = 0;
+	virtual void SetSkinProperty(RE::TESObjectREFR* refr, bool firstPerson, skee_u32 slotMask, skee_u16 key, skee_u8 index, SetVariant& value, bool immediate) = 0;
+	virtual bool GetSkinProperty(RE::TESObjectREFR* refr, bool firstPerson, skee_u32 slotMask, skee_u16 key, skee_u8 index, GetVariant& value) = 0;
+	virtual void ApplySkinOverrides(RE::TESObjectREFR* refr, bool firstPerson, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, skee_u32 slotMask, RE::NiAVObject* object, bool immediate) = 0;
 	virtual void RemoveAllSkinOverrides() = 0;
-	virtual void RemoveAllSkinOverridesByReference(TESObjectREFR* reference) = 0;
-	virtual void RemoveAllSkinOverridesBySlot(TESObjectREFR* refr, bool isFemale, bool firstPerson, skee_u32 slotMask) = 0;
+	virtual void RemoveAllSkinOverridesByReference(RE::TESObjectREFR* reference) = 0;
+	virtual void RemoveAllSkinOverridesBySlot(RE::TESObjectREFR* refr, bool isFemale, bool firstPerson, skee_u32 slotMask) = 0;
 };
 
 class IPresetInterface : public IPluginInterface
@@ -487,8 +488,8 @@ public:
 	// TintPath e.g. Textures\\CharGen\\Exported\\name.dds
 	// TintPath optional but recommended for correct look
 
-	virtual bool SavePreset(const char* filePath, const char* tintPath, Actor* actor) = 0;
-	virtual bool LoadPreset(const char* filePath, const char* tintPath, Actor* actor, ApplyTypes applyTypes = kPresetApplyAll) = 0; // Details may be saved to the TESNPC, make sure this character is unique!
+	virtual bool SavePreset(const char* filePath, const char* tintPath, RE::Actor* actor) = 0;
+	virtual bool LoadPreset(const char* filePath, const char* tintPath, RE::Actor* actor, ApplyTypes applyTypes = kPresetApplyAll) = 0; // Details may be saved to the RE::TESNPC, make sure this character is unique!
 };
 
 class IFormTagInterface : public IPluginInterface
@@ -500,15 +501,15 @@ public:
 		kCurrentPluginVersion = kPluginVersion1,
 	};
 
-	virtual bool AddTag(TESForm* form, const char* tag) = 0;
-	virtual bool RemoveTag(TESForm* form, const char* tag) = 0;
-	virtual bool HasTags(TESForm* form) = 0;
-	virtual bool HasTag(TESForm* form, const char* tag) = 0;
+	virtual bool AddTag(RE::TESForm* form, const char* tag) = 0;
+	virtual bool RemoveTag(RE::TESForm* form, const char* tag) = 0;
+	virtual bool HasTags(RE::TESForm* form) = 0;
+	virtual bool HasTag(RE::TESForm* form, const char* tag) = 0;
 
 	class FormVisitor
 	{
 	public:
-		virtual void Visit(TESForm*) = 0;
+		virtual void Visit(RE::TESForm*) = 0;
 	};
 
 	class TagVisitor
@@ -518,7 +519,7 @@ public:
 	};
 
 	// Visits all Tags on a given EditorID
-	virtual void GetTags(TESForm* form, TagVisitor& visitor) = 0;
+	virtual void GetTags(RE::TESForm* form, TagVisitor& visitor) = 0;
 
 	// Visits all EditorIDs which have tags
 	virtual void GetForms(FormVisitor& visitor) = 0;

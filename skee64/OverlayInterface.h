@@ -1,21 +1,18 @@
 #pragma once
 
 #include "IPluginInterface.h"
-
-class TESObjectARMO;
-class TESObjectARMA;
-class TESModelTextureSwap;
-class BGSTextureSet;
-class TESObjectREFR;
-class BSFaceGenNiNode;
-
-struct SKSESerializationInterface;
-
-class NiNode;
-class BSGeometry;
-
-#include "skse64/GameThreads.h"
-#include "skse64/GameTypes.h"
+#include "SafeDataHolder.h"
+#include <cstdint>
+#include <RE/B/BGSHeadPart.h>
+#include <RE/B/BSFaceGenNiNode.h>
+#include <RE/B/BSShaderMaterial.h>
+#include <RE/B/BSGeometry.h>
+#include <RE/B/BSTextureSet.h>
+#include <RE/N/NiNode.h>
+#include <RE/T/TESModelTextureSwap.h>
+#include <RE/T/TESObjectARMA.h>
+#include <RE/T/TESObjectARMO.h>
+#include <RE/T/TESObjectREFR.h>
 
 #include <unordered_set>
 #include <functional>
@@ -45,129 +42,129 @@ class BSGeometry;
 #define FEET_MESH "meshes\\actors\\character\\character assets\\feet_overlay.nif"
 #define FEET_MAGIC_MESH "meshes\\actors\\character\\character assets\\feet_magicoverlay.nif"
 
-class SKSETaskRevertOverlay : public TaskDelegate
+class SKSETaskRevertOverlay : public SKSE::detail::TaskDelegate
 {
 public:
 	virtual void Run();
 	virtual void Dispose();
 
-	SKSETaskRevertOverlay(TESObjectREFR * refr, BSFixedString nodeName, UInt32 armorMask, UInt32 addonMask, bool resetDiffuse);
+	SKSETaskRevertOverlay(RE::TESObjectREFR * refr, RE::BSFixedString nodeName, std::uint32_t armorMask, std::uint32_t addonMask, bool resetDiffuse);
 
-	UInt32			m_formId;
-	BSFixedString	m_nodeName;
-	UInt32			m_armorMask;
-	UInt32			m_addonMask;
+	std::uint32_t			m_formId;
+	RE::BSFixedString	m_nodeName;
+	std::uint32_t			m_armorMask;
+	std::uint32_t			m_addonMask;
 	bool			m_resetDiffuse;
 };
 
-class SKSETaskRevertFaceOverlay : public TaskDelegate
+class SKSETaskRevertFaceOverlay : public SKSE::detail::TaskDelegate
 {
 public:
 	virtual void Run();
 	virtual void Dispose();
 
-	SKSETaskRevertFaceOverlay(TESObjectREFR * refr, BSFixedString nodeName, UInt32 partType, UInt32 shaderType, bool resetDiffuse);
+	SKSETaskRevertFaceOverlay(RE::TESObjectREFR * refr, RE::BSFixedString nodeName, RE::BGSHeadPart::HeadPartType partType, RE::BSShaderMaterial::Feature shaderType, bool resetDiffuse);
 
-	UInt32			m_formId;
-	BSFixedString	m_nodeName;
-	UInt32			m_partType;
-	UInt32			m_shaderType;
+	std::uint32_t			m_formId;
+	RE::BSFixedString	m_nodeName;
+	RE::BGSHeadPart::HeadPartType	m_partType;
+	RE::BSShaderMaterial::Feature	m_shaderType;
 	bool			m_resetDiffuse;
 };
 
-class SKSETaskInstallFaceOverlay : public TaskDelegate
+class SKSETaskInstallFaceOverlay : public SKSE::detail::TaskDelegate
 {
 public:
 	virtual void Run();
 	virtual void Dispose();
 
-	SKSETaskInstallFaceOverlay(TESObjectREFR * refr, BSFixedString nodeName, BSFixedString overlayPath, UInt32 partType, UInt32 shaderType);
+	SKSETaskInstallFaceOverlay(RE::TESObjectREFR * refr, RE::BSFixedString nodeName, RE::BSFixedString overlayPath, RE::BGSHeadPart::HeadPartType partType, RE::BSShaderMaterial::Feature shaderType);
 
-	UInt32			m_formId;
-	BSFixedString	m_nodeName;
-	BSFixedString	m_overlayPath;
-	UInt32			m_partType;
-	UInt32			m_shaderType;
+	std::uint32_t			m_formId;
+	RE::BSFixedString	m_nodeName;
+	RE::BSFixedString	m_overlayPath;
+	RE::BGSHeadPart::HeadPartType	m_partType;
+	RE::BSShaderMaterial::Feature	m_shaderType;
 };
 
-class SKSETaskInstallOverlay : public TaskDelegate
+class SKSETaskInstallOverlay : public SKSE::detail::TaskDelegate
 {
 public:
 	virtual void Run();
 	virtual void Dispose();
 
-	SKSETaskInstallOverlay(TESObjectREFR * refr, BSFixedString nodeName, BSFixedString overlayPath, UInt32 armorMask, UInt32 addonMask);
+	SKSETaskInstallOverlay(RE::TESObjectREFR * refr, RE::BSFixedString nodeName, RE::BSFixedString overlayPath, std::uint32_t armorMask, std::uint32_t addonMask);
 
-	UInt32			m_formId;
-	BSFixedString	m_nodeName;
-	BSFixedString	m_overlayPath;
-	UInt32			m_armorMask;
-	UInt32			m_addonMask;
+	std::uint32_t			m_formId;
+	RE::BSFixedString	m_nodeName;
+	RE::BSFixedString	m_overlayPath;
+	std::uint32_t			m_armorMask;
+	std::uint32_t			m_addonMask;
 };
 
-class SKSETaskModifyOverlay : public TaskDelegate
+class SKSETaskModifyOverlay : public SKSE::detail::TaskDelegate
 {
 public:
 	virtual void Run();
 	virtual void Dispose();
-	virtual void Modify(TESObjectREFR * reference, NiAVObject * targetNode, NiNode * parent) = 0;
+	virtual void Modify(RE::TESObjectREFR * reference, RE::NiAVObject * targetNode, RE::NiNode * parent) = 0;
 
-	SKSETaskModifyOverlay(TESObjectREFR * refr, BSFixedString nodeName);
+	SKSETaskModifyOverlay(RE::TESObjectREFR * refr, RE::BSFixedString nodeName);
 
-	UInt32			m_formId;
-	BSFixedString	m_nodeName;
+	std::uint32_t			m_formId;
+	RE::BSFixedString	m_nodeName;
 };
 
 class SKSETaskUninstallOverlay : public SKSETaskModifyOverlay
 {
 public:
-	virtual void Modify(TESObjectREFR * reference, NiAVObject * targetNode, NiNode * parent);
+	virtual void Modify(RE::TESObjectREFR * reference, RE::NiAVObject * targetNode, RE::NiNode * parent);
 
-	SKSETaskUninstallOverlay(TESObjectREFR * refr, BSFixedString nodeName) : SKSETaskModifyOverlay(refr, nodeName){};
+	SKSETaskUninstallOverlay(RE::TESObjectREFR * refr, RE::BSFixedString nodeName) : SKSETaskModifyOverlay(refr, nodeName){};
 };
 
-class SKSETaskUpdateOverlays : public TaskDelegate
+class SKSETaskUpdateOverlays : public SKSE::detail::TaskDelegate
 {
 public:
 	virtual void Run();
 	virtual void Dispose();
 
-	SKSETaskUpdateOverlays(TESObjectREFR* refr);
+	SKSETaskUpdateOverlays(RE::TESObjectREFR* refr);
 	
 private:
-	UInt32	m_formId;
+	std::uint32_t	m_formId;
 };
 
-class SKSETaskRemoveOverlays : public TaskDelegate
+class SKSETaskRemoveOverlays : public SKSE::detail::TaskDelegate
 {
 public:
 	virtual void Run();
 	virtual void Dispose();
 
-	SKSETaskRemoveOverlays(TESObjectREFR* refr);
+	SKSETaskRemoveOverlays(RE::TESObjectREFR* refr);
 
 private:
-	UInt32	m_formId;
+	std::uint32_t	m_formId;
 };
 
-class SKSETaskRevertOverlays : public TaskDelegate
+class SKSETaskRevertOverlays : public SKSE::detail::TaskDelegate
 {
 public:
 	virtual void Run();
 	virtual void Dispose();
 
-	SKSETaskRevertOverlays(TESObjectREFR* refr, bool resetDiffuse);
+	SKSETaskRevertOverlays(RE::TESObjectREFR* refr, bool resetDiffuse);
 
 private:
-	UInt32	m_formId;
+	std::uint32_t	m_formId;
 	bool	m_resetDiffuse;
 };
 
-class OverlayHolder : public SafeDataHolder<std::unordered_set<UInt32>>
+class OverlayHolder : public SafeDataHolder<std::unordered_set<std::uint32_t>>
 {
 public:
-	void Save(SKSESerializationInterface * intfc, UInt32 kVersion);
-	bool Load(SKSESerializationInterface * intfc, UInt32 kVersion);
+	void Save(SKSE::SerializationInterface * intfc, std::uint32_t kVersion);
+	bool Load(SKSE::SerializationInterface * intfc, std::uint32_t kVersion);
 
 	friend class OverlayInterface;
 };
@@ -185,48 +182,48 @@ class OverlayInterface
 public:
 	virtual skee_u32 GetVersion() override;
 
-	void Save(SKSESerializationInterface * intfc, UInt32 kVersion);
-	bool Load(SKSESerializationInterface * intfc, UInt32 kVersion);
+	void Save(SKSE::SerializationInterface * intfc, std::uint32_t kVersion);
+	bool Load(SKSE::SerializationInterface * intfc, std::uint32_t kVersion);
 	virtual void Revert() override;
 
-	virtual bool HasOverlays(TESObjectREFR * reference) override;
-	virtual void AddOverlays(TESObjectREFR * reference, bool immediate = false) override;
-	virtual void RemoveOverlays(TESObjectREFR * reference, bool immediate = false) override;
-	virtual void RevertOverlays(TESObjectREFR * reference, bool resetDiffuse, bool immediate = false) override;
-	virtual void RevertOverlay(TESObjectREFR * reference, const char* nodeName, skee_u32 armorMask, skee_u32 addonMask, bool resetDiffuse, bool immediate = false) override;
-	virtual void EraseOverlays(TESObjectREFR * reference, bool immediate = false) override;
-	virtual void RevertHeadOverlays(TESObjectREFR * reference, bool resetDiffuse, bool immediate = false) override;
-	virtual void RevertHeadOverlay(TESObjectREFR * reference, const char* nodeName, skee_u32 partType, skee_u32 shaderType, bool resetDiffuse, bool immediate = false) override;
+	virtual bool HasOverlays(RE::TESObjectREFR * reference) override;
+	virtual void AddOverlays(RE::TESObjectREFR * reference, bool immediate = false) override;
+	virtual void RemoveOverlays(RE::TESObjectREFR * reference, bool immediate = false) override;
+	virtual void RevertOverlays(RE::TESObjectREFR * reference, bool resetDiffuse, bool immediate = false) override;
+	virtual void RevertOverlay(RE::TESObjectREFR * reference, const char* nodeName, skee_u32 armorMask, skee_u32 addonMask, bool resetDiffuse, bool immediate = false) override;
+	virtual void EraseOverlays(RE::TESObjectREFR * reference, bool immediate = false) override;
+	virtual void RevertHeadOverlays(RE::TESObjectREFR * reference, bool resetDiffuse, bool immediate = false) override;
+	virtual void RevertHeadOverlay(RE::TESObjectREFR * reference, const char* nodeName, skee_u32 partType, skee_u32 shaderType, bool resetDiffuse, bool immediate = false) override;
 	virtual skee_u32 GetOverlayCount(OverlayType type, OverlayLocation location) override;
 	virtual const char* GetOverlayFormat(OverlayType type, OverlayLocation location) override;
 
 	virtual bool RegisterInstallCallback(const char* key, OverlayInstallCallback cb) override;
 	virtual bool UnregisterInstallCallback(const char* key) override;
 
-	virtual void SetupOverlay(UInt32 primaryCount, const char * primaryPath, const char * primaryNode, UInt32 secondaryCount, const char * secondaryPath, const char * secondaryNode, TESObjectREFR * refr, NiNode * boneTree, NiAVObject * resultNode);
+	virtual void SetupOverlay(std::uint32_t primaryCount, const char * primaryPath, const char * primaryNode, std::uint32_t secondaryCount, const char * secondaryPath, const char * secondaryNode, RE::TESObjectREFR * refr, RE::NiNode * boneTree, RE::NiAVObject * resultNode);
 
-	virtual void UninstallOverlay(const char * nodeName, TESObjectREFR * refr, NiNode * parent);
-	virtual void InstallOverlay(const char * nodeName, const char * path, TESObjectREFR * refr, BSGeometry * source, NiNode * destination, BGSTextureSet * textureSet = NULL);
-	virtual void ResetOverlay(const char * nodeName, TESObjectREFR * refr, BSGeometry * source, NiNode * destination, BGSTextureSet * textureSet = NULL, bool resetDiffuse = false); // Re-applies the skin's textures
+	virtual void UninstallOverlay(const char * nodeName, RE::TESObjectREFR * refr, RE::NiNode * parent);
+	virtual void InstallOverlay(const char * nodeName, const char * path, RE::TESObjectREFR * refr, RE::BSGeometry * source, RE::NiNode * destination, RE::BGSTextureSet * textureSet = NULL);
+	virtual void ResetOverlay(const char * nodeName, RE::TESObjectREFR * refr, RE::BSGeometry * source, RE::NiNode * destination, RE::BGSTextureSet * textureSet = NULL, bool resetDiffuse = false); // Re-applies the skin's textures
 
 	virtual std::string & GetDefaultTexture();
 	virtual void SetDefaultTexture(const std::string & newTexture);
 
 	// Relinks an overlay node by name to the new source
-	virtual void RelinkOverlay(const char * nodeName, TESObjectREFR * refr, BSGeometry * source, NiNode * skeleton);
+	virtual void RelinkOverlay(const char * nodeName, RE::TESObjectREFR * refr, RE::BSGeometry * source, RE::NiNode * skeleton);
 
 	// Relinks structured name of overlays to new source
-	virtual void RelinkOverlays(UInt32 primaryCount, const char * primaryNode, UInt32 secondaryCount, const char * secondaryNode, TESObjectREFR * refr, NiNode * boneTree, NiAVObject * resultNode);
+	virtual void RelinkOverlays(std::uint32_t primaryCount, const char * primaryNode, std::uint32_t secondaryCount, const char * secondaryNode, RE::TESObjectREFR * refr, RE::NiNode * boneTree, RE::NiAVObject * resultNode);
 
 	// Builds default overlays
-	virtual void BuildOverlays(UInt32 armorMask, UInt32 addonMask, TESObjectREFR * refr, NiNode * boneTree, NiAVObject * resultNode);
+	virtual void BuildOverlays(std::uint32_t armorMask, std::uint32_t addonMask, RE::TESObjectREFR * refr, RE::NiNode * boneTree, RE::NiAVObject * resultNode);
 
 	// Relinks default overlays
-	virtual void RebuildOverlays(UInt32 armorMask, UInt32 addonMask, TESObjectREFR * refr, NiNode * boneTree, NiAVObject * resultNode);
+	virtual void RebuildOverlays(std::uint32_t armorMask, std::uint32_t addonMask, RE::TESObjectREFR * refr, RE::NiNode * boneTree, RE::NiAVObject * resultNode);
 
-	void QueueOverlayBuild(TESObjectREFR* reference, bool immediate = false);
+	void QueueOverlayBuild(RE::TESObjectREFR* reference, bool immediate = false);
 
-	void Visit(std::function<void(UInt32)> visitor);
+	void Visit(std::function<void(std::uint32_t)> visitor);
 	void PrintDiagnostics();
 
 private:
@@ -235,5 +232,5 @@ private:
 	OverlayCallbackHolder m_callbacks;
 
 	// Inherited via IAddonAttachmentInterface
-	virtual void OnAttach(TESObjectREFR * refr, TESObjectARMO * armor, TESObjectARMA * addon, NiAVObject * object, bool isFirstPerson, NiNode * skeleton, NiNode * root) override;
+	virtual void OnAttach(RE::TESObjectREFR * refr, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::NiAVObject * object, bool isFirstPerson, RE::NiNode * skeleton, RE::NiNode * root) override;
 };

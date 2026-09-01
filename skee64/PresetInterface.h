@@ -1,15 +1,21 @@
 #pragma once
 
 #include "IPluginInterface.h"
+#include "SafeDataHolder.h"
 #include "StringTable.h"
 #include "OverrideVariant.h"
+#include <RE/B/BSFixedString.h>
 #include <vector>
+#include <cstdint>
+namespace RE
+{
+	class RE::Actor;
+	class RE::BGSHeadPart;
+	class RE::BSFaceGenNiNode;
+	class RE::TESNPC;
+	class RE::TESRace;
+}
 
-class TESNPC;
-class BGSHeadPart;
-class BSFaceGenNiNode;
-class Actor;
-class TESRace;
 
 class SculptData;
 using SculptDataPtr = std::shared_ptr<SculptData>;
@@ -21,8 +27,8 @@ public:
 
 	struct Tint
 	{
-		UInt32 index;
-		UInt32 color;
+		std::uint32_t index;
+		std::uint32_t color;
 		SKEEFixedString name;
 	};
 
@@ -34,24 +40,24 @@ public:
 
 	struct Texture
 	{
-		UInt8 index;
+		std::uint8_t index;
 		SKEEFixedString name;
 	};
 
 	float weight;
-	UInt32 hairColor;
+	std::uint32_t hairColor;
 	std::vector<std::string> modList;
-	std::vector<BGSHeadPart*> headParts;
-	std::vector<SInt32> presets;
+	std::vector<RE::BGSHeadPart*> headParts;
+	std::vector<std::int32_t> presets;
 	std::vector<float> morphs;
 	std::vector<Tint> tints;
 	std::vector<Morph> customMorphs;
 	std::vector<Texture> faceTextures;
-	BGSTextureSet* headTexture;
-	BSFixedString tintTexture;
+	RE::BGSTextureSet* headTexture;
+	RE::BSFixedString tintTexture;
 	typedef std::map<SKEEFixedString, std::vector<OverrideVariant>> OverrideData;
 	OverrideData overrideData;
-	typedef std::map<UInt32, std::vector<OverrideVariant>> SkinData;
+	typedef std::map<std::uint32_t, std::vector<OverrideVariant>> SkinData;
 	SkinData skinData[2];
 	typedef std::map<SKEEFixedString, std::map<SKEEFixedString, std::vector<OverrideVariant>>> TransformData;
 	TransformData transformData[2];
@@ -60,7 +66,7 @@ public:
 	BodyMorphData bodyMorphData;
 };
 using PresetDataPtr = std::shared_ptr<PresetData>;
-class PresetMap : public SafeDataHolder<std::unordered_map<TESNPC*, PresetDataPtr>>
+class PresetMap : public SafeDataHolder<std::unordered_map<RE::TESNPC*, PresetDataPtr>>
 {
 public:
 	friend class PresetInterface;
@@ -72,26 +78,26 @@ public:
     virtual skee_u32 GetVersion() override { return kCurrentPluginVersion; }
     virtual void Revert() { };
 
-	PresetDataPtr GetMappedPreset(TESNPC* npc);
-	void AssignMappedPreset(TESNPC* npc, PresetDataPtr presetData);
-	void ApplyMappedPreset(TESNPC* npc, BSFaceGenNiNode* faceNode, BGSHeadPart* headPart);
-	bool EraseMappedPreset(TESNPC* npc);
+	PresetDataPtr GetMappedPreset(RE::TESNPC* npc);
+	void AssignMappedPreset(RE::TESNPC* npc, PresetDataPtr presetData);
+	void ApplyMappedPreset(RE::TESNPC* npc, RE::BSFaceGenNiNode* faceNode, RE::BGSHeadPart* headPart);
+	bool EraseMappedPreset(RE::TESNPC* npc);
 	void ClearMappedPresets();
 
 	// Legacy
 	bool SaveBinaryPreset(const char* filePath);
 	bool LoadBinaryPreset(const char* filePath, PresetDataPtr presetData);
 
-	void ApplyPresetData(Actor* actor, PresetDataPtr presetData, bool setSkinColor = false, ApplyTypes applyType = kPresetApplyAll);
-	void ApplyPreset(Actor* actor, TESRace* race, TESNPC* npc, PresetDataPtr presetData, ApplyTypes applyType);
+	void ApplyPresetData(RE::Actor* actor, PresetDataPtr presetData, bool setSkinColor = false, ApplyTypes applyType = kPresetApplyAll);
+	void ApplyPreset(RE::Actor* actor, RE::TESRace* race, RE::TESNPC* npc, PresetDataPtr presetData, ApplyTypes applyType);
 
-	bool SaveJsonPreset(const char* filePath, Actor* actor);
+	bool SaveJsonPreset(const char* filePath, RE::Actor* actor);
 	bool LoadJsonPreset(const char* filePath, PresetDataPtr presetData);
 
 protected:
 	PresetMap m_mappedPreset;
 
 	// Inherited via IPresetInterface
-	virtual bool SavePreset(const char* filePath, const char* tintPath, Actor* actor);
-	virtual bool LoadPreset(const char* filePath, const char* tintPath, Actor* actor, ApplyTypes applyTypes = kPresetApplyAll);
+	virtual bool SavePreset(const char* filePath, const char* tintPath, RE::Actor* actor);
+	virtual bool LoadPreset(const char* filePath, const char* tintPath, RE::Actor* actor, ApplyTypes applyTypes = kPresetApplyAll);
 };

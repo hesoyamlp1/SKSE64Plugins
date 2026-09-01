@@ -1,25 +1,43 @@
-#include "skse64/PluginAPI.h"
-#include "skse64_common/skse_version.h"
-#include "skse64_common/SafeWrite.h"
-
-#include "skse64/GameAPI.h"
-#include "skse64/GameObjects.h"
-#include "skse64/GameRTTI.h"
-#include "skse64/GameData.h"
-#include "skse64/GameEvents.h"
-#include "skse64/GameExtraData.h"
-
-#include "skse64/PapyrusVM.h"
-#include "skse64/PapyrusEvents.h"
-
-#include "skse64/NiRTTI.h"
-#include "skse64/NiNodes.h"
-#include "skse64/NiMaterial.h"
-#include "skse64/NiProperties.h"
-
-#include "skse64/ScaleformCallbacks.h"
-#include "skse64/ScaleformMovie.h"
-
+#include "SKSE/API.h"
+#include <REX/W32/KERNEL32.h>
+#include "SKSE/Interfaces.h"
+#include "SKSE/Trampoline.h"
+#include "SKSE/Version.h"
+#include "REL/Relocation.h"
+#include "RE/RTTI.h"
+#include "RE/B/BSFixedString.h"
+#include "RE/T/TESForm.h"
+#include "RE/T/TESObjectREFR.h"
+#include "RE/T/TESNPC.h"
+#include "RE/T/TESDataHandler.h"
+#include "RE/T/TESRace.h"
+#include "RE/A/Actor.h"
+#include "RE/N/NiNode.h"
+#include "RE/N/NiAVObject.h"
+#include "RE/B/BSFaceGenNiNode.h"
+#include "RE/B/BSGeometry.h"
+#include "RE/B/BSShaderProperty.h"
+#include "RE/B/BSLightingShaderProperty.h"
+#include "RE/B/BSLightingShaderMaterial.h"
+#include "RE/B/BSLightingShaderMaterialFacegenTint.h"
+#include "RE/B/BSLightingShaderMaterialHairTint.h"
+#include "RE/E/ExtraDataList.h"
+#include "RE/E/ExtraRank.h"
+#include "RE/E/ExtraUniqueID.h"
+#include "RE/E/ExtraContainerChanges.h"
+#include "RE/S/ScriptEventSourceHolder.h"
+#include "RE/T/TESCellFullyLoadedEvent.h"
+#include "RE/T/TESObjectLoadedEvent.h"
+#include "RE/T/TESInitScriptEvent.h"
+#include "RE/T/TESLoadGameEvent.h"
+#include "RE/T/TESUniqueIDChangeEvent.h"
+#include "RE/I/IVirtualMachine.h"
+#include "RE/V/Variable.h"
+#include "RE/N/NativeFunction.h"
+#include "RE/G/GFxMovieView.h"
+#include "RE/G/GFxValue.h"
+#include "RE/G/GFxFunctionHandler.h"
+#include "SKSE/Events.h"
 #include "PluginInterface.h"
 #include "OverrideInterface.h"
 #include "OverlayInterface.h"
@@ -40,32 +58,44 @@
 #include "PartHandler.h"
 
 #include "ShaderUtilities.h"
-#include "PapyrusUtilities.h"
 #include "ScaleformFunctions.h"
 #include "ScaleformCharGenFunctions.h"
 #include "ScaleformUtils.h"
 #include "StringTable.h"
 
-#include <shlobj.h>
 #include <string>
 #include <chrono>
+#include <cstdint>
+#include <cassert>
+#include <mutex>
+#include <fstream>
+#include <vector>
+#include <unordered_map>
+#include <functional>
 
 #include "PapyrusNiOverride.h"
 #include "PapyrusCharGen.h"
 #include "SKEEHooks.h"
 
-DebugLog	gLog;
 
-PluginHandle					g_pluginHandle = kPluginHandle_Invalid;
+// Plugin handle (legacy compatibility)
+std::uint32_t g_pluginHandle = SKSE::kInvalidPluginHandle;
 
-// Interfaces
-SKSESerializationInterface		* g_serialization = nullptr;
-SKSEScaleformInterface			* g_scaleform = nullptr;
-SKSETaskInterface				* g_task = nullptr;
-SKSEMessagingInterface			* g_messaging = nullptr;
-SKSEPapyrusInterface			* g_papyrus = nullptr;
-SKSETrampolineInterface			* g_trampoline = nullptr;
-SKSEObjectInterface				* g_objectInterface = nullptr;
+// Versions of the actually-running SKSE/game, captured from the LoadInterface
+// in SKSE_PLUGIN_LOAD. Written into preset headers instead of compile-time constants.
+std::uint32_t g_skseVersion = 0;     // LoadInterface::skseVersion (packed)
+std::uint32_t g_runtimeVersion = 0;  // LoadInterface::runtimeVersion (packed)
+
+// Interfaces - accessed via SKSE getters, no globals needed
+// SKSE::GetSerializationInterface()
+// SKSE::GetScaleformInterface()
+// SKSE::GetTaskInterface()
+
+const SKSE::TaskInterface* g_task = nullptr;
+// SKSE::GetMessagingInterface()
+// SKSE::GetPapyrusInterface()
+// SKSE::GetTrampoline()
+// SKSE::GetObjectInterface()
 
 // Handlers
 InterfaceMap				g_interfaceMap;
@@ -113,25 +143,25 @@ bool	g_hookTintInventory = true;
 bool	g_hookTinting = true;
 bool	g_hookFaceOverlays = true;
 
+bool	g_suppressPatternWarnings = false;
 
 bool	g_enableEarlyRegistration = false;
 
 bool	g_playerOnly = true;
-UInt32	g_numBodyOverlays = 3;
-UInt32	g_numHandOverlays = 3;
-UInt32	g_numFeetOverlays = 3;
-UInt32	g_numFaceOverlays = 3;
-UInt32	g_numSpellBodyOverlays = 1;
-UInt32	g_numSpellHandOverlays = 1;
-UInt32	g_numSpellFeetOverlays = 1;
-UInt32	g_numSpellFaceOverlays = 1;
-UInt32	g_tintHairSlot = 1;
+std::uint32_t	g_numBodyOverlays = 3;
+std::uint32_t	g_numHandOverlays = 3;
+std::uint32_t	g_numFeetOverlays = 3;
+std::uint32_t	g_numFaceOverlays = 3;
+std::uint32_t	g_numSpellBodyOverlays = 1;
+std::uint32_t	g_numSpellHandOverlays = 1;
+std::uint32_t	g_numSpellFeetOverlays = 1;
+std::uint32_t	g_numSpellFaceOverlays = 1;
+std::uint32_t	g_tintHairSlot = 1;
 
 bool	g_overlayAlphaOverride = true;
-UInt16	g_overlayAlphaFlags = 4845;
-UInt16	g_overlayAlphaThreshold = 0;
+std::uint16_t	g_overlayAlphaFlags = 4845;
+std::uint16_t	g_overlayAlphaThreshold = 0;
 bool	g_overlayForceDecal = true;
-
 
 bool	g_enableBodyInit = true;
 bool	g_firstLoad = false;
@@ -141,8 +171,8 @@ bool	g_immediateFace = false;
 bool	g_enableEquippableTransforms = true;
 bool	g_parallelMorphing = true;
 bool	g_deferredBodyMorph = false;
-UInt16	g_scaleMode = 0;
-UInt16	g_bodyMorphMode = 0;
+std::uint16_t	g_scaleMode = 0;
+std::uint16_t	g_bodyMorphMode = 0;
 bool	g_bodyMorphGPUCopy = true;
 bool	g_bodyMorphRebind = true;
 
@@ -155,8 +185,8 @@ bool	g_disableFaceGenCache = true;
 bool	g_exportSkinToBone = true;
 float	g_sliderMultiplier = 1.0f;
 float	g_sliderInterval = 0.01f;
-UInt32	g_numPresets = 10;
-UInt32	g_customDataMax = 10;
+std::uint32_t	g_numPresets = 10;
+std::uint32_t	g_customDataMax = 10;
 std::string g_raceTemplate = "NordRace";
 
 // Compact DirectX vars
@@ -164,14 +194,15 @@ std::string g_raceTemplate = "NordRace";
 #include "CDXNifScene.h"
 #include "CDXBrush.h"
 
+
 CDXD3DDevice*		g_Device = nullptr;
 CDXModelViewerCamera	g_Camera;
 CDXNifScene				g_World;
 
 float		g_panSpeed = 0.01f;
 float		g_cameraFOV = 45.0f;
-SInt32		g_viewWidth = 1024;
-SInt32		g_viewHeight = 1024;
+std::int32_t		g_viewWidth = 1024;
+std::int32_t		g_viewHeight = 1024;
 float		g_sculptBackgroundA = 0.0f;
 float		g_sculptBackgroundR = 0.0f;
 float		g_sculptBackgroundG = 0.0f;
@@ -189,16 +220,15 @@ extern double g_brushProperties[CDXBrush::kBrushTypes][CDXBrush::kBrushPropertie
 #define MIN_SCALEFORM_VERSION		1
 #define MIN_PAPYRUS_VERSION			1
 
-
 const std::string & F4EEGetRuntimeDirectory(void)
 {
 	static std::string s_runtimeDirectory;
 
 	if (s_runtimeDirectory.empty())
 	{
-		// can't determine how many bytes we'll need, hope it's not more than MAX_PATH
-		char	runtimePathBuf[MAX_PATH];
-		UInt32	runtimePathLength = GetModuleFileName(GetModuleHandle(NULL), runtimePathBuf, sizeof(runtimePathBuf));
+		// can't determine how many bytes we'll need, hope it's not more than REX::W32::MAX_PATH
+		char	runtimePathBuf[REX::W32::MAX_PATH];
+		std::uint32_t	runtimePathLength = REX::W32::GetModuleFileNameA(REX::W32::GetModuleHandleA(nullptr), runtimePathBuf, sizeof(runtimePathBuf));
 
 		if (runtimePathLength && (runtimePathLength < sizeof(runtimePathBuf)))
 		{
@@ -210,16 +240,16 @@ const std::string & F4EEGetRuntimeDirectory(void)
 			{
 				s_runtimeDirectory = runtimePath.substr(0, lastSlash + 1);
 
-				_DMESSAGE("runtime root = %s", s_runtimeDirectory.c_str());
+				SKSE::log::debug("runtime root = {}", s_runtimeDirectory.c_str());
 			}
 			else
 			{
-				_WARNING("no slash in runtime path? (%s)", runtimePath.c_str());
+				SKSE::log::warn("no slash in runtime path? ({})", runtimePath.c_str());
 			}
 		}
 		else
 		{
-			_WARNING("couldn't find runtime path (len = %d, err = %08X)", runtimePathLength, GetLastError());
+			SKSE::log::warn("couldn't find runtime path (len = {}, err = {:08X})", runtimePathLength, GetLastError());
 		}
 	}
 
@@ -238,7 +268,7 @@ const std::string & SKEE64GetConfigPath(bool custom = false)
 		{
 			s_configPath = runtimePath + "Data\\SKSE\\Plugins\\skee64.ini";
 
-			_MESSAGE("default config path = %s", s_configPath.c_str());
+			SKSE::log::info("default config path = {}", s_configPath.c_str());
 		}
 	}
 	if (s_configPathCustom.empty())
@@ -248,7 +278,7 @@ const std::string & SKEE64GetConfigPath(bool custom = false)
 		{
 			s_configPathCustom = runtimePath + "Data\\SKSE\\Plugins\\skee64_custom.ini";
 
-			_MESSAGE("custom config path = %s", s_configPathCustom.c_str());
+			SKSE::log::info("custom config path = {}", s_configPathCustom.c_str());
 		}
 	}
 
@@ -267,12 +297,12 @@ std::string SKEE64GetConfigOption(const char * section, const char * key)
 
 	if (!configPath.empty())
 	{
-		UInt32	resultLen = GetPrivateProfileString(section, key, NULL, resultBuf, sizeof(resultBuf), configPath.c_str());
+		std::uint32_t	resultLen = REX::W32::GetPrivateProfileStringA(section, key, NULL, resultBuf, sizeof(resultBuf), configPath.c_str());
 		result = resultBuf;
 	}
 	if (!configPathCustom.empty())
 	{
-		UInt32	resultLen = GetPrivateProfileString(section, key, NULL, resultBuf, sizeof(resultBuf), configPathCustom.c_str());
+		std::uint32_t	resultLen = REX::W32::GetPrivateProfileStringA(section, key, NULL, resultBuf, sizeof(resultBuf), configPathCustom.c_str());
 		if (resultLen > 0) // Only take custom if we have it
 			result = resultBuf;
 	}
@@ -289,11 +319,11 @@ const char * SKEE64GetTypeFormatting(T * dataOut)
 template<> const char * SKEE64GetTypeFormatting(double * dataOut) { return "%lf"; }
 template<> const char * SKEE64GetTypeFormatting(float * dataOut) { return "%f"; }
 template<> const char * SKEE64GetTypeFormatting(bool * dataOut) { return "%c"; }
-template<> const char * SKEE64GetTypeFormatting(SInt16 * dataOut) { return "%hd"; }
-template<> const char * SKEE64GetTypeFormatting(UInt16 * dataOut) { return "%hu"; }
-template<> const char * SKEE64GetTypeFormatting(SInt32 * dataOut) { return "%d"; }
-template<> const char * SKEE64GetTypeFormatting(UInt32 * dataOut) { return "%u"; }
-template<> const char * SKEE64GetTypeFormatting(UInt64 * dataOut) { return "%I64u"; }
+template<> const char * SKEE64GetTypeFormatting(std::int16_t * dataOut) { return "%hd"; }
+template<> const char * SKEE64GetTypeFormatting(std::uint16_t * dataOut) { return "%hu"; }
+template<> const char * SKEE64GetTypeFormatting(std::int32_t * dataOut) { return "%d"; }
+template<> const char * SKEE64GetTypeFormatting(std::uint32_t * dataOut) { return "%u"; }
+template<> const char * SKEE64GetTypeFormatting(std::uint64_t * dataOut) { return "%I64u"; }
 
 template<typename T>
 bool SKEE64GetConfigValue(const char * section, const char * key, T * dataOut)
@@ -317,7 +347,7 @@ bool SKEE64GetConfigValue(const char * section, const char * key, bool * dataOut
 	if (data.empty())
 		return false;
 
-	UInt32 tmp;
+	std::uint32_t tmp;
 	bool res = (sscanf_s(data.c_str(), SKEE64GetTypeFormatting(&tmp), &tmp) == 1);
 	if (res) {
 		*dataOut = (tmp > 0);
@@ -325,9 +355,9 @@ bool SKEE64GetConfigValue(const char * section, const char * key, bool * dataOut
 	return res;
 }
 
-void SKEE64Serialization_Revert(SKSESerializationInterface * intfc)
+void SKEE64Serialization_Revert(SKSE::SerializationInterface* a_intfc)
 {
-	_MESSAGE("Reverting...");
+	SKSE::log::info("Reverting...");
 
 	g_actorUpdateManager.Revert();
 	g_overlayInterface.Revert();
@@ -365,194 +395,226 @@ private:
 	std::chrono::system_clock::time_point end;
 };
 
-void SKEE64Serialization_Save(SKSESerializationInterface * intfc)
+void SKEE64Serialization_Save(SKSE::SerializationInterface* a_intfc)
 {
-	_MESSAGE("Saving...");
+	SKSE::log::info("Saving...");
 
 	StopWatch sw;
-	UInt32 strCount = 0;
 
 	sw.Start();
-	g_stringTable.Save(intfc, StringTable::kSerializationVersion);
-	_DMESSAGE("%s - Serialized string table %dms", __FUNCTION__, sw.Stop());
+	g_stringTable.Save(a_intfc, StringTable::kSerializationVersion);
+	SKSE::log::debug("{} - Serialized string table {}ms", __FUNCTION__, sw.Stop());
 
 	sw.Start();
-	g_morphInterface.Save(intfc, FaceMorphInterface::kSerializationVersion);
-	_DMESSAGE("%s - Player morph data %dms", __FUNCTION__, sw.Stop());
+	g_morphInterface.Save(a_intfc, FaceMorphInterface::kSerializationVersion);
+	SKSE::log::debug("{} - Player morph data {}ms", __FUNCTION__, sw.Stop());
 
 	sw.Start();
-	g_transformInterface.Save(intfc, NiTransformInterface::kSerializationVersion);
-	_DMESSAGE("%s - Serialized transforms %dms", __FUNCTION__, sw.Stop());
+	g_transformInterface.Save(a_intfc, NiTransformInterface::kSerializationVersion);
+	SKSE::log::debug("{} - Serialized transforms {}ms", __FUNCTION__, sw.Stop());
 
 	sw.Start();
-	g_overlayInterface.Save(intfc, OverlayInterface::kSerializationVersion);
-	_DMESSAGE("%s - Serialized overlays %dms", __FUNCTION__, sw.Stop());
+	g_overlayInterface.Save(a_intfc, OverlayInterface::kSerializationVersion);
+	SKSE::log::debug("{} - Serialized overlays {}ms", __FUNCTION__, sw.Stop());
 
 	sw.Start();
-	g_overrideInterface.Save(intfc, OverrideInterface::kSerializationVersion);
-	_DMESSAGE("%s - Serialized overrides %dms", __FUNCTION__, sw.Stop());
+	g_overrideInterface.Save(a_intfc, OverrideInterface::kSerializationVersion);
+	SKSE::log::debug("{} - Serialized overrides {}ms", __FUNCTION__, sw.Stop());
 
 	sw.Start();
-	g_bodyMorphInterface.Save(intfc, BodyMorphInterface::kSerializationVersion);
-	_DMESSAGE("%s - Serialized body morphs %dms", __FUNCTION__, sw.Stop());
+	g_bodyMorphInterface.Save(a_intfc, BodyMorphInterface::kSerializationVersion);
+	SKSE::log::debug("{} - Serialized body morphs {}ms", __FUNCTION__, sw.Stop());
 
 	sw.Start();
-	g_itemDataInterface.Save(intfc, ItemDataInterface::kSerializationVersion);
-	_DMESSAGE("%s - Serialized item data %dms", __FUNCTION__, sw.Stop());
+	g_itemDataInterface.Save(a_intfc, ItemDataInterface::kSerializationVersion);
+	SKSE::log::debug("{} - Serialized item data {}ms", __FUNCTION__, sw.Stop());
 }
 
-void SKEE64Serialization_Load(SKSESerializationInterface * intfc)
+void SKEE64Serialization_Load(SKSE::SerializationInterface* a_intfc)
 {
-	_MESSAGE("Loading...");
+	SKSE::log::info("Loading...");
 
-	UInt32 type, length, version;
+	std::uint32_t type, length, version;
 	bool error = false;
 
-	std::unordered_map<UInt32, StringTableItem> stringTable;
+	std::unordered_map<std::uint32_t, StringTableItem> stringTable;
 
 	StopWatch sw;
 	sw.Start();
-	while (intfc->GetNextRecordInfo(&type, &version, &length))
+	while (a_intfc->GetNextRecordInfo(type, version, length))
 	{
 		switch (type)
 		{
-			case 'STTB':	g_stringTable.Load(intfc, version, stringTable);						break;
-			case 'MRST':	g_morphInterface.LoadMorphData(intfc, version, stringTable);			break;
-			case 'SCDT':	g_morphInterface.LoadSculptData(intfc, version, stringTable);			break;
-			case 'AOVL':	g_overlayInterface.Load(intfc, version);								break;
-			case 'ACEN':	g_overrideInterface.LoadOverrides(intfc, version, stringTable);			break;
-			case 'NDEN':	g_overrideInterface.LoadNodeOverrides(intfc, version, stringTable);		break;
-			case 'WPEN':	g_overrideInterface.LoadWeaponOverrides(intfc, version, stringTable);	break;
-			case 'SKNR':	g_overrideInterface.LoadSkinOverrides(intfc, version, stringTable);		break;
-			case 'MRPH':	g_bodyMorphInterface.Load(intfc, version, stringTable);					break;
-			case 'ITEE':	g_itemDataInterface.Load(intfc, version, stringTable);					break;
-			case 'ACTM':	g_transformInterface.Load(intfc, version, stringTable);					break;
+			case 'STTB':	g_stringTable.Load(a_intfc, version, stringTable);						break;
+			case 'MRST':	g_morphInterface.LoadMorphData(a_intfc, version, stringTable);			break;
+			case 'SCDT':	g_morphInterface.LoadSculptData(a_intfc, version, stringTable);			break;
+			case 'AOVL':	g_overlayInterface.Load(a_intfc, version);								break;
+			case 'ACEN':	g_overrideInterface.LoadOverrides(a_intfc, version, stringTable);			break;
+			case 'NDEN':	g_overrideInterface.LoadNodeOverrides(a_intfc, version, stringTable);		break;
+			case 'WPEN':	g_overrideInterface.LoadWeaponOverrides(a_intfc, version, stringTable);	break;
+			case 'SKNR':	g_overrideInterface.LoadSkinOverrides(a_intfc, version, stringTable);		break;
+			case 'MRPH':	g_bodyMorphInterface.Load(a_intfc, version, stringTable);					break;
+			case 'ITEE':	g_itemDataInterface.Load(a_intfc, version, stringTable);					break;
+			case 'ACTM':	g_transformInterface.Load(a_intfc, version, stringTable);					break;
 			default:
-				_MESSAGE("unhandled type %08X (%.4s)", type, reinterpret_cast<char*>(&type));
+				SKSE::log::info("unhandled type {:08X} ({:.4})", type, std::string(reinterpret_cast<char*>(&type), 4));
 				error = true;
 				break;
 		}
 	}
-	_DMESSAGE("%s - Loaded %dms", __FUNCTION__, sw.Stop());
+	SKSE::log::debug("{} - Loaded {}ms", __FUNCTION__, sw.Stop());
 	
 	g_firstLoad = true;
 }
 
-bool RegisterNiOverrideScaleform(GFxMovieView * view, GFxValue * root)
+typedef std::map <const std::type_info*, RE::GFxFunctionHandler*>	FunctionHandlerCache;
+FunctionHandlerCache g_functionHandlerCache;
+
+template <class T>
+void SKEERegisterScaleformFunction(RE::GFxValue* dst, RE::GFxMovieView* movie, const char* name)
+	requires(std::is_base_of_v<RE::GFxFunctionHandler, T>)
+{
+	// either allocate the object or retrieve an existing instance from the cache
+	RE::GFxFunctionHandler* fn = nullptr;
+
+	// check the cache
+	FunctionHandlerCache::iterator iter = g_functionHandlerCache.find(&typeid(T));
+	if (iter != g_functionHandlerCache.end())
+		fn = iter->second;
+
+	if (!fn)
+	{
+		// not found, allocate a new one
+		fn = new T{};
+
+		// add it to the cache
+		// cache now owns the object as far as refcounting goes
+		g_functionHandlerCache[&typeid(T)] = fn;
+	}
+
+	// create the function object
+	RE::GFxValue	fnValue{};
+	movie->CreateFunction(&fnValue, fn);
+
+	// register it
+	dst->SetMember(name, fnValue);
+}
+
+bool RegisterNiOverrideScaleform(RE::GFxMovieView * view, RE::GFxValue * root)
 {
 	using namespace ScaleformUtils;
 
-	GFxValue obj;
+	RE::GFxValue obj{};
 	RegisterBool(root, "bEnableOverlays", g_enableOverlays);
 
 	view->CreateObject(&obj);
 	RegisterNumber(&obj, "iNumOverlays", g_numBodyOverlays);
 	RegisterNumber(&obj, "iSpellOverlays", g_numSpellBodyOverlays);
-	root->SetMember("body", &obj);
+	root->SetMember("body", obj);
 
 	obj.SetNull();
 	view->CreateObject(&obj);
 	RegisterNumber(&obj, "iNumOverlays", g_numHandOverlays);
 	RegisterNumber(&obj, "iSpellOverlays", g_numSpellHandOverlays);
-	root->SetMember("hand", &obj);
+	root->SetMember("hand", obj);
 
 	obj.SetNull();
 	view->CreateObject(&obj);
 	RegisterNumber(&obj, "iNumOverlays", g_numFeetOverlays);
 	RegisterNumber(&obj, "iSpellOverlays", g_numSpellFeetOverlays);
-	root->SetMember("feet", &obj);
+	root->SetMember("feet", obj);
 
 	obj.SetNull();
 	view->CreateObject(&obj);
 	RegisterNumber(&obj, "iNumOverlays", g_numFaceOverlays);
 	RegisterNumber(&obj, "iSpellOverlays", g_numSpellFaceOverlays);
-	root->SetMember("face", &obj);
+	root->SetMember("face", obj);
 
 	RegisterBool(root, "bPlayerOnly", g_playerOnly);
 
-	RegisterFunction <SKSEScaleform_GetDyeItems>(root, view, "GetDyeItems");
-	RegisterFunction <SKSEScaleform_GetDyeableItems>(root, view, "GetDyeableItems");
-	RegisterFunction <SKSEScaleform_SetItemDyeColor>(root, view, "SetItemDyeColor");
-	RegisterFunction <SKSEScaleform_SetItemDyeColors>(root, view, "SetItemDyeColors");
+	SKEERegisterScaleformFunction<SKSEScaleform_GetDyeItems>(root, view, "GetDyeItems");
+	SKEERegisterScaleformFunction<SKSEScaleform_GetDyeableItems>(root, view, "GetDyeableItems");
+	SKEERegisterScaleformFunction<SKSEScaleform_SetItemDyeColor>(root, view, "SetItemDyeColor");
+	SKEERegisterScaleformFunction<SKSEScaleform_SetItemDyeColors>(root, view, "SetItemDyeColors");
 
 	return true;
 }
 
-bool RegisterCharGenScaleform(GFxMovieView * view, GFxValue * root)
+bool RegisterCharGenScaleform(RE::GFxMovieView * view, RE::GFxValue * root)
 {
 	using namespace ScaleformUtils;
 
 	RegisterBool(root, "bEnableSculpting", g_enableSculpting);
 	RegisterBool(root, "bEnableHeadExport", g_enableHeadExport);
 
-	RegisterFunction <SKSEScaleform_ImportHead>(root, view, "ImportHead");
-	RegisterFunction <SKSEScaleform_ExportHead>(root, view, "ExportHead");
-	RegisterFunction <SKSEScaleform_SavePreset>(root, view, "SavePreset");
-	RegisterFunction <SKSEScaleform_LoadPreset>(root, view, "LoadPreset");
-	RegisterFunction <SKSEScaleform_ReadPreset>(root, view, "ReadPreset");
-	RegisterFunction <SKSEScaleform_ReloadSliders>(root, view, "ReloadSliders");
-	RegisterFunction <SKSEScaleform_GetSliderData>(root, view, "GetSliderData");
-	RegisterFunction <SKSEScaleform_GetSliderPartData>(root, view, "GetSliderPartData");
-	RegisterFunction <SKSEScaleform_GetModName>(root, view, "GetModName");
+	SKEERegisterScaleformFunction<SKSEScaleform_ImportHead>(root, view, "ImportHead");
+	SKEERegisterScaleformFunction<SKSEScaleform_ExportHead>(root, view, "ExportHead");
+	SKEERegisterScaleformFunction<SKSEScaleform_SavePreset>(root, view, "SavePreset");
+	SKEERegisterScaleformFunction<SKSEScaleform_LoadPreset>(root, view, "LoadPreset");
+	SKEERegisterScaleformFunction<SKSEScaleform_ReadPreset>(root, view, "ReadPreset");
+	SKEERegisterScaleformFunction<SKSEScaleform_ReloadSliders>(root, view, "ReloadSliders");
+	SKEERegisterScaleformFunction<SKSEScaleform_GetSliderData>(root, view, "GetSliderData");
+	SKEERegisterScaleformFunction<SKSEScaleform_GetSliderPartData>(root, view, "GetSliderPartData");
+	SKEERegisterScaleformFunction<SKSEScaleform_GetModName>(root, view, "GetModName");
 
-	RegisterFunction <SKSEScaleform_GetPlayerPosition>(root, view, "GetPlayerPosition");
-	RegisterFunction <SKSEScaleform_GetPlayerRotation>(root, view, "GetPlayerRotation");
-	RegisterFunction <SKSEScaleform_SetPlayerRotation>(root, view, "SetPlayerRotation");
+	SKEERegisterScaleformFunction<SKSEScaleform_GetPlayerPosition>(root, view, "GetPlayerPosition");
+	SKEERegisterScaleformFunction<SKSEScaleform_GetPlayerRotation>(root, view, "GetPlayerRotation");
+	SKEERegisterScaleformFunction<SKSEScaleform_SetPlayerRotation>(root, view, "SetPlayerRotation");
 
-	RegisterFunction <SKSEScaleform_GetRaceSexCameraRot>(root, view, "GetRaceSexCameraRot");
-	RegisterFunction <SKSEScaleform_GetRaceSexCameraPos>(root, view, "GetRaceSexCameraPos");
-	RegisterFunction <SKSEScaleform_SetRaceSexCameraPos>(root, view, "SetRaceSexCameraPos");
+	SKEERegisterScaleformFunction<SKSEScaleform_GetRaceSexCameraRot>(root, view, "GetRaceSexCameraRot");
+	SKEERegisterScaleformFunction<SKSEScaleform_GetRaceSexCameraPos>(root, view, "GetRaceSexCameraPos");
+	SKEERegisterScaleformFunction<SKSEScaleform_SetRaceSexCameraPos>(root, view, "SetRaceSexCameraPos");
 
-	RegisterFunction <SKSEScaleform_CreateMorphEditor>(root, view, "CreateMorphEditor");
-	RegisterFunction <SKSEScaleform_ReleaseMorphEditor>(root, view, "ReleaseMorphEditor");
+	SKEERegisterScaleformFunction<SKSEScaleform_CreateMorphEditor>(root, view, "CreateMorphEditor");
+	SKEERegisterScaleformFunction<SKSEScaleform_ReleaseMorphEditor>(root, view, "ReleaseMorphEditor");
 
-	RegisterFunction <SKSEScaleform_LoadImportedHead>(root, view, "LoadImportedHead");
-	RegisterFunction <SKSEScaleform_ReleaseImportedHead>(root, view, "ReleaseImportedHead");
+	SKEERegisterScaleformFunction<SKSEScaleform_LoadImportedHead>(root, view, "LoadImportedHead");
+	SKEERegisterScaleformFunction<SKSEScaleform_ReleaseImportedHead>(root, view, "ReleaseImportedHead");
 
-	RegisterFunction <SKSEScaleform_BeginRotateMesh>(root, view, "BeginRotateMesh");
-	RegisterFunction <SKSEScaleform_DoRotateMesh>(root, view, "DoRotateMesh");
-	RegisterFunction <SKSEScaleform_EndRotateMesh>(root, view, "EndRotateMesh");
+	SKEERegisterScaleformFunction<SKSEScaleform_BeginRotateMesh>(root, view, "BeginRotateMesh");
+	SKEERegisterScaleformFunction<SKSEScaleform_DoRotateMesh>(root, view, "DoRotateMesh");
+	SKEERegisterScaleformFunction<SKSEScaleform_EndRotateMesh>(root, view, "EndRotateMesh");
 
-	RegisterFunction <SKSEScaleform_BeginPanMesh>(root, view, "BeginPanMesh");
-	RegisterFunction <SKSEScaleform_DoPanMesh>(root, view, "DoPanMesh");
-	RegisterFunction <SKSEScaleform_EndPanMesh>(root, view, "EndPanMesh");
+	SKEERegisterScaleformFunction<SKSEScaleform_BeginPanMesh>(root, view, "BeginPanMesh");
+	SKEERegisterScaleformFunction<SKSEScaleform_DoPanMesh>(root, view, "DoPanMesh");
+	SKEERegisterScaleformFunction<SKSEScaleform_EndPanMesh>(root, view, "EndPanMesh");
 
-	RegisterFunction <SKSEScaleform_BeginPaintMesh>(root, view, "BeginPaintMesh");
-	RegisterFunction <SKSEScaleform_DoPaintMesh>(root, view, "DoPaintMesh");
-	RegisterFunction <SKSEScaleform_EndPaintMesh>(root, view, "EndPaintMesh");
+	SKEERegisterScaleformFunction<SKSEScaleform_BeginPaintMesh>(root, view, "BeginPaintMesh");
+	SKEERegisterScaleformFunction<SKSEScaleform_DoPaintMesh>(root, view, "DoPaintMesh");
+	SKEERegisterScaleformFunction<SKSEScaleform_EndPaintMesh>(root, view, "EndPaintMesh");
 
-	RegisterFunction <SKSEScaleform_DoHoverMesh>(root, view, "DoHoverMesh");
+	SKEERegisterScaleformFunction<SKSEScaleform_DoHoverMesh>(root, view, "DoHoverMesh");
 
-	RegisterFunction <SKSEScaleform_GetCurrentBrush>(root, view, "GetCurrentBrush");
-	RegisterFunction <SKSEScaleform_SetCurrentBrush>(root, view, "SetCurrentBrush");
+	SKEERegisterScaleformFunction<SKSEScaleform_GetCurrentBrush>(root, view, "GetCurrentBrush");
+	SKEERegisterScaleformFunction<SKSEScaleform_SetCurrentBrush>(root, view, "SetCurrentBrush");
 
-	RegisterFunction <SKSEScaleform_GetBrushes>(root, view, "GetBrushes");
-	RegisterFunction <SKSEScaleform_SetBrushData>(root, view, "SetBrushData");
+	SKEERegisterScaleformFunction<SKSEScaleform_GetBrushes>(root, view, "GetBrushes");
+	SKEERegisterScaleformFunction<SKSEScaleform_SetBrushData>(root, view, "SetBrushData");
 
-	RegisterFunction <SKSEScaleform_GetMeshes>(root, view, "GetMeshes");
-	RegisterFunction <SKSEScaleform_SetMeshData>(root, view, "SetMeshData");
+	SKEERegisterScaleformFunction<SKSEScaleform_GetMeshes>(root, view, "GetMeshes");
+	SKEERegisterScaleformFunction<SKSEScaleform_SetMeshData>(root, view, "SetMeshData");
 
-	RegisterFunction <SKSEScaleform_UndoAction>(root, view, "UndoAction");
-	RegisterFunction <SKSEScaleform_RedoAction>(root, view, "RedoAction");
-	RegisterFunction <SKSEScaleform_GoToAction>(root, view, "GoToAction");
-	RegisterFunction <SKSEScaleform_GetActionLimit>(root, view, "GetActionLimit");
-	RegisterFunction <SKSEScaleform_ClearSculptData>(root, view, "ClearSculptData");
+	SKEERegisterScaleformFunction<SKSEScaleform_UndoAction>(root, view, "UndoAction");
+	SKEERegisterScaleformFunction<SKSEScaleform_RedoAction>(root, view, "RedoAction");
+	SKEERegisterScaleformFunction<SKSEScaleform_GoToAction>(root, view, "GoToAction");
+	SKEERegisterScaleformFunction<SKSEScaleform_GetActionLimit>(root, view, "GetActionLimit");
+	SKEERegisterScaleformFunction<SKSEScaleform_ClearSculptData>(root, view, "ClearSculptData");
 
-	RegisterFunction <SKSEScaleform_GetMeshCameraRadius>(root, view, "GetMeshCameraRadius");
-	RegisterFunction <SKSEScaleform_SetMeshCameraRadius>(root, view, "SetMeshCameraRadius");
+	SKEERegisterScaleformFunction<SKSEScaleform_GetMeshCameraRadius>(root, view, "GetMeshCameraRadius");
+	SKEERegisterScaleformFunction<SKSEScaleform_SetMeshCameraRadius>(root, view, "SetMeshCameraRadius");
 
-	RegisterFunction <SKSEScaleform_GetExternalFiles>(root, view, "GetExternalFiles");
+	SKEERegisterScaleformFunction<SKSEScaleform_GetExternalFiles>(root, view, "GetExternalFiles");
 	return true;
 }
 
-bool RegisterPapyrusFunctions(VMClassRegistry * registry)
+bool RegisterPapyrusFunctions(RE::BSScript::IVirtualMachine* registry)
 {
 	papyrusNiOverride::RegisterFuncs(registry);
 	papyrusCharGen::RegisterFuncs(registry);
 	return true;
 }
 
-void InterfaceExchangeMessageHandler(SKSEMessagingInterface::Message* message)
+void InterfaceExchangeMessageHandler(SKSE::MessagingInterface::Message* message)
 {
 	switch (message->type)
 	{
@@ -565,51 +627,60 @@ void InterfaceExchangeMessageHandler(SKSEMessagingInterface::Message* message)
 	}
 }
 
-void SKSEMessageHandler(SKSEMessagingInterface::Message * message)
+template <typename T>
+static void SKEERegisterEventSink(RE::BSTEventSink<T>* sink)
+{
+	auto* holder = RE::ScriptEventSourceHolder::GetSingleton();
+	if (holder) {
+		holder->PrependEventSink(sink);
+	}
+}
+
+void SKSEMessageHandler(SKSE::MessagingInterface::Message * message)
 {
 	switch (message->type)
 	{
-		case SKSEMessagingInterface::kMessage_PostLoad:
+		case SKSE::MessagingInterface::kPostLoad:
 		{
 			if (!g_enableEarlyRegistration)
 			{
-				g_messaging->RegisterListener(g_pluginHandle, nullptr, InterfaceExchangeMessageHandler);
+				if (auto* msg = SKSE::GetMessagingInterface()) {
+					msg->RegisterListener(nullptr, InterfaceExchangeMessageHandler);
+				}
 			}
 		}
 		break;
 
-		case SKSEMessagingInterface::kMessage_InputLoaded:
+		case SKSE::MessagingInterface::kInputLoaded:
 		{
 			if (g_enableAutoTransforms || g_enableBodyGen) {
-				GetEventDispatcherList()->objectLoadedDispatcher.AddEventSink(&g_actorUpdateManager);
+				SKEERegisterEventSink<RE::TESObjectLoadedEvent>(&g_actorUpdateManager);
 			}
 		}
 		break;
-		case SKSEMessagingInterface::kMessage_PreLoadGame:
+		case SKSE::MessagingInterface::kPreLoadGame:
 			g_enableBodyInit = false;
 			g_tintMaskInterface.ManageTints();
 			break;
-		case SKSEMessagingInterface::kMessage_PostLoadGame:
+		case SKSE::MessagingInterface::kPostLoadGame:
 			g_enableBodyInit = true;
 			g_tintMaskInterface.ReleaseTints();
 			break;
-		case SKSEMessagingInterface::kMessage_NewGame:
+		case SKSE::MessagingInterface::kNewGame:
 		{
 			g_actorUpdateManager.setNewGame(true);
 			break;
 		}
-		case SKSEMessagingInterface::kMessage_DataLoaded:
+		case SKSE::MessagingInterface::kDataLoaded:
 		{
 			if (g_enableBodyGen) {
-				GetEventDispatcherList()->initScriptDispatcher.AddEventSink(&g_actorUpdateManager);
+				SKEERegisterEventSink<RE::TESInitScriptEvent>(&g_actorUpdateManager);
 
 				g_bodyMorphInterface.LoadMods();
 			}
 
-
-			GetEventDispatcherList()->uniqueIdChangeDispatcher.AddEventSink(&g_itemDataInterface);
-			GetEventDispatcherList()->loadGameEventDispatcher.AddEventSink(&g_actorUpdateManager);
-			GetEventDispatcherList()->unk210.AddEventSink(&g_actorUpdateManager);
+			SKEERegisterEventSink<RE::TESUniqueIDChangeEvent>(&g_itemDataInterface);
+			SKEERegisterEventSink<RE::TESLoadGameEvent>(&g_actorUpdateManager);
 
 			g_tintMaskInterface.LoadMods();
 			g_morphInterface.LoadMods();
@@ -619,126 +690,18 @@ void SKSEMessageHandler(SKSEMessagingInterface::Message * message)
 	}
 }
 
-bool SKSEPlugin_Query(const SKSEInterface* skse)
+// SKSEPluginInfo moved to generated __skee64Plugin.cpp
+
+SKSE_PLUGIN_LOAD(const SKSE::LoadInterface* a_intfc)
 {
-	SInt32	logLevel = DebugLog::kLevel_DebugMessage;
-	SKEE64GetConfigValue("Debug", "iLogLevel", &logLevel);
+	REL::Module::get().reset(); // Static inited addresses fucko'd in CommonLibSSE-NG
+	SKSE::Init(a_intfc);
 
-#if STORE_VERSION == RUNTIME_TYPE_BETHESDA
-	if (logLevel >= 0)
-		gLog.OpenRelative(CSIDL_MYDOCUMENTS, "\\My Games\\Skyrim Special Edition\\SKSE\\skee64.log");
-#elif STORE_VERSION == RUNTIME_TYPE_GOG
-	if (logLevel >= 0)
-		gLog.OpenRelative(CSIDL_MYDOCUMENTS, "\\My Games\\Skyrim Special Edition GOG\\SKSE\\skee64.log");
-#endif
-	gLog.SetLogLevel((DebugLog::LogLevel)logLevel);
+	g_skseVersion = a_intfc->SKSEVersion();
+	g_runtimeVersion = a_intfc->RuntimeVersion().pack();
+    g_task = SKSE::GetTaskInterface();
 
-	// store plugin handle so we can identify ourselves later
-	g_pluginHandle = skse->GetPluginHandle();
-
-	if (skse->isEditor)
-	{
-		_MESSAGE("loaded in editor, marking as incompatible");
-		return false;
-	}
-
-	// get the serialization interface and query its version
-	g_serialization = (SKSESerializationInterface*)skse->QueryInterface(kInterface_Serialization);
-	if (!g_serialization)
-	{
-		_FATALERROR("couldn't get serialization interface");
-		return false;
-	}
-	if (g_serialization->version < MIN_SERIALIZATION_VERSION)//SKSESerializationInterface::kVersion)
-	{
-		_FATALERROR("serialization interface too old (%d expected %d)", g_serialization->version, MIN_SERIALIZATION_VERSION);
-		return false;
-	}
-
-	// get the scaleform interface and query its version
-	g_scaleform = (SKSEScaleformInterface*)skse->QueryInterface(kInterface_Scaleform);
-	if (!g_scaleform)
-	{
-		_FATALERROR("couldn't get scaleform interface");
-		return false;
-	}
-	if (g_scaleform->interfaceVersion < MIN_SCALEFORM_VERSION)
-	{
-		_FATALERROR("scaleform interface too old (%d expected %d)", g_scaleform->interfaceVersion, MIN_SCALEFORM_VERSION);
-		return false;
-	}
-
-	// get the papyrus interface and query its version
-	g_papyrus = (SKSEPapyrusInterface*)skse->QueryInterface(kInterface_Papyrus);
-	if (!g_papyrus)
-	{
-		_FATALERROR("couldn't get papyrus interface");
-		return false;
-	}
-	if (g_papyrus->interfaceVersion < MIN_PAPYRUS_VERSION)
-	{
-		_FATALERROR("scaleform interface too old (%d expected %d)", g_papyrus->interfaceVersion, MIN_PAPYRUS_VERSION);
-		return false;
-	}
-
-	// get the task interface and query its version
-	g_task = (SKSETaskInterface*)skse->QueryInterface(kInterface_Task);
-	if (!g_task)
-	{
-		_FATALERROR("couldn't get task interface");
-		return false;
-	}
-	if (g_task->interfaceVersion < MIN_TASK_VERSION)//SKSETaskInterface::kInterfaceVersion)
-	{
-		_FATALERROR("task interface too old (%d expected %d)", g_task->interfaceVersion, MIN_TASK_VERSION);
-		return false;
-	}
-
-	g_messaging = (SKSEMessagingInterface*)skse->QueryInterface(kInterface_Messaging);
-	if (!g_messaging) {
-		_ERROR("couldn't get messaging interface");
-	}
-
-	g_trampoline = (SKSETrampolineInterface*)skse->QueryInterface(kInterface_Trampoline);
-	if (!g_trampoline) {
-		_ERROR("couldn't get trampoline interface");
-	}
-
-	g_objectInterface = (SKSEObjectInterface*)skse->QueryInterface(kInterface_Object);
-	if (!g_objectInterface) {
-		_ERROR("couldn't get object interface");
-	}
-
-	// supported runtime version
-	return true;
-}
-
-extern "C"
-{
-
-__declspec(dllexport) SKSEPluginVersionData SKSEPlugin_Version =
-{
-	SKSEPluginVersionData::kVersion,
-	1,
-	"skee",
-	"Expired6978",
-	"expired6978@gmail.com",
-	0,	// not version independent
-	0,
-#if STORE_VERSION == RUNTIME_TYPE_BETHESDA
-	{ RUNTIME_VERSION_1_7_99, 0 },
-#elif STORE_VERSION == RUNTIME_TYPE_GOG
-	{ RUNTIME_VERSION_1_6_1179_GOG, 0 },
-#endif
-	0,	// works with any version of the script extender. you probably do not need to put anything here
-};
-
-bool SKSEPlugin_Load(const SKSEInterface * skse)
-{
-	if (!SKSEPlugin_Query(skse))
-		return false;
-	
-	_DMESSAGE("NetImmerse Override Enabled");
+	SKSE::log::debug("NetImmerse Override Enabled");
 
 	SKEE64GetConfigValue("Features", "bEnableOverlays", &g_enableOverlays);
 	SKEE64GetConfigValue("Features", "bEnableFaceOverlays", &g_enableFaceOverlays);
@@ -766,6 +729,7 @@ bool SKSEPlugin_Load(const SKSEInterface * skse)
 	SKEE64GetConfigValue("Hooks", "bHeadPreprocessing", &g_hookHeadPreprocessing);
 	SKEE64GetConfigValue("Hooks", "bFaceOverlays", &g_hookFaceOverlays);
 	SKEE64GetConfigValue("Hooks", "bTinting", &g_hookTinting);
+	SKEE64GetConfigValue("Hooks", "bSuppressPatternWarnings", &g_suppressPatternWarnings);
 
 	SKEE64GetConfigValue("Overlays", "bPlayerOnly", &g_playerOnly);
 	SKEE64GetConfigValue("Overlays", "bImmediateArmor", &g_immediateArmor);
@@ -785,8 +749,7 @@ bool SKSEPlugin_Load(const SKSEInterface * skse)
 	SKEE64GetConfigValue("Overlays/Data", "iAlphaThreshold", &g_overlayAlphaThreshold);
 	SKEE64GetConfigValue("Overlays/Data", "bForceDecal", &g_overlayForceDecal);
 
-
-	std::string defaultTexture = GetConfigOption("Overlays/Data", "sDefaultTexture");
+	std::string defaultTexture = SKEE64GetConfigOption("Overlays/Data", "sDefaultTexture");
 	if (defaultTexture.empty()) {
 		defaultTexture = "textures\\actors\\character\\overlays\\default.dds";
 	}
@@ -801,7 +764,7 @@ bool SKSEPlugin_Load(const SKSEInterface * skse)
 	SKEE64GetConfigValue("General", "bBodyMorphGPUCopy", &g_bodyMorphGPUCopy);
 	SKEE64GetConfigValue("General", "bBodyMorphRebind", &g_bodyMorphRebind);
 
-	UInt64 bodyMorphMemoryLimit = 256000000;
+	std::uint64_t bodyMorphMemoryLimit = 256000000;
 	if (SKEE64GetConfigValue("General", "uBodyMorphMemoryLimit", &bodyMorphMemoryLimit))
 	{
 		g_bodyMorphInterface.SetCacheLimit(bodyMorphMemoryLimit);
@@ -835,7 +798,7 @@ bool SKSEPlugin_Load(const SKSEInterface * skse)
 		g_numSpellFaceOverlays = 0;
 	}
 
-	std::string	data = GetConfigOption("FaceGen", "sTemplateRace");
+	std::string	data = SKEE64GetConfigOption("FaceGen", "sTemplateRace");
 	if (!data.empty())
 		g_raceTemplate = data;
 
@@ -893,9 +856,9 @@ bool SKSEPlugin_Load(const SKSEInterface * skse)
 
 	CDXBrush::InitGlobals();
 
-	for (UInt32 b = 0; b < CDXBrush::kBrushTypes; b++) {
-		for (UInt32 p = 0; p < CDXBrush::kBrushProperties; p++) {
-			for (UInt32 v = 0; v < CDXBrush::kBrushPropertyValues; v++) {
+	for (std::uint32_t b = 0; b < CDXBrush::kBrushTypes; b++) {
+		for (std::uint32_t p = 0; p < CDXBrush::kBrushProperties; p++) {
+			for (std::uint32_t v = 0; v < CDXBrush::kBrushPropertyValues; v++) {
 				std::string section = types[b] + properties[p];
 				double val = 0.0;
 				if (SKEE64GetConfigValue(section.c_str(), values[v].c_str(), &val))
@@ -906,33 +869,33 @@ bool SKSEPlugin_Load(const SKSEInterface * skse)
 
 	g_commandInterface.RegisterCommands();
 
-	if (g_serialization) {
-		g_serialization->SetUniqueID(g_pluginHandle, 'SKEE');
-		g_serialization->SetRevertCallback(g_pluginHandle, SKEE64Serialization_Revert);
-		g_serialization->SetSaveCallback(g_pluginHandle, SKEE64Serialization_Save);
-		g_serialization->SetLoadCallback(g_pluginHandle, SKEE64Serialization_Load);
+	if (auto* ser = SKSE::GetSerializationInterface()) {
+		ser->SetUniqueID(0x534B4545);  // 'SKEE'
+		ser->SetRevertCallback(SKEE64Serialization_Revert);
+		ser->SetSaveCallback(SKEE64Serialization_Save);
+		ser->SetLoadCallback(SKEE64Serialization_Load);
 	}
 
 	// register scaleform callbacks
-	if (g_scaleform) {
-		g_scaleform->Register("NiOverride", RegisterNiOverrideScaleform);
-		g_scaleform->Register("CharGen", RegisterCharGenScaleform);
+	if (auto* sf = SKSE::GetScaleformInterface()) {
+		sf->Register(RegisterNiOverrideScaleform, "NiOverride");
+		sf->Register(RegisterCharGenScaleform, "CharGen");
 	}
 
-	if (g_papyrus) {
-		g_papyrus->Register(RegisterPapyrusFunctions);
+	if (auto* pap = SKSE::GetPapyrusInterface()) {
+		pap->Register(RegisterPapyrusFunctions);
 	}
 
-	if (g_messaging) {
-		g_messaging->RegisterListener(g_pluginHandle, "SKSE", SKSEMessageHandler);
+	if (auto* msg = SKSE::GetMessagingInterface()) {
+		msg->RegisterListener("SKSE", SKSEMessageHandler);
 		if (g_enableEarlyRegistration)
 		{
-			g_messaging->RegisterListener(g_pluginHandle, nullptr, InterfaceExchangeMessageHandler);
+			msg->RegisterListener(nullptr, InterfaceExchangeMessageHandler);
 		}
 
 		if (g_enableTintHairSlot)
 		{
-			EventDispatcher<SKSENiNodeUpdateEvent>* dispatcher = static_cast<EventDispatcher<SKSENiNodeUpdateEvent>*>(g_messaging->GetEventDispatcher(SKSEMessagingInterface::kDispatcher_NiNodeUpdateEvent));
+			RE::BSTEventSource<SKSE::NiNodeUpdateEvent>* dispatcher = SKSE::GetNiNodeUpdateEventSource();
 			if (dispatcher)
 			{
 				dispatcher->AddEventSink(&g_tintMaskInterface);
@@ -970,5 +933,3 @@ bool SKSEPlugin_Load(const SKSEInterface * skse)
 
 	return InstallSKEEHooks();
 }
-
-};

@@ -1,88 +1,177 @@
 #include "NifUtils.h"
+#include "FileUtils.h"
+#include "SKEEHooks.h"
 #include "Utilities.h"
 
 #include <unordered_map>
 
-#include "common/IFileStream.h"
-#include "skse64/PluginAPI.h"
 
-#include "skse64/GameRTTI.h"
-#include "skse64/GameReferences.h"
-#include "skse64/GameObjects.h"
-#include "skse64/GameData.h"
-#include "skse64/GameStreams.h"
-#include "skse64/GameExtraData.h"
 
-#include "skse64/NiRTTI.h"
-#include "skse64/NiObjects.h"
-#include "skse64/NiNodes.h"
-#include "skse64/NiSerialization.h"
-#include "skse64/NiGeometry.h"
-#include "skse64/NiRenderer.h"
-#include "skse64/NiTextures.h"
-#include "skse64/NiExtraData.h"
+#include "RE/N/NiRTTI.h"
+#include "RE/N/NiGeometry.h"
+#include "RE/N/NiTriShape.h"
+#include "RE/B/BSGeometry.h"
+#include "RE/N/NiExtraData.h"
+#include "RE/E/ExtraContainerChanges.h"
+#include "RE/I/InventoryChanges.h"
 
-#include <wrl/client.h>
-#include <d3d11_4.h>
+#include "REX/W32/COMPTR.h"
+#include "REX/W32/D3D11_4.h"
 #include <DirectXTex.h>
 #include <unordered_set>
+#include <cstdint>
+#include "NiRTTIUtils.h"
+
+
 
 extern bool g_exportSkinToBone;
 
-bool SaveRenderedDDS(NiTexture * pkTexture, const char * pcFileName)
+namespace {
+	// Legacy create factories for NIF-level geometry (matches legacy skse64/NiGeometry.cpp):
+	// allocate on the game heap, zero it, call the relocated constructor (see SKEEHooks),
+	// then install the derived vtable. The BSGeometry factories are relocated directly in
+	// SKEEHooks (SKEE::CreateBSTriShape / SKEE::CreateBSDynamicTriShape).
+	RE::NiTriShape* CreateNiTriShape(RE::NiGeometryData* a_data)
+	{
+		auto* xData = RE::malloc<RE::NiTriShape>();
+		std::memset(xData, 0, sizeof(RE::NiTriShape));
+		SKEE::NiTriBasedGeomCtor(xData, a_data);
+		*reinterpret_cast<std::uintptr_t**>(xData) = reinterpret_cast<std::uintptr_t*>(RE::NiTriShape::VTABLE[0].address());
+		return xData;
+	}
+
+	RE::NiTriStrips* CreateNiTriStrips(RE::NiGeometryData* a_data)
+	{
+		auto* mem = RE::malloc(sizeof(RE::NiTriStrips));
+		std::memset(mem, 0, sizeof(RE::NiTriStrips));
+		SKEE::NiTriBasedGeomCtor(reinterpret_cast<RE::NiAVObject*>(mem), a_data);
+		*reinterpret_cast<std::uintptr_t**>(mem) = reinterpret_cast<std::uintptr_t*>(RE::VTABLE_NiTriStrips[0].address());
+		return static_cast<RE::NiTriStrips*>(mem);
+	}
+
+	// Clone a skin instance and remap its bones to new NiNode instances (recorded in
+	// a_boneMap for later attachment). Matches the legacy SKSETaskExportHead skin-instance
+	// reconstruction. If a_resetSkinToBone is true, zeroes each bone's skin-to-bone
+	// transform (the legacy g_exportSkinToBone == false path).
+	RE::NiPointer<RE::NiSkinInstance> BuildRemappedSkinInstance(
+		RE::NiSkinInstance* a_skinInstance, RE::NiNode* a_skinnedNode,
+		std::map<RE::NiAVObject*, RE::NiAVObject*>& a_boneMap, bool a_resetSkinToBone)
+	{
+		if (!a_skinInstance)
+			return nullptr;
+
+		auto newSkinInstance = RE::NiPointer<RE::NiSkinInstance>(static_cast<RE::NiSkinInstance*>(a_skinInstance->Clone()));
+		newSkinInstance->rootParent = a_skinnedNode;
+
+		std::uint32_t numBones = 0;
+		RE::NiSkinData* skinData = a_skinInstance->skinData.get();
+		if (skinData)
+			numBones = skinData->GetBoneCount();
+
+		RE::NiPointer<RE::NiObject> newSdObj;
+		RE::NiPointer<RE::NiSkinData> newSkinData;
+		if (skinData) { skinData->CreateDeepCopy(newSdObj); newSkinData = niptr_cast<RE::NiSkinData>(newSdObj); }
+
+		RE::NiSkinPartition* skinPartition = a_skinInstance->skinPartition.get();
+		RE::NiPointer<RE::NiObject> newSpObj;
+		RE::NiSkinPartition* newSkinPartition = nullptr;
+		if (skinPartition) { skinPartition->CreateDeepCopy(newSpObj); newSkinPartition = netimmerse_cast<RE::NiSkinPartition*>(newSpObj.get()); }
+
+		newSkinInstance->skinData = newSkinData;
+		newSkinInstance->skinPartition = RE::NiPointer<RE::NiSkinPartition>(newSkinPartition);
+
+		if (numBones > 0)
+		{
+			newSkinInstance->bones = static_cast<RE::NiAVObject**>(RE::malloc(numBones * sizeof(RE::NiAVObject*)));
+			for (std::uint32_t i = 0; i < numBones; i++)
+			{
+				RE::NiAVObject* bone = a_skinInstance->bones[i];
+				if (bone)
+				{
+					auto it = a_boneMap.find(bone);
+					if (it == a_boneMap.end()) {
+						RE::NiNode* newBone = RE::NiNode::Create();
+						newBone->IncRefCount();
+						newBone->name = bone->name;
+						newBone->flags = bone->flags;
+						a_boneMap.insert(std::make_pair(bone, newBone));
+						newSkinInstance->bones[i] = newBone;
+					}
+					else
+						newSkinInstance->bones[i] = it->second;
+				}
+				else
+					newSkinInstance->bones[i] = nullptr;
+			}
+
+			if (a_resetSkinToBone && newSkinData)
+			{
+				for (std::uint32_t i = 0; i < newSkinData->GetBoneCount(); i++)
+					newSkinData->GetBoneDataSkinToBone(i) = RE::NiTransform();
+			}
+		}
+
+		return newSkinInstance;
+	}
+
+}
+
+bool SaveRenderedDDS(RE::NiTexture * pkTexture, const char * pcFileName)
 {
 	HRESULT res = 0;
 	if (!pkTexture)
 	{
-		_ERROR("%s - Texture to render from", __FUNCTION__);
+		SKSE::log::error("{} - Texture to render from", __FUNCTION__);
 		return false;
 	}
 
-	auto rendererData = pkTexture->rendererData;
+	auto srcTex = static_cast<RE::NiSourceTexture*>(pkTexture);
+	auto rendererData = srcTex ? srcTex->rendererTexture : nullptr;
 	if (!rendererData)
 	{
-		_ERROR("%s - No rendererData on NiTexture", __FUNCTION__);
+		SKSE::log::error("{} - No rendererData on NiTexture", __FUNCTION__);
 		return false;
 	}
 	
-	Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
-	Microsoft::WRL::ComPtr<ID3D11Resource> resource = rendererData->texture;
-	if (resource)
+	REX::W32::ComPtr<REX::W32::ID3D11Texture2D> texture;
+	REX::W32::ComPtr<REX::W32::ID3D11Resource> resource(reinterpret_cast<REX::W32::ID3D11Resource*>(rendererData->texture));
+	if (resource.Get())
 	{
-		texture = rendererData->texture;
+		texture = REX::W32::ComPtr<REX::W32::ID3D11Texture2D>(reinterpret_cast<REX::W32::ID3D11Texture2D*>(rendererData->texture));
 	}
-	else if (!resource && rendererData->resourceView) // Didn't have texture directly but still has resource view, acquire it
+	else if (!resource.Get() && rendererData->resourceView) // Didn't have texture directly but still has resource view, acquire it
 	{
-		rendererData->resourceView->GetResource(&resource);
-		res = resource->QueryInterface(__uuidof(ID3D11Texture2D), &texture);
+		reinterpret_cast<ID3D11View*>(rendererData->resourceView)->GetResource(reinterpret_cast<ID3D11Resource**>(resource.GetAddressOf()));
+		static constexpr IID iidTex2D{ 0x6f15aaf2, 0xd208, 0x4e89, { 0x9a, 0xb4, 0x48, 0x95, 0x35, 0xd3, 0x4f, 0x9c } };
+		res = resource.Get()->QueryInterface(reinterpret_cast<const REX::W32::IID&>(iidTex2D), (void**)texture.GetAddressOf());
 		if (FAILED(res))
 		{
-			_ERROR("%s - Failed to query texture from resource", __FUNCTION__);
+			SKSE::log::error("{} - Failed to query texture from resource", __FUNCTION__);
 			return false;
 		}
 	}
 
-	if (!texture)
+	if (!texture.Get())
 	{
-		_ERROR("%s - No texture to capture", __FUNCTION__);
+		SKSE::log::error("{} - No texture to capture", __FUNCTION__);
 		return false;
 	}
 
-	auto context = g_renderManager->context;
+	auto context = RE::BSGraphics::Renderer::GetSingleton()->GetRuntimeData().context;
 
-	Microsoft::WRL::ComPtr<ID3D11Device> device;
-	context->GetDevice(&device);
-	if (!device)
+	REX::W32::ComPtr<REX::W32::ID3D11Device> device;
+	context->GetDevice(reinterpret_cast<REX::W32::ID3D11Device**>(device.GetAddressOf()));
+	if (!device.Get())
 	{
-		_ERROR("%s - No texture to capture", __FUNCTION__);
+		SKSE::log::error("{} - No texture to capture", __FUNCTION__);
 		return false;
 	}
 
 	DirectX::ScratchImage si;
-	res = DirectX::CaptureTexture(device.Get(), context, texture.Get(), si);
+	res = DirectX::CaptureTexture(reinterpret_cast<ID3D11Device*>(device.Get()), reinterpret_cast<ID3D11DeviceContext*>(context), reinterpret_cast<ID3D11Resource*>(texture.Get()), si);
 	if (FAILED(res))
 	{
-		_ERROR("%s - Failed to capture texture from device", __FUNCTION__);
+		SKSE::log::error("{} - Failed to capture texture from device", __FUNCTION__);
 		return false;
 	}
 
@@ -96,7 +185,7 @@ bool SaveRenderedDDS(NiTexture * pkTexture, const char * pcFileName)
 	if (FAILED(res))
 	{
 		delete[] fileName;
-		_ERROR("%s - Failed to save image to DDS at %s", __FUNCTION__, pcFileName);
+		SKSE::log::error("{} - Failed to save image to DDS at {}", __FUNCTION__, pcFileName);
 		return false;
 	}
 
@@ -104,17 +193,17 @@ bool SaveRenderedDDS(NiTexture * pkTexture, const char * pcFileName)
 	return true;
 }
 
-BSGeometry * GetHeadGeometry(Actor * actor, UInt32 partType)
+RE::BSGeometry * GetHeadGeometry(RE::Actor * actor, std::uint32_t partType)
 {
-	BSFaceGenNiNode * faceNode = actor->GetFaceGenNiNode();
-	TESNPC * actorBase = DYNAMIC_CAST(actor->baseForm, TESForm, TESNPC);
+	RE::BSFaceGenNiNode * faceNode = actor->GetFaceNode();
+	RE::TESNPC * actorBase = actor->GetBaseObject() ? actor->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 
 	if(faceNode && actorBase) {
-		BGSHeadPart * facePart = actorBase->GetCurrentHeadPartByType(partType);
+		RE::BGSHeadPart * facePart = actorBase->GetCurrentHeadPartByType(static_cast<RE::TESNPC::HeadPartType>(partType));
 		if(facePart) {
-			NiAVObject * headNode = faceNode->GetObjectByName(&facePart->partName.data);
+			RE::NiAVObject * headNode = faceNode->GetObjectByName(facePart->formEditorID);
 			if(headNode) {
-				BSGeometry * geometry = headNode->GetAsBSGeometry();
+				RE::BSGeometry * geometry = headNode ? headNode->AsGeometry() : nullptr;
 				if(geometry)
 					return geometry;
 			}
@@ -124,12 +213,12 @@ BSGeometry * GetHeadGeometry(Actor * actor, UInt32 partType)
 	return NULL;
 }
 
-NiAVObject * GetObjectByHeadPart(BSFaceGenNiNode * faceNode, BGSHeadPart * headPart)
+RE::NiAVObject * GetObjectByHeadPart(RE::BSFaceGenNiNode * faceNode, RE::BGSHeadPart * headPart)
 {
-	for (UInt32 p = 0; p < faceNode->m_children.m_size; p++)
+	for (std::uint32_t p = 0; p < faceNode->children.size(); p++)
 	{
-		NiAVObject * object = faceNode->m_children.m_data[p];
-		if (object && BSFixedString(object->m_name) == headPart->partName) {
+		RE::NiAVObject * object = faceNode->children[p].get();
+		if (object && RE::BSFixedString(object->name) == headPart->formEditorID) {
 			if (object) {
 				return object;
 			}
@@ -139,64 +228,60 @@ NiAVObject * GetObjectByHeadPart(BSFaceGenNiNode * faceNode, BGSHeadPart * headP
 	return nullptr;
 }
 
-SKSETaskRefreshTintMask::SKSETaskRefreshTintMask(Actor * actor, BSFixedString ddsPath) : m_ddsPath(ddsPath)
+SKSETaskRefreshTintMask::SKSETaskRefreshTintMask(RE::Actor * actor, RE::BSFixedString ddsPath) : m_ddsPath(ddsPath)
 {
 	m_formId = actor->formID;
 }
 
 void SKSETaskRefreshTintMask::Run()
 {
-	TESForm * form = LookupFormByID(m_formId);
-	Actor * actor = DYNAMIC_CAST(form, TESForm, Actor);
+	RE::TESForm * form = RE::TESForm::LookupByID(m_formId);
+	RE::Actor * actor = form ? form->As<RE::Actor>() : nullptr;
 	if (!actor)
 		return;
 
-	BSGeometry * geometry = GetHeadGeometry(actor, BGSHeadPart::kTypeFace);
+	RE::BSGeometry * geometry = GetHeadGeometry(actor, 0);
 	if (geometry) {
-		BSShaderProperty * shaderProperty = niptr_cast<BSShaderProperty>(geometry->m_spEffectState);
-		if (shaderProperty) {
-			if (ni_is_type(shaderProperty->GetRTTI(), BSLightingShaderProperty)) {
-				BSLightingShaderProperty * lightingShader = static_cast<BSLightingShaderProperty *>(shaderProperty);
-				BSLightingShaderMaterial * material = static_cast<BSLightingShaderMaterial *>(shaderProperty->material);
-				if (material) {
-					material->textureSet->SetTexturePath(6, m_ddsPath.data);
-					material->ReleaseTextures();
-					CALL_MEMBER_FN(lightingShader, InvalidateTextures)(0);
-					CALL_MEMBER_FN(lightingShader, InitializeShader)(geometry);
-				}
+		RE::BSShaderProperty * shaderProperty = static_cast<RE::BSShaderProperty*>(geometry->GetGeometryRuntimeData().shaderProperty.get());
+		if (auto * lightingShader = netimmerse_cast<RE::BSLightingShaderProperty *>(shaderProperty)) {
+			RE::BSLightingShaderMaterial * material = static_cast<RE::BSLightingShaderMaterial *>(shaderProperty->material);
+			if (material) {
+				material->textureSet->SetTexturePath(static_cast<RE::BSTextureSet::Texture>(6), m_ddsPath.c_str());
+				material->ClearTextures();
+				SKEE::InvalidateTextures(lightingShader, 0);
+				SKEE::InitializeShader(lightingShader, geometry);
 			}
 		}
 	}
 }
 
-void ExportTintMaskDDS(Actor * actor, BSFixedString filePath)
+void ExportTintMaskDDS(RE::Actor * actor, RE::BSFixedString filePath)
 {
-	BSGeometry * geometry = GetHeadGeometry(actor, BGSHeadPart::kTypeFace);
+	RE::BSGeometry * geometry = GetHeadGeometry(actor, 0);
 	if(geometry)
 	{
-		BSShaderProperty * shaderProperty = niptr_cast<BSShaderProperty>(geometry->m_spEffectState);
-		if(ni_is_type(shaderProperty->GetRTTI(), BSLightingShaderProperty))
+		RE::BSShaderProperty * shaderProperty = static_cast<RE::BSShaderProperty*>(geometry->GetGeometryRuntimeData().shaderProperty.get());
+		if (auto * lightingShader = netimmerse_cast<RE::BSLightingShaderProperty *>(shaderProperty))
 		{
-			BSLightingShaderProperty * lightingShader = static_cast<BSLightingShaderProperty *>(shaderProperty);
-			BSLightingShaderMaterial * material = static_cast<BSLightingShaderMaterial *>(shaderProperty->material);
+			RE::BSLightingShaderMaterial * material = static_cast<RE::BSLightingShaderMaterial *>(shaderProperty->material);
 			if (material)
 			{
-				if (material->GetShaderType() == BSShaderMaterial::kShaderType_FaceGen)
+				if (material->GetFeature() == RE::BSShaderMaterial::Feature::kFaceGen)
 				{
-					BSLightingShaderMaterialFacegen * maskedMaterial = (BSLightingShaderMaterialFacegen *)material;
-					SaveRenderedDDS(niptr_cast<NiRenderedTexture>(maskedMaterial->renderedTexture), filePath.data);
+					auto * maskedMaterial = static_cast<RE::BSLightingShaderMaterialFacegen *>(static_cast<RE::BSLightingShaderMaterialBase *>(material));
+					SaveRenderedDDS(maskedMaterial->tintTexture.get(), filePath.c_str());
 				}
 			}
 		}
 	}
 }
 
-BGSTextureSet * GetTextureSetForPart(TESNPC * npc, BGSHeadPart * headPart)
+RE::BGSTextureSet * GetTextureSetForPart(RE::TESNPC * npc, RE::BGSHeadPart * headPart)
 {
-	BGSTextureSet * textureSet = nullptr;
-	if (headPart->type == BGSHeadPart::kTypeFace) {
-		if (npc->headData)
-			textureSet = npc->headData->headTexture;
+	RE::BGSTextureSet * textureSet = nullptr;
+	if (headPart->type.any(RE::BGSHeadPart::HeadPartType::kFace)) {
+		if (npc->headRelatedData)
+			textureSet = npc->headRelatedData->faceDetails;
 	}
 	if (!textureSet)
 		textureSet = headPart->textureSet;
@@ -204,30 +289,29 @@ BGSTextureSet * GetTextureSetForPart(TESNPC * npc, BGSHeadPart * headPart)
 	return textureSet;
 }
 
-std::pair<BGSTextureSet*, BGSHeadPart*> GetTextureSetForPartByName(TESNPC * npc, BSFixedString partName)
+std::pair<RE::BGSTextureSet*, RE::BGSHeadPart*> GetTextureSetForPartByName(RE::TESNPC * npc, RE::BSFixedString partName)
 {
-	UInt32 numHeadParts = 0;
-	BGSHeadPart ** headParts = nullptr;
-	if (CALL_MEMBER_FN(npc, HasOverlays)()) {
-		numHeadParts = GetNumActorBaseOverlays(npc);
-		headParts = GetActorBaseOverlays(npc);
-	}
-	else {
+	std::uint32_t numHeadParts = 0;
+	RE::BGSHeadPart ** headParts = nullptr;
+	if (npc->HasOverlays()) {
+		numHeadParts = npc->GetNumBaseOverlays();
+		headParts = npc->GetBaseOverlays();
+	} else {
 		numHeadParts = npc->numHeadParts;
-		headParts = npc->headparts;
+		headParts = npc->headParts;
 	}
-	for (UInt32 i = 0; i < numHeadParts; i++) // Acquire all parts
+	for (std::uint32_t i = 0; i < numHeadParts; i++) // Acquire all parts
 	{
-		BGSHeadPart * headPart = headParts[i];
-		if (headPart && headPart->partName == partName) {
+		RE::BGSHeadPart * headPart = headParts[i];
+		if (headPart && headPart->formEditorID == partName) {
 			return std::make_pair(GetTextureSetForPart(npc, headPart), headPart);
 		}
 	}
 
-	return std::make_pair<BGSTextureSet*, BGSHeadPart*>(nullptr, nullptr);
+	return std::make_pair<RE::BGSTextureSet*, RE::BGSHeadPart*>(nullptr, nullptr);
 }
 
-SKSETaskExportHead::SKSETaskExportHead(Actor * actor, BSFixedString nifPath, BSFixedString ddsPath) : m_nifPath(nifPath), m_ddsPath(ddsPath)
+SKSETaskExportHead::SKSETaskExportHead(RE::Actor * actor, RE::BSFixedString nifPath, RE::BSFixedString ddsPath) : m_nifPath(nifPath), m_ddsPath(ddsPath)
 {
 	m_formId = actor->formID;
 }
@@ -237,404 +321,245 @@ void SKSETaskExportHead::Run()
 	if (!m_formId)
 		return;
 
-	TESForm * form = LookupFormByID(m_formId);
-	Actor * actor = DYNAMIC_CAST(form, TESForm, Actor);
+	RE::TESForm * form = RE::TESForm::LookupByID(m_formId);
+	RE::Actor * actor = form ? form->As<RE::Actor>() : nullptr;
 	if (!actor)
 		return;
 
-	BSFaceGenNiNode * faceNode = actor->GetFaceGenNiNode();
-	TESNPC * actorBase = DYNAMIC_CAST(actor->baseForm, TESForm, TESNPC);
+	RE::BSFaceGenNiNode * faceNode = actor->GetFaceNode();
+	RE::TESNPC * actorBase = actor->GetBaseObject() ? actor->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 	if (!actorBase || !faceNode)
 		return;
 
-	BSFaceGenAnimationData * animationData = actor->GetFaceGenAnimationData();
+	RE::BSFaceGenAnimationData * animationData = actor->GetFaceGenAnimationData();
 	if (animationData) {
-		FaceGen::GetSingleton()->isReset = 0;
-		for (UInt32 t = BSFaceGenAnimationData::kKeyframeType_Expression; t <= BSFaceGenAnimationData::kKeyframeType_Phoneme; t++)
-		{
-			BSFaceGenKeyframeMultiple * keyframe = &animationData->keyFrames[t];
-			for (UInt32 i = 0; i < keyframe->count; i++)
-				keyframe->values[i] = 0.0;
-			keyframe->isUpdated = 0;
-		}
-		UpdateModelFace(faceNode);
+		RE::BSFaceGenManager::GetSingleton()->isReset = 0;
+		animationData->Reset(0.0f, true, true, true, false);
+		SKEE::UpdateModelFace(faceNode);
 	}
 
-	IFileStream::MakeAllDirs(m_nifPath.data);
+	FileUtils::MakeAllDirs(m_nifPath.c_str());
 
-	NiPointer<BSFadeNode> rootNode = BSFadeNode::Create();
-	NiPointer<NiNode> skinnedNode = NiNode::Create(0);
-	skinnedNode->m_name = BSFixedString("BSFaceGenNiNodeSkinned").data;
+	// BSFadeNode::Create() equivalent: game-heap alloc + relocated game ctor (P: 0x014E57C0).
+	// The 0x158/0x180 are the STATIC_ASSERT_SIZE(BSFadeNode, 0x158, 0x158, 0x180, 0x110) flat/VR sizes.
+	auto* rootNodeRaw = RE::malloc_runtime<RE::BSFadeNode>(0x158, 0x180);
+	RE::NiPointer<RE::BSFadeNode> rootNode(nullptr);
+	if (rootNodeRaw) {
+		SKEE::BSFadeNodeCtor(rootNodeRaw);
+		// NiPointer has no raw-pointer operator= in CommonLibSSE-NG; reset()
+		// is the equivalent adopt-with-refcount from legacy NetImmerse.
+		rootNode.reset(rootNodeRaw);
+	}
+	RE::NiPointer<RE::NiNode> skinnedNode(RE::NiNode::Create(0));
+	skinnedNode->name = "BSFaceGenNiNodeSkinned";
 
-	std::map<NiAVObject*, NiAVObject*> boneMap;
+	std::map<RE::NiAVObject*, RE::NiAVObject*> boneMap;
 
-	for (UInt32 i = 0; i < faceNode->m_children.m_size; i++)
+	for (std::uint32_t i = 0; i < faceNode->children.size(); i++)
 	{
-		NiAVObject * object = faceNode->m_children.m_data[i];
+		RE::NiAVObject * object = faceNode->children[i].get();
 		if (!object)
 			continue;
 
-		if (NiGeometry * geometry = object->GetAsNiGeometry()) {
-			NiGeometryData * geometryData = niptr_cast<NiGeometryData>(geometry->m_spModelData);
-			NiGeometryData * newGeometryData = NULL;
-			if (geometryData)
-				CALL_MEMBER_FN(geometryData, DeepCopy)((NiObject **)&newGeometryData);
+		if (auto * geometry = object ? object->AsNiGeometry() : nullptr) {
+			RE::NiGeometryData * geometryData = geometry->spModelData.get();
+			RE::NiPointer<RE::NiObject> newGeoObj;
+			RE::NiGeometryData * newGeometryData = NULL;
+			if (geometryData) { geometryData->CreateDeepCopy(newGeoObj); newGeometryData = netimmerse_cast<RE::NiGeometryData*>(newGeoObj.get()); }
 
-			NiProperty * trishapeEffect = niptr_cast<NiProperty>(geometry->m_spEffectState);
-			NiPointer<NiProperty> newTrishapeEffect;
-			if (trishapeEffect)
-				CALL_MEMBER_FN(trishapeEffect, DeepCopy)((NiObject **)&newTrishapeEffect);
+			RE::NiProperty * trishapeEffect = geometry->spEffectState.get();
+			RE::NiPointer<RE::NiObject> newTeObj;
+			RE::NiPointer<RE::NiProperty> newTrishapeEffect;
+			if (trishapeEffect) { trishapeEffect->CreateDeepCopy(newTeObj); newTrishapeEffect = niptr_cast<RE::NiProperty>(newTeObj); }
 
-			NiProperty * trishapeProperty = niptr_cast<NiProperty>(geometry->m_spPropertyState);
-			NiPointer<NiProperty> newTrishapeProperty;
-			if (trishapeProperty)
-				CALL_MEMBER_FN(trishapeProperty, DeepCopy)((NiObject **)&newTrishapeProperty);
+			RE::NiProperty * trishapeProperty = geometry->spPropertyState.get();
+			RE::NiPointer<RE::NiObject> newTpObj;
+			RE::NiPointer<RE::NiProperty> newTrishapeProperty;
+			if (trishapeProperty) { trishapeProperty->CreateDeepCopy(newTpObj); newTrishapeProperty = niptr_cast<RE::NiProperty>(newTpObj); }
 
-			NiSkinInstance * skinInstance = niptr_cast<NiSkinInstance>(geometry->m_spSkinInstance);
-			NiPointer<NiSkinInstance> newSkinInstance;
-			if (skinInstance) {
-				newSkinInstance = skinInstance->Clone();
-				newSkinInstance->m_pkRootParent = skinnedNode;
+			RE::NiPointer<RE::NiSkinInstance> newSkinInstance = BuildRemappedSkinInstance(geometry->spSkinInstance.get(), skinnedNode.get(), boneMap, false);
 
-				UInt32 numBones = 0;
-				NiSkinData * skinData = niptr_cast<NiSkinData>(skinInstance->m_spSkinData);
-				NiPointer<NiSkinData> newSkinData;
-				if (skinData) {
-					numBones = skinData->m_uiBones;
-					CALL_MEMBER_FN(skinData, DeepCopy)((NiObject **)&newSkinData);
-				}
-
-				NiSkinPartition * skinPartition = niptr_cast<NiSkinPartition>(skinInstance->m_spSkinPartition);
-				NiSkinPartition * newSkinPartition = NULL;
-				if (skinPartition)
-					CALL_MEMBER_FN(skinPartition, DeepCopy)((NiObject **)&newSkinPartition);
-
-				newSkinInstance->m_spSkinData = newSkinData;
-				newSkinInstance->m_spSkinPartition = newSkinPartition;
-
-				// Remap the bones to new NiNode instances
-				if (numBones > 0)
-				{
-					newSkinInstance->m_ppkBones = (NiAVObject**)Heap_Allocate(numBones * sizeof(NiAVObject*));
-					for (UInt32 i = 0; i < numBones; i++)
-					{
-						NiAVObject * bone = skinInstance->m_ppkBones[i];
-						if (bone)
-						{
-							auto it = boneMap.find(bone);
-							if (it == boneMap.end()) {
-								NiNode * newBone = NiNode::Create();
-								newBone->IncRef();
-								newBone->m_name = bone->m_name;
-								newBone->m_flags = bone->m_flags;
-								boneMap.insert(std::make_pair(bone, newBone));
-								newSkinInstance->m_ppkBones[i] = newBone;
-							}
-							else
-								newSkinInstance->m_ppkBones[i] = it->second;
-						}
-						else
-						{
-							newSkinInstance->m_ppkBones[i] = nullptr;
-						}
-					}
-				}
+			RE::NiPointer<RE::NiGeometry> newGeometry;
+			if (auto * trishape = geometry ? geometry->AsNiTriShape() : nullptr) {
+				auto * newTrishape = CreateNiTriShape(newGeometryData);
+				if (newGeometryData) newGeometryData->DecRefCount();  // the shape now owns a reference
+				newTrishape->local = geometry->local;
+				newTrishape->name = geometry->name;
+				newTrishape->spEffectState = newTrishapeEffect;
+				newTrishape->spPropertyState = newTrishapeProperty;
+				newTrishape->spSkinInstance = newSkinInstance;
+				newGeometry = RE::NiPointer<RE::NiGeometry>(static_cast<RE::NiGeometry*>(newTrishape));
 			}
-
-			NiPointer<NiGeometry> newGeometry;
-
-			if (NiTriShape * trishape = geometry->GetAsNiTriShape()) {
-				NiTriShape * newTrishape = NiTriShape::Create(static_cast<NiTriShapeData*>(newGeometryData));
-				newGeometryData->DecRef();
-				newTrishape->m_localTransform = geometry->m_localTransform;
-				newTrishape->m_name = geometry->m_name;
-#ifdef FIXME
-				memcpy(&newTrishape->unk88, &geometry->unk88, 0x1F);
-#endif
-				newTrishape->m_spEffectState = newTrishapeEffect;
-				newTrishape->m_spPropertyState = newTrishapeProperty;
-				newTrishape->m_spSkinInstance = newSkinInstance;
-				newGeometry = newTrishape;
-			}
-			else if (NiTriBasedGeom * trigeom = geometry->GetAsNiTriBasedGeom()) {
-
-				NiTriStrips * tristrips = ni_cast(trigeom, NiTriStrips);
-				if (tristrips)
-				{
-					NiTriStrips * newTristrips = NiTriStrips::Create(static_cast<NiTriShapeData*>(newGeometryData));
-					newGeometryData->DecRef();
-					newTristrips->m_localTransform = geometry->m_localTransform;
-					newTristrips->m_name = geometry->m_name;
-#ifdef FIXME
-					memcpy(&newTristrips->unk88, &geometry->unk88, 0x1F);
-#endif
-					newTristrips->m_spEffectState = newTrishapeEffect;
-					newTristrips->m_spPropertyState = newTrishapeProperty;
-					newTristrips->m_spSkinInstance = newSkinInstance;
-					newGeometry = newTristrips;
-				}
+			else if (netimmerse_isKind<RE::NiTriStrips>(geometry)) {
+				auto * newTristrips = CreateNiTriStrips(newGeometryData);
+				if (newGeometryData) newGeometryData->DecRefCount();
+				newTristrips->local = geometry->local;
+				newTristrips->name = geometry->name;
+				newTristrips->spEffectState = newTrishapeEffect;
+				newTristrips->spPropertyState = newTrishapeProperty;
+				newTristrips->spSkinInstance = newSkinInstance;
+				newGeometry = RE::NiPointer<RE::NiGeometry>(static_cast<RE::NiGeometry*>(newTristrips));
 			}
 
 			if (newGeometry)
 			{
-				auto textureData = GetTextureSetForPartByName(actorBase, newGeometry->m_name);
+				auto textureData = GetTextureSetForPartByName(actorBase, newGeometry->name);
 
-				BSShaderProperty* shaderProperty = niptr_cast<BSShaderProperty>(newGeometry->m_spEffectState);
-				if (shaderProperty) {
-					if (ni_is_type(shaderProperty->GetRTTI(), BSLightingShaderProperty)) {
-						BSLightingShaderProperty* lightingShader = static_cast<BSLightingShaderProperty*>(shaderProperty);
-						BSLightingShaderMaterial* material = static_cast<BSLightingShaderMaterial*>(shaderProperty->material);
-						if (material && material->textureSet) {
-							if (textureData.first) {
-								for (UInt32 i = 0; i < BGSTextureSet::kNumTextures; i++)
-									material->textureSet->SetTexturePath(i, textureData.first->textureSet.GetTexturePath(i));
-							}
-
-							if (textureData.second && textureData.second->type == BGSHeadPart::kTypeFace)
-								material->textureSet->SetTexturePath(6, m_ddsPath.data);
+				RE::BSShaderProperty* shaderProperty = static_cast<RE::BSShaderProperty*>(newGeometry->spEffectState.get());
+				if (shaderProperty && netimmerse_isKind<RE::BSLightingShaderProperty>(shaderProperty)) {
+					RE::BSLightingShaderMaterial* material = static_cast<RE::BSLightingShaderMaterial*>(shaderProperty->material);
+					if (material && material->textureSet) {
+						if (textureData.first) {
+							for (std::uint32_t i = 0; i < RE::BSTextureSet::Texture::kUsedTotal; i++)
+								material->textureSet->SetTexturePath(static_cast<RE::BSTextureSet::Texture>(i), textureData.first->GetTexturePath(static_cast<RE::BSTextureSet::Texture>(i)));
 						}
+
+						if (textureData.second && textureData.second->type.any(RE::BGSHeadPart::HeadPartType::kFace))
+							material->textureSet->SetTexturePath(static_cast<RE::BSTextureSet::Texture>(6), m_ddsPath.c_str());
 					}
 				}
 
 				// Save the previous tint mask
-				BSShaderProperty * originalShaderProperty = niptr_cast<BSShaderProperty>(geometry->m_spEffectState);
-				if (originalShaderProperty) {
-					if (ni_is_type(originalShaderProperty->GetRTTI(), BSLightingShaderProperty)) {
-						BSLightingShaderProperty * lightingShader = static_cast<BSLightingShaderProperty *>(originalShaderProperty);
-						BSLightingShaderMaterial * material = static_cast<BSLightingShaderMaterial *>(originalShaderProperty->material);
-						if (material) {
-							if (material->GetShaderType() == BSShaderMaterial::kShaderType_FaceGen) {
-								BSLightingShaderMaterialFacegen * maskedMaterial = static_cast<BSLightingShaderMaterialFacegen *>(material);
-								IFileStream::MakeAllDirs(m_ddsPath.data);
-								SaveRenderedDDS(niptr_cast<NiRenderedTexture>(maskedMaterial->renderedTexture), m_ddsPath.data);
-							}
+				RE::BSShaderProperty * originalShaderProperty = static_cast<RE::BSShaderProperty*>(geometry->spEffectState.get());
+				if (originalShaderProperty && netimmerse_isKind<RE::BSLightingShaderProperty>(originalShaderProperty)) {
+					RE::BSLightingShaderMaterial * material = static_cast<RE::BSLightingShaderMaterial *>(originalShaderProperty->material);
+					if (material) {
+						if (material->GetFeature() == RE::BSShaderMaterial::Feature::kFaceGen) {
+							auto * maskedMaterial = static_cast<RE::BSLightingShaderMaterialFacegen *>(static_cast<RE::BSLightingShaderMaterialBase *>(material));
+							FileUtils::MakeAllDirs(m_ddsPath.c_str());
+							SaveRenderedDDS(maskedMaterial->tintTexture.get(), m_ddsPath.c_str());
 						}
 					}
 				}
 
-				skinnedNode->AttachChild(newGeometry, true);
+				skinnedNode->AttachChild(newGeometry.get(), true);
 			}
 		}
-		else if (BSGeometry * geometry = object->GetAsBSGeometry()) {
+		else if (auto * geometry = object ? object->AsGeometry() : nullptr) {
+			auto * trishape = geometry ? geometry->AsTriShape() : nullptr;
+			if (trishape) {
+				RE::NiProperty * propEffect = static_cast<RE::NiProperty*>(trishape->GetGeometryRuntimeData().shaderProperty.get());
+				RE::NiPointer<RE::NiObject> newTeObj;
+				RE::NiPointer<RE::NiProperty> newTrishapeEffect;
+				if (propEffect) { propEffect->CreateDeepCopy(newTeObj); newTrishapeEffect = niptr_cast<RE::NiProperty>(newTeObj); }
 
-			NiProperty * trishapeEffect = niptr_cast<NiProperty>(geometry->m_spEffectState);
-			NiPointer<NiProperty> newTrishapeEffect;
-			if (trishapeEffect)
-				CALL_MEMBER_FN(trishapeEffect, DeepCopy)((NiObject **)&newTrishapeEffect);
+				RE::NiProperty * propProperty = static_cast<RE::NiProperty*>(trishape->GetGeometryRuntimeData().alphaProperty.get());
+				RE::NiPointer<RE::NiObject> newTpObj;
+				RE::NiPointer<RE::NiProperty> newTrishapeProperty;
+				if (propProperty) { propProperty->CreateDeepCopy(newTpObj); newTrishapeProperty = niptr_cast<RE::NiProperty>(newTpObj); }
 
-			NiProperty * trishapeProperty = niptr_cast<NiProperty>(geometry->m_spPropertyState);
-			NiPointer<NiProperty> newTrishapeProperty;
-			if (trishapeProperty)
-				CALL_MEMBER_FN(trishapeProperty, DeepCopy)((NiObject **)&newTrishapeProperty);
+				RE::NiPointer<RE::NiSkinInstance> newSkinInstance = BuildRemappedSkinInstance(trishape->GetGeometryRuntimeData().skinInstance.get(), skinnedNode.get(), boneMap, !g_exportSkinToBone);
 
-			NiSkinInstance * skinInstance = niptr_cast<NiSkinInstance>(geometry->m_spSkinInstance);
-			NiPointer<NiSkinInstance> newSkinInstance;
-			if (skinInstance) {
-				newSkinInstance = skinInstance->Clone(); // Clonned instance starts at 0
-				newSkinInstance->m_pkRootParent = skinnedNode;
-
-				UInt32 numBones = 0;
-				NiSkinData * skinData = niptr_cast<NiSkinData>(skinInstance->m_spSkinData);
-				NiPointer<NiSkinData> newSkinData;
-				if (skinData) {
-					numBones = skinData->m_uiBones;
-					CALL_MEMBER_FN(skinData, DeepCopy)((NiObject **)&newSkinData);
-				}
-
-				NiSkinPartition * skinPartition = niptr_cast<NiSkinPartition>(skinInstance->m_spSkinPartition);
-				NiPointer<NiSkinPartition> newSkinPartition;
-				if (skinPartition)
-					CALL_MEMBER_FN(skinPartition, DeepCopy)((NiObject **)&newSkinPartition);
-
-				newSkinInstance->m_spSkinData = newSkinData;
-				newSkinInstance->m_spSkinPartition = newSkinPartition;
-
-				// Remap the bones to new NiNode instances
-				if (numBones > 0)
-				{
-					newSkinInstance->m_ppkBones = (NiAVObject**)Heap_Allocate(numBones * sizeof(NiAVObject*));
-					for (UInt32 i = 0; i < numBones; i++)
-					{
-						NiAVObject * bone = skinInstance->m_ppkBones[i];
-						if (bone)
-						{
-							auto it = boneMap.find(bone);
-							if (it == boneMap.end()) {
-								NiNode * newBone = NiNode::Create();
-								newBone->IncRef();
-								newBone->m_name = bone->m_name;
-								newBone->m_flags = bone->m_flags;
-								boneMap.insert(std::make_pair(bone, newBone));
-								newSkinInstance->m_ppkBones[i] = newBone;
-							}
-							else
-								newSkinInstance->m_ppkBones[i] = it->second;
-						}
-						else
-						{
-							newSkinInstance->m_ppkBones[i] = nullptr;
-						}
-					}
-
-					if (!g_exportSkinToBone)
-					{
-						for (UInt32 i = 0; i < newSkinData->m_uiBones; i++)
-						{
-							newSkinData->m_pkBoneData[i].m_kSkinToBone.rot.Identity();
-							newSkinData->m_pkBoneData[i].m_kSkinToBone.pos = NiPoint3(0.0f, 0.0f, 0.0f);
-							newSkinData->m_pkBoneData[i].m_kSkinToBone.scale = 1.0f;
-						}
-					}
-				}
-			}
-
-			NiPointer<BSGeometry> newGeometry;
-
-			BSTriShape * trishape = geometry->GetAsBSTriShape();
-			if (trishape)
-			{
-				BSTriShape * newTrishape = nullptr;
-				BSDynamicTriShape * dynamicShape = ni_cast(trishape, BSDynamicTriShape);
-				if (dynamicShape)
-				{
-					BSDynamicTriShape* xData = CreateBSDynamicTriShape();
+				RE::BSTriShape * newTrishape = nullptr;
+				auto * dynamicShape = trishape ? trishape->AsDynamicTriShape() : nullptr;
+				if (dynamicShape) {
+					auto * xData = SKEE::CreateBSDynamicTriShape();
 					newTrishape = xData;
-					if (dynamicShape->pDynamicData)
-					{
-						dynamicShape->lock.Lock();
-						xData->pDynamicData = NiAllocate(trishape->numVertices * sizeof(__m128));
-						memcpy(xData->pDynamicData, dynamicShape->pDynamicData, trishape->numVertices * sizeof(__m128));
-						dynamicShape->lock.Release();
+					if (xData && dynamicShape->GetDynamicTrishapeRuntimeData().dynamicData) {
+						std::size_t numVerts = trishape->GetTrishapeRuntimeData().vertexCount;
+						auto & srcRT = dynamicShape->GetDynamicTrishapeRuntimeData();
+						auto & dstRT = xData->GetDynamicTrishapeRuntimeData();
+						srcRT.lock.Lock();
+						dstRT.dynamicData = RE::NiMalloc(numVerts * 16);
+						std::memcpy(dstRT.dynamicData, srcRT.dynamicData, numVerts * 16);
+						srcRT.lock.Unlock();
+						dstRT.dataSize = srcRT.dataSize;
+						dstRT.frameCount = srcRT.frameCount;
+						dstRT.unk178 = srcRT.unk178;
 					}
-
-					xData->dataSize = dynamicShape->dataSize;
-					xData->frameCount = dynamicShape->frameCount;
-					xData->unk178 = dynamicShape->unk178;
 				}
-				else
-				{
-					newTrishape = CreateBSTriShape();
+				else {
+					newTrishape = SKEE::CreateBSTriShape();
 				}
 
-				if (newTrishape)
-				{
-					newTrishape->m_localTransform = geometry->m_localTransform;
-					newTrishape->m_name = geometry->m_name;
-					newTrishape->m_spEffectState = newTrishapeEffect;
-					newTrishape->m_spPropertyState = newTrishapeProperty;
-					newTrishape->m_spSkinInstance = newSkinInstance;
-
-					newTrishape->geometryData = trishape->geometryData;
-					if (newTrishape->geometryData)
-					{
-						newTrishape->geometryData->refCount++;
+				if (newTrishape) {
+					auto & srcGD = trishape->GetGeometryRuntimeData();
+					auto & dstGD = newTrishape->GetGeometryRuntimeData();
+					newTrishape->local = trishape->local;
+					newTrishape->name = trishape->name;
+					if (newTrishapeEffect) dstGD.shaderProperty.reset(static_cast<RE::BSShaderProperty*>(newTrishapeEffect.get()));
+					if (newTrishapeProperty) dstGD.alphaProperty.reset(static_cast<RE::NiAlphaProperty*>(newTrishapeProperty.get()));
+					dstGD.skinInstance = newSkinInstance;
+					dstGD.rendererData = srcGD.rendererData;  // shared geometry data
+					if (dstGD.rendererData) {
+						dstGD.rendererData->refCount++;
 					}
-					
-					newTrishape->m_flags = trishape->m_flags;
+					dstGD.unk140 = srcGD.unk140;
+					dstGD.vertexDesc = srcGD.vertexDesc;
+					newTrishape->flags = trishape->flags;
+					newTrishape->worldBound = trishape->worldBound;
+					newTrishape->lastUpdatedFrameCounter = trishape->lastUpdatedFrameCounter;
+					newTrishape->GetModelData().modelBound = trishape->GetModelData().modelBound;
+					newTrishape->GetType() = trishape->GetType();
+					auto & srcTS = trishape->GetTrishapeRuntimeData();
+					auto & dstTS = newTrishape->GetTrishapeRuntimeData();
+					dstTS.triangleCount = srcTS.triangleCount;
+					dstTS.vertexCount = srcTS.vertexCount;
+					dstTS.pad15C = srcTS.pad15C;
 
-					newTrishape->unkE4 = trishape->unkE4;
-					newTrishape->unkE8 = trishape->unkE8;
-					newTrishape->unkEC = trishape->unkEC;
-					newTrishape->unkF0 = trishape->unkF0;
-
-					newTrishape->unk104 = trishape->unk104;
-					newTrishape->unk108 = trishape->unk108;
-					newTrishape->unk109 = trishape->unk109;
-
-					newTrishape->unk110 = trishape->unk110;
-					newTrishape->unk118 = trishape->unk118;
-					newTrishape->unk140 = trishape->unk140;
-					newTrishape->vertexDesc = trishape->vertexDesc;
-					newTrishape->shapeType = trishape->shapeType;
-					newTrishape->unk151 = trishape->unk151;
-					newTrishape->unk152 = trishape->unk152;
-					newTrishape->unk154 = trishape->unk154;
-
-					newTrishape->unk158 = trishape->unk158;
-					newTrishape->numVertices = trishape->numVertices;
-					newTrishape->unk15C = trishape->unk15C;
-					newTrishape->unk15D = trishape->unk15D;
-				}
-
-				newGeometry = newTrishape;
-			}
-
-			if (newGeometry)
-			{
-				auto textureData = GetTextureSetForPartByName(actorBase, newGeometry->m_name);
-
-				BSShaderProperty * shaderProperty = niptr_cast<BSShaderProperty>(newGeometry->m_spEffectState);
-				if (shaderProperty) {
-					if (ni_is_type(shaderProperty->GetRTTI(), BSLightingShaderProperty)) {
-						BSLightingShaderProperty * lightingShader = static_cast<BSLightingShaderProperty *>(shaderProperty);
-						BSLightingShaderMaterial * material = static_cast<BSLightingShaderMaterial *>(shaderProperty->material);
+					auto textureData = GetTextureSetForPartByName(actorBase, newTrishape->name);
+					RE::BSShaderProperty* shaderProperty = dstGD.shaderProperty.get();
+					if (shaderProperty && netimmerse_isKind<RE::BSLightingShaderProperty>(shaderProperty)) {
+						RE::BSLightingShaderMaterial* material = static_cast<RE::BSLightingShaderMaterial*>(shaderProperty->material);
 						if (material && material->textureSet) {
 							if (textureData.first) {
-								for (UInt32 i = 0; i < BGSTextureSet::kNumTextures; i++)
-									material->textureSet->SetTexturePath(i, textureData.first->textureSet.GetTexturePath(i));
+								for (std::uint32_t i = 0; i < RE::BSTextureSet::Texture::kUsedTotal; i++)
+									material->textureSet->SetTexturePath(static_cast<RE::BSTextureSet::Texture>(i), textureData.first->GetTexturePath(static_cast<RE::BSTextureSet::Texture>(i)));
 							}
-
-							if (textureData.second && textureData.second->type == BGSHeadPart::kTypeFace)
-								material->textureSet->SetTexturePath(6, m_ddsPath.data);
+							if (textureData.second && textureData.second->type.any(RE::BGSHeadPart::HeadPartType::kFace))
+								material->textureSet->SetTexturePath(static_cast<RE::BSTextureSet::Texture>(6), m_ddsPath.c_str());
 						}
 					}
-				}
 
-				// Save the previous tint mask
-				BSShaderProperty * originalShaderProperty = niptr_cast<BSShaderProperty>(geometry->m_spEffectState);
-				if (originalShaderProperty) {
-					if (ni_is_type(originalShaderProperty->GetRTTI(), BSLightingShaderProperty)) {
-						BSLightingShaderProperty * lightingShader = static_cast<BSLightingShaderProperty *>(originalShaderProperty);
-						BSLightingShaderMaterial * material = static_cast<BSLightingShaderMaterial *>(originalShaderProperty->material);
+					RE::BSShaderProperty * originalShaderProperty = srcGD.shaderProperty.get();
+					if (originalShaderProperty && netimmerse_isKind<RE::BSLightingShaderProperty>(originalShaderProperty)) {
+						RE::BSLightingShaderMaterial * material = static_cast<RE::BSLightingShaderMaterial *>(originalShaderProperty->material);
 						if (material) {
-							if (material->GetShaderType() == BSShaderMaterial::kShaderType_FaceGen) {
-								BSLightingShaderMaterialFacegen * maskedMaterial = static_cast<BSLightingShaderMaterialFacegen *>(material);
-								IFileStream::MakeAllDirs(m_ddsPath.data);
-								SaveRenderedDDS(niptr_cast<NiRenderedTexture>(maskedMaterial->renderedTexture), m_ddsPath.data);
+							if (material->GetFeature() == RE::BSShaderMaterial::Feature::kFaceGen) {
+								auto * maskedMaterial = static_cast<RE::BSLightingShaderMaterialFacegen *>(static_cast<RE::BSLightingShaderMaterialBase *>(material));
+								FileUtils::MakeAllDirs(m_ddsPath.c_str());
+								SaveRenderedDDS(maskedMaterial->tintTexture.get(), m_ddsPath.c_str());
 							}
 						}
 					}
-				}
 
-				skinnedNode->AttachChild(newGeometry, true);
+					RE::NiPointer<RE::BSGeometry> newGeometry(static_cast<RE::BSGeometry*>(newTrishape));
+					skinnedNode->AttachChild(newGeometry.get(), true);
+				}
 			}
 		}
 	}
 
 	for (auto & bones : boneMap) {
-		rootNode->AttachChild(bones.second, true);
-		bones.second->DecRef();
+		rootNode.get()->AttachChild(bones.second, true);
+		bones.second->DecRefCount();
 	}
 
-	rootNode->AttachChild(skinnedNode, true);
+	rootNode.get()->AttachChild(skinnedNode.get(), true);
 
-	UInt8 niStreamMemory[sizeof(NiStream)];
-	memset(niStreamMemory, 0, sizeof(NiStream));
-	NiStream * niStream = (NiStream *)niStreamMemory;
-	CALL_MEMBER_FN(niStream, ctor)();
-	CALL_MEMBER_FN(niStream, AddObject)(rootNode);
-	niStream->SavePath(m_nifPath.data);
-	CALL_MEMBER_FN(niStream, dtor)();
-
-	rootNode->DecRef();
+	{
+		NifStreamWrapper niStream;
+		SKEE::NiStreamAddObject(niStream.get(), rootNode.get());
+		niStream->Save3(m_nifPath.c_str());
+	}
 
 	if (animationData) {
-		animationData->overrideFlag = 0;
-		CALL_MEMBER_FN(animationData, Reset)(1.0, 1, 1, 0, 0);
-		FaceGen::GetSingleton()->isReset = 1;
-		UpdateModelFace(faceNode);
+		animationData->exprOverride = 0;
+		animationData->Reset(1.0, 1, 1, 0, 0);
+		RE::BSFaceGenManager::GetSingleton()->isReset = 1;
+		SKEE::UpdateModelFace(faceNode);
 	}
 }
 
-bool VisitObjects(NiAVObject * parent, std::function<bool(NiAVObject*)> functor)
+bool VisitObjects(RE::NiAVObject * parent, std::function<bool(RE::NiAVObject*)> functor)
 {
-	NiNode * node = parent->GetAsNiNode();
+	auto * node = parent ? parent->AsNode() : nullptr;
 	if (node) {
 		if (functor(parent))
 			return true;
 
-		for (UInt32 i = 0; i < node->m_children.m_emptyRunStart; i++) {
-			NiAVObject * object = node->m_children.m_data[i];
+		for (std::uint32_t i = 0; i < node->children.size(); i++) {
+			RE::NiAVObject * object = node->children[i].get();
 			if (object) {
 				if (VisitObjects(object, functor))
 					return true;
@@ -647,11 +572,11 @@ bool VisitObjects(NiAVObject * parent, std::function<bool(NiAVObject*)> functor)
 	return false;
 }
 
-bool VisitGeometry(NiAVObject* parent, std::function<bool(BSGeometry*)> functor)
+bool VisitGeometry(RE::NiAVObject* parent, std::function<bool(RE::BSGeometry*)> functor)
 {
-	return VisitObjects(parent, [&functor](NiAVObject* object)
+	return VisitObjects(parent, [&functor](RE::NiAVObject* object)
 	{
-		BSGeometry* geometry = object->GetAsBSGeometry();
+		RE::BSGeometry* geometry = object ? object->AsGeometry() : nullptr;
 		if (geometry)
 		{
 			if (functor(geometry))
@@ -664,9 +589,9 @@ bool VisitGeometry(NiAVObject* parent, std::function<bool(BSGeometry*)> functor)
 	});
 }
 
-bool VisitGeometry(NiAVObject* object, GeometryVisitor* visitor)
+bool VisitGeometry(RE::NiAVObject* object, GeometryVisitor* visitor)
 {
-	return VisitGeometry(object, [&](BSGeometry* geometry)
+	return VisitGeometry(object, [&](RE::BSGeometry* geometry)
 	{
 		if (visitor->Accept(geometry))
 		{
@@ -677,20 +602,20 @@ bool VisitGeometry(NiAVObject* object, GeometryVisitor* visitor)
 	});
 }
 
-NiTransform GetGeometryTransform(BSGeometry * geometry)
+RE::NiTransform GetGeometryTransform(RE::BSGeometry * geometry)
 {
-	NiTransform transform = geometry->m_localTransform;
-	NiSkinInstance * dstSkin = niptr_cast<NiSkinInstance>(geometry->m_spSkinInstance);
+	RE::NiTransform transform = geometry->local;
+	RE::NiSkinInstance * dstSkin = geometry->skinInstance.get();
 	if (dstSkin) {
 		utils::ScopedCriticalSection cs(&dstSkin->lock);
-		NiSkinData * skinData = dstSkin->m_spSkinData;
+		RE::NiSkinData * skinData = dstSkin->skinData.get();
 		if (skinData) {
-			transform = transform * skinData->m_kRootParentToSkin;
+			transform = transform * skinData->rootParentToSkin;
 
-			for (UInt32 i = 0; i < skinData->m_uiBones; i++) {
-				NiAVObject * bone = dstSkin->m_ppkBones[i];
-				if (bone->m_name == BSFixedString("NPC Head [Head]").data) {
-					transform = transform * skinData->m_pkBoneData[i].m_kSkinToBone;
+			for (std::uint32_t i = 0; i < skinData->GetBoneCount(); i++) {
+				RE::NiAVObject * bone = dstSkin->bones[i];
+				if (bone->name == "NPC Head [Head]") {
+					transform = transform * skinData->boneData[i].skinToBone;
 					break;
 				}
 			}
@@ -700,20 +625,20 @@ NiTransform GetGeometryTransform(BSGeometry * geometry)
 	return transform;
 }
 
-NiTransform GetLegacyGeometryTransform(NiGeometry * geometry)
+RE::NiTransform GetLegacyGeometryTransform(RE::NiGeometry * geometry)
 {
-	NiTransform transform = geometry->m_localTransform;
-	NiSkinInstance * dstSkin = niptr_cast<NiSkinInstance>(geometry->m_spSkinInstance);
+	RE::NiTransform transform = geometry->local;
+	RE::NiSkinInstance * dstSkin = geometry->spSkinInstance.get();
 	if (dstSkin) {
 		utils::ScopedCriticalSection cs(&dstSkin->lock);
-		NiSkinData * skinData = dstSkin->m_spSkinData;
+		RE::NiSkinData * skinData = dstSkin->skinData.get();
 		if (skinData) {
-			transform = transform * skinData->m_kRootParentToSkin;
+			transform = transform * skinData->rootParentToSkin;
 
-			for (UInt32 i = 0; i < skinData->m_uiBones; i++) {
-				NiAVObject * bone = dstSkin->m_ppkBones[i];
-				if (bone->m_name == BSFixedString("NPC Head [Head]").data) {
-					transform = transform * skinData->m_pkBoneData[i].m_kSkinToBone;
+			for (std::uint32_t i = 0; i < skinData->GetBoneCount(); i++) {
+				RE::NiAVObject * bone = dstSkin->bones[i];
+				if (bone->name == "NPC Head [Head]") {
+					transform = transform * skinData->boneData[i].skinToBone;
 					break;
 				}
 			}
@@ -723,24 +648,24 @@ NiTransform GetLegacyGeometryTransform(NiGeometry * geometry)
 	return transform;
 }
 
-UInt16 GetStripLengthSum(NiTriStripsData * strips)
+std::uint16_t GetStripLengthSum(RE::NiTriStripsData * strips)
 {
-	return strips->m_usTriangles + 2 * strips->m_usStrips;
+	return strips->numTriangles + 2 * strips->numStrips;
 }
 
-void GetTriangleIndices(NiTriStripsData * strips, UInt16 i, UInt16 v0, UInt16 v1, UInt16 v2)
+void GetTriangleIndices(RE::NiTriStripsData* strips, std::uint16_t i, std::uint16_t& v0, std::uint16_t& v1, std::uint16_t& v2)
 {
-	UInt16 usTriangles;
-	UInt16 usStrip = 0;
+	std::uint16_t usTriangles;
+	std::uint16_t usStrip = 0;
 
-	UInt16* pusStripLists = strips->m_pusStripLists;
-	while (i >= (usTriangles = strips->m_pusStripLengths[usStrip] - 2))
+	std::uint16_t* pusStripLists = strips->stripLists;
+	while (i >= (usTriangles = strips->stripLengths[usStrip] - 2))
 	{
-		i = (UInt16)(i - usTriangles);
-		pusStripLists += strips->m_pusStripLengths[usStrip++];
+		i = (std::uint16_t)(i - usTriangles);
+		pusStripLists += strips->stripLengths[usStrip++];
 	}
 
-	if (i & 1)
+	if ((i % 2) != 0)
 	{
 		v0 = pusStripLists[i + 1];
 		v1 = pusStripLists[i];
@@ -754,86 +679,86 @@ void GetTriangleIndices(NiTriStripsData * strips, UInt16 i, UInt16 v0, UInt16 v1
 	v2 = pusStripLists[i + 2];
 }
 
-NiAVObjectPtr GetRootNode(NiAVObjectPtr object, bool refRoot)
+RE::NiAVObject* GetRootNode(RE::NiAVObject* object, bool refRoot)
 {
-	NiAVObject * rootNode = object;
-	NiNode* parent = rootNode->m_parent;
+	RE::NiAVObject * rootNode = object;
+	RE::NiNode* parent = rootNode->parent;
 	while (parent)
 	{
 		rootNode = parent;
-		if (rootNode->m_owner)
+		if (rootNode->userData) // reached a node with an owner (legacy m_owner)
 			break;
-		parent = parent->m_parent;
+		parent = parent->parent;
 	}
 
 	return rootNode;
 }
 
-TESObjectARMO* GetActorSkin(Actor* actor)
+RE::TESObjectARMO* GetActorSkin(RE::Actor* actor)
 {
-	TESNPC* npc = DYNAMIC_CAST(actor->baseForm, TESForm, TESNPC);
+	RE::TESNPC* npc = actor->GetBaseObject() ? actor->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 	if (npc) {
-		if (npc->skinForm.skin)
-			return npc->skinForm.skin;
+		if (npc->skin)
+			return npc->skin;
 	}
-	TESRace* actorRace = actor->race;
+	RE::TESRace* actorRace = actor->race;
 	if (actorRace)
-		return actorRace->skin.skin;
+		return actorRace->skin;
 
 	if (npc) {
-		actorRace = npc->race.race;
+		actorRace = npc->race;
 		if (actorRace)
-			return actorRace->skin.skin;
+			return actorRace->skin;
 	}
 
 	return NULL;
 }
 
-class MatchBySlot : public FormMatcher
+struct MatchBySlot
 {
-	UInt32 m_mask;
+	std::uint32_t m_mask;
 public:
-	MatchBySlot(UInt32 slot) :
+	MatchBySlot(std::uint32_t slot) :
 		m_mask(slot)
 	{
 
 	}
 
-	bool Matches(TESForm* pForm) const {
+	bool Matches(RE::TESForm* pForm) const {
 		return IsSlotMatch(pForm, m_mask);
 	}
 };
 
-bool IsSlotMatch(TESForm* pForm, UInt32 mask)
+bool IsSlotMatch(RE::TESForm* pForm, std::uint32_t mask)
 {
 	if (pForm) {
-		BGSBipedObjectForm* pBip = DYNAMIC_CAST(pForm, TESForm, BGSBipedObjectForm);
+		RE::BGSBipedObjectForm* pBip = pForm ? pForm->As<RE::BGSBipedObjectForm>() : nullptr;
 		if (pBip) {
-			return (pBip->data.parts & mask) != 0;
+			return pBip->bipedModelData.bipedObjectSlots.any(static_cast<RE::BIPED_MODEL::BipedObjectSlot>(mask));
 		}
 	}
 
 	return false;
 }
 
-TESForm* GetSkinForm(Actor* thisActor, UInt32 mask)
+RE::TESForm* GetSkinForm(RE::Actor* thisActor, std::uint32_t mask)
 {
-	TESForm* equipped = GetWornForm(thisActor, mask); // Check equipped item
+	RE::TESForm* equipped = GetWornForm(thisActor, mask); // Check equipped item
 	if (!equipped) {
-		TESNPC* actorBase = DYNAMIC_CAST(thisActor->baseForm, TESForm, TESNPC);
+		RE::TESNPC* actorBase = thisActor->GetBaseObject() ? thisActor->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 		if (actorBase) {
-			equipped = actorBase->skinForm.skin; // Check ActorBase
+			equipped = actorBase->skin; // Check ActorBase
 		}
 		if (!equipped) {
 			// Check the actor's race
-			TESRace* race = thisActor->race;
+			RE::TESRace* race = thisActor->race;
 			if (!race) {
 				// Check the actor base's race
-				race = actorBase->race.race;
+				race = actorBase->race;
 			}
 
 			if (race) {
-				equipped = race->skin.skin; // Check Race
+				equipped = race->skin; // Check Race
 			}
 		}
 	}
@@ -841,70 +766,85 @@ TESForm* GetSkinForm(Actor* thisActor, UInt32 mask)
 	return equipped;
 }
 
-TESForm* GetWornForm(Actor* thisActor, UInt32 mask)
+// True if the inventory entry carries a worn / worn-left extra (legacy kExtraData_Worn/kWornLeft check).
+static bool EntryIsWorn(RE::InventoryEntryData* a_entry)
+{
+	if (!a_entry || !a_entry->extraLists)
+		return false;
+	for (const auto& list : *a_entry->extraLists) {
+		if (list && (list->HasType(RE::ExtraDataType::kWorn) || list->HasType(RE::ExtraDataType::kWornLeft)))
+			return true;
+	}
+	return false;
+}
+
+RE::TESForm* GetWornForm(RE::Actor* thisActor, std::uint32_t mask)
 {
 	MatchBySlot matcher(mask);
-	ExtraContainerChanges* pContainerChanges = static_cast<ExtraContainerChanges*>(thisActor->extraData.GetByType(kExtraData_ContainerChanges));
-	if (pContainerChanges) {
-		EquipData eqD = pContainerChanges->FindEquipped(matcher);
-		return eqD.pForm;
-	}
-	return nullptr;
-}
 
-void VisitAllWornItems(Actor* thisActor, UInt32 mask, std::function<void(InventoryEntryData*)> functor)
-{
-	struct VisitEquippedStack
+	struct WornFinder : RE::InventoryChanges::IItemChangeVisitor
 	{
-		VisitEquippedStack(FormMatcher& matcher, std::function<void(InventoryEntryData*)>& results) : m_matcher(matcher), m_results(results) { }
+		MatchBySlot& matcher;
+		RE::TESForm* found = nullptr;
 
-		bool Accept(InventoryEntryData* pEntryData)
+		explicit WornFinder(MatchBySlot& a_matcher) : matcher(a_matcher) {}
+
+		virtual RE::BSContainer::ForEachResult Visit(RE::InventoryEntryData* a_entry) override
 		{
-			if (pEntryData)
-			{
-				// quick check - needs an extendData or can't be equipped
-				ExtendDataList* pExtendList = pEntryData->extendDataList;
-				if (pExtendList && m_matcher.Matches(pEntryData->type))
-				{
-					for (ExtendDataList::Iterator it = pExtendList->Begin(); !it.End(); ++it)
-					{
-						BaseExtraList* pExtraDataList = it.Get();
-
-						if (pExtraDataList)
-						{
-							if (pExtraDataList->HasType(kExtraData_Worn) || pExtraDataList->HasType(kExtraData_WornLeft))
-							{
-								m_results(pEntryData);
-								return true;
-							}
-						}
-					}
-				}
+			if (a_entry && !found && EntryIsWorn(a_entry) && matcher.Matches(a_entry->object)) {
+				found = a_entry->object;
+				return RE::BSContainer::ForEachResult::kStop;
 			}
-			return true;
+			return RE::BSContainer::ForEachResult::kContinue;
 		}
-		UInt32 mask;
-		FormMatcher& m_matcher;
-		std::function<void(InventoryEntryData*)>& m_results;
-	};
+	} finder{ matcher };
 
-	ExtraContainerChanges* pContainerChanges = static_cast<ExtraContainerChanges*>(thisActor->extraData.GetByType(kExtraData_ContainerChanges));
-	if (pContainerChanges) {
-		if (pContainerChanges->data && pContainerChanges->data->objList) {
-			MatchBySlot matcher(mask);
-			VisitEquippedStack visitStack(matcher, functor);
-			pContainerChanges->data->objList->Visit(visitStack);
+	if (RE::ExtraContainerChanges* pContainerChanges = thisActor->extraList.GetByType<RE::ExtraContainerChanges>()) {
+		if (pContainerChanges->changes) {
+			pContainerChanges->changes->VisitInventory(finder);
+		}
+	}
+
+	return finder.found;
+}
+
+void VisitAllWornItems(RE::Actor* thisActor, std::uint32_t mask, std::function<void(RE::InventoryEntryData*)> functor)
+{
+	MatchBySlot matcher(mask);
+
+	struct WornVisitor : RE::InventoryChanges::IItemChangeVisitor
+	{
+		MatchBySlot& matcher;
+		std::function<void(RE::InventoryEntryData*)>& results;
+
+		WornVisitor(MatchBySlot& a_matcher, std::function<void(RE::InventoryEntryData*)>& a_results)
+			: matcher(a_matcher), results(a_results) {}
+
+		virtual RE::BSContainer::ForEachResult Visit(RE::InventoryEntryData* a_entry) override
+		{
+			if (a_entry && EntryIsWorn(a_entry) && matcher.Matches(a_entry->object)) {
+				results(a_entry);
+			}
+			return RE::BSContainer::ForEachResult::kContinue;  // visit all matching worn items
+		}
+
+		
+	} visitor{ matcher, functor };
+
+	if (RE::ExtraContainerChanges* pContainerChanges = thisActor->extraList.GetByType<RE::ExtraContainerChanges>()) {
+		if (pContainerChanges->changes) {
+			pContainerChanges->changes->VisitInventory(reinterpret_cast<RE::InventoryChanges::IItemChangeVisitor&>(visitor));
 		}
 	}
 }
 
-BSGeometry* GetFirstShaderType(NiAVObject* object, UInt32 shaderType)
+RE::BSGeometry* GetFirstShaderType(RE::NiAVObject* object, std::uint32_t shaderType)
 {
-	BSGeometry* foundGeometry = nullptr;
-	VisitGeometry(object, [&foundGeometry, shaderType](BSGeometry* geometry)
+	RE::BSGeometry* foundGeometry = nullptr;
+	VisitGeometry(object, [&foundGeometry, shaderType](RE::BSGeometry* geometry)
 	{
-		BSShaderProperty* shaderProperty = niptr_cast<BSShaderProperty>(geometry->m_spEffectState);
-		if (shaderProperty && ni_is_type(shaderProperty->GetRTTI(), BSLightingShaderProperty))
+		RE::BSShaderProperty* shaderProperty = geometry->GetGeometryRuntimeData().shaderProperty.get();
+		if (shaderProperty && netimmerse_isKind<RE::BSLightingShaderProperty>(shaderProperty))
 		{
 			// Find first geometry if the type is any
 			if (shaderType == 0xFFFF)
@@ -913,8 +853,8 @@ BSGeometry* GetFirstShaderType(NiAVObject* object, UInt32 shaderType)
 				return true;
 			}
 
-			BSLightingShaderMaterial* material = (BSLightingShaderMaterial*)shaderProperty->material;
-			if (material && material->GetShaderType() == shaderType)
+			RE::BSLightingShaderMaterial* material = (RE::BSLightingShaderMaterial*)shaderProperty->material;
+			if (material && static_cast<std::uint32_t>(material->GetFeature()) == shaderType) // legacy GetShaderType()
 			{
 				foundGeometry = geometry;
 				return true;
@@ -927,24 +867,24 @@ BSGeometry* GetFirstShaderType(NiAVObject* object, UInt32 shaderType)
 	return foundGeometry;
 }
 
-bool NiExtraDataFinder::Accept(NiAVObject* object)
+bool NiExtraDataFinder::Accept(RE::NiAVObject* object)
 {
-	m_data = NifUtils::GetExtraData(object, m_name.data);
+	m_data = object->GetExtraData(m_name);
 	if (m_data)
 		return true;
 
 	return false;
 };
 
-NiExtraData* FindExtraData(NiAVObject* object, BSFixedString name)
+RE::NiExtraData* FindExtraData(RE::NiAVObject* object, RE::BSFixedString name)
 {
 	if (!object)
 		return NULL;
 
-	NiExtraData* extraData = NULL;
-	VisitObjects(object, [&](NiAVObject* object)
+	RE::NiExtraData* extraData = NULL;
+	VisitObjects(object, [&](RE::NiAVObject* object)
 	{
-		extraData = NifUtils::GetExtraData(object, name.data);
+		extraData = object->GetExtraData(name);
 		if (extraData)
 			return true;
 
@@ -954,149 +894,141 @@ NiExtraData* FindExtraData(NiAVObject* object, BSFixedString name)
 	return extraData;
 }
 
-void VisitBipedNodes(TESObjectREFR* refr, std::function<void(bool, UInt32, NiNode*, TESForm*, TESForm*, NiAVObject*)> functor)
+// Visit the biped-attached geometry objects for both first/third person models
+// (legacy NifUtils.cpp). weightModel->objects / bufferedObjects are the two 42-slot
+// BIPOBJECT tables on BipedAnim; each slot's partClone is the attached node.
+void VisitBipedNodes(RE::TESObjectREFR* refr, std::function<void(bool, std::uint32_t, RE::NiNode*, RE::TESForm*, RE::TESForm*, RE::NiAVObject*)> functor)
 {
-	for (SInt32 k = 0; k <= 1; ++k)
+	for (std::int32_t k = 0; k <= 1; ++k)
 	{
-		auto weightModel = refr->GetBiped(k);
-		if (weightModel && weightModel->bipedData)
+		auto& bipedSmart = refr->GetBiped1(k == 1);
+		auto* weightModel = bipedSmart.get();
+		if (!weightModel)
+			continue;
+
+		RE::NiNode* rootNode = refr->Get3D(k == 1) ? refr->Get3D(k == 1)->AsNode() : nullptr;
+		for (std::int32_t i = 0; i < RE::BIPED_OBJECTS::kTotal; ++i)
 		{
-			for (int i = 0; i < 42; ++i)
-			{
-				auto& data = weightModel->bipedData->unk10[i];
-				if (data.object)
-				{
-					functor(k == 1, i, refr->GetNiRootNode(k), data.armor, data.addon, data.object);
-				}
-			}
-			for (int i = 0; i < 42; ++i)
-			{
-				auto& data = weightModel->bipedData->unk13C0[i];
-				if (data.object)
-				{
-					functor(k == 1, i, refr->GetNiRootNode(k), data.armor, data.addon, data.object);
-				}
-			}
+			auto& data = weightModel->objects[i];
+			if (data.partClone.get())
+				functor(k == 1, static_cast<std::uint32_t>(i), rootNode, data.item, data.addon ? static_cast<RE::TESForm*>(data.addon) : nullptr, data.partClone.get());
+		}
+		for (std::int32_t i = 0; i < RE::BIPED_OBJECTS::kTotal; ++i)
+		{
+			auto& data = weightModel->bufferedObjects[i];
+			if (data.partClone.get())
+				functor(k == 1, static_cast<std::uint32_t>(i), rootNode, data.item, data.addon ? static_cast<RE::TESForm*>(data.addon) : nullptr, data.partClone.get());
 		}
 	}
 }
 
-void VisitEquippedNodes(Actor* actor, UInt32 slotMask, std::function<void(TESObjectARMO*, TESObjectARMA*, NiAVObject*, bool)> functor)
+void VisitEquippedNodes(RE::Actor* actor, std::uint32_t slotMask, std::function<void(RE::TESObjectARMO*, RE::TESObjectARMA*, RE::NiAVObject*, bool)> functor)
 {
-	std::unordered_set<TESObjectARMO*> equippedSlots;
-	VisitAllWornItems(actor, slotMask, [&](InventoryEntryData* itemData)
+	std::unordered_set<RE::TESObjectARMO*> equippedSlots;
+	VisitAllWornItems(actor, slotMask, [&](RE::InventoryEntryData* itemData)
 	{
-		TESObjectARMO* armor = itemData->type->formType == TESObjectARMO::kTypeID ? static_cast<TESObjectARMO*>(itemData->type) : nullptr;
-		if (armor)
-		{
-			equippedSlots.insert(armor);
-		}
+		if (itemData && itemData->object && itemData->object->IsArmor())
+			equippedSlots.insert(static_cast<RE::TESObjectARMO*>(itemData->object));
 	});
 
-	TESObjectARMO* skin = GetActorSkin(actor);
+	RE::TESObjectARMO* skin = GetActorSkin(actor);
 	if (skin)
 		equippedSlots.insert(skin);
 
 	for (auto& armor : equippedSlots) {
-		for (UInt32 i = 0; i < armor->armorAddons.count; i++) {
-			TESObjectARMA* arma = nullptr;
-			if (armor->armorAddons.GetNthItem(i, arma)) {
-				if (arma->isValidRace(actor->race)) { // Only search AAs that fit this race
-					VisitArmorAddon(actor, armor, arma, [&](bool isFirstPerson, NiNode* skeletonRoot, NiAVObject* armorNode) {
-						functor(armor, arma, armorNode, isFirstPerson);
-					});
-				}
+		for (std::uint32_t i = 0; i < armor->armorAddons.size(); i++) {
+			RE::TESObjectARMA* arma = armor->armorAddons[i];
+			if (arma && arma->IsValidRace(actor->race)) { // Only search AAs that fit this race
+				VisitArmorAddon(actor, armor, arma, [&](bool isFirstPerson, RE::NiNode* skeletonRoot, RE::NiAVObject* armorNode) {
+					functor(armor, arma, armorNode, isFirstPerson);
+				});
 			}
 		}
 	}
 }
 
-void VisitSkeletalRoots(TESObjectREFR* ref, std::function<void(NiNode*, bool)> functor)
+void VisitSkeletalRoots(RE::TESObjectREFR* ref, std::function<void(RE::NiNode*, bool)> functor)
 {
-	NiNode* skeletonRoot[2];
-	skeletonRoot[0] = ref->GetNiRootNode(0);
-	skeletonRoot[1] = ref->GetNiRootNode(1);
+	RE::NiNode* skeletonRoot[2];
+	skeletonRoot[0] = ref->Get3D(false) ? ref->Get3D(false)->AsNode() : nullptr;
+	skeletonRoot[1] = ref->Get3D(true) ? ref->Get3D(true)->AsNode() : nullptr;
 
 	// Skip second skeleton, it's the same as the first
 	if (skeletonRoot[1] == skeletonRoot[0])
 		skeletonRoot[1] = nullptr;
 
-	for (UInt32 i = 0; i <= 1; i++)
+	for (std::uint32_t i = 0; i <= 1; i++)
 	{
 		if (skeletonRoot[i])
-		{
-			NiNode* rootNode = skeletonRoot[i]->GetAsNiNode();
-			if (rootNode)
-			{
-				functor(rootNode, i == 1);
-			}
-		}
+			functor(skeletonRoot[i], i == 1);
 	}
 }
 
-void VisitArmorAddon(Actor* actor, TESObjectARMO* armor, TESObjectARMA* arma, std::function<void(bool, NiNode*, NiAVObject*)> functor)
+void VisitArmorAddon(RE::Actor* actor, RE::TESObjectARMO* armor, RE::TESObjectARMA* arma, std::function<void(bool, RE::NiNode*, RE::NiAVObject*)> functor)
 {
-	char addonString[MAX_PATH];
-	memset(addonString, 0, MAX_PATH);
-	arma->GetNodeName(addonString, actor, armor, -1);
+	char addonString[REX::W32::MAX_PATH];
+	memset(addonString, 0, sizeof(addonString));
+	arma->GetNodeName(addonString, actor, armor, -1.0f);
 
-	BSFixedString addonName(addonString);
+	RE::BSFixedString addonName(addonString);
 
-	std::unordered_set<NiAVObject*> touched;
+	std::unordered_set<RE::NiAVObject*> touched;
 
-	VisitBipedNodes(actor, [&](bool isFirstPerson, UInt32 slot, NiNode* rootNode, TESForm* bipedArmor, TESForm* bipedArma, NiAVObject* object)
+	VisitBipedNodes(actor, [&](bool isFirstPerson, std::uint32_t slot, RE::NiNode* rootNode, RE::TESForm* bipedArmor, RE::TESForm* bipedArma, RE::NiAVObject* object)
 	{
-		bool isSame = (bipedArmor->formType == TESObjectARMO::kTypeID && bipedArmor->formID == armor->formID && bipedArma->formType == TESObjectARMA::kTypeID && bipedArma->formID == arma->formID) || 
-					  (bipedArmor->formType == TESObjectARMA::kTypeID && bipedArmor->formID == arma->formID) || object->m_name == addonName.data;
-		if (isSame && !touched.count(object))
-		{
+		if (!object)
+			return;
+		bool isSame = false;
+		if (bipedArmor && bipedArma) {
+			isSame = (bipedArmor->IsArmor() && bipedArmor->formID == armor->formID && bipedArma->Is(RE::TESObjectARMA::FORMTYPE) && bipedArma->formID == arma->formID) ||
+			         (bipedArmor->Is(RE::TESObjectARMA::FORMTYPE) && bipedArmor->formID == arma->formID);
+		}
+		if (!isSame && std::string(object->name.c_str()) == std::string(addonName.c_str()))
+			isSame = true;
+		if (isSame && !touched.count(object)) {
 			touched.emplace(object);
 			functor(isFirstPerson, rootNode, object);
 		}
 	});
 
-	VisitSkeletalRoots(actor, [&](NiNode* rootNode, bool isFirstPerson)
+	VisitSkeletalRoots(actor, [&](RE::NiNode* rootNode, bool isFirstPerson)
 	{
-		// DFS search for the node by name, then traverse all siblings incase the same armor appears twice
-		NiAVObject* armorNode = rootNode->GetObjectByName(&addonName.data);
-		if (armorNode && armorNode->m_parent)
+		// DFS search for the node by name, then traverse all siblings in case the same armor appears twice
+		RE::NiAVObject* armorNode = rootNode->GetObjectByName(addonName);
+		if (armorNode && armorNode->parent)
 		{
-			auto parent = armorNode->m_parent;
-			for (int j = 0; j < parent->m_children.m_emptyRunStart; ++j)
+			auto parent = armorNode->parent;
+			for (std::uint32_t j = 0; j < parent->children.size(); ++j)
 			{
-				auto childNode = parent->m_children.m_data[j];
-				if (childNode && childNode->m_name == addonName.data && !touched.count(childNode))
+				auto childNode = parent->children[j].get();
+				if (childNode && std::string(childNode->name.c_str()) == std::string(addonName.c_str()) && !touched.count(childNode))
 				{
 					touched.emplace(childNode);
 					functor(isFirstPerson, rootNode, childNode);
 				}
 			}
-		}	
+		}
 	});
-
-#ifdef _DEBUG
-	for (auto& node : touched)
-	{
-		_DMESSAGE("%s - Touched node %s for Armor: %08X on Actor: %08X", __FUNCTION__, node->m_name, armor->formID, actor->formID);
-	}
-#endif
 }
 
-bool ResolveAnyForm(SKSESerializationInterface* intfc, UInt32 handle, UInt32* newHandle)
+bool ResolveAnyForm(SKSE::SerializationInterface* intfc, std::uint32_t handle, std::uint32_t* newHandle)
 {
 	if (((handle & 0xFF000000) >> 24) != 0xFF) {
 		// Skip if handle is no longer valid.
-		if (!intfc->ResolveFormId(handle, newHandle)) {
+		RE::VMHandle vmHandle;
+		if (!intfc->ResolveHandle(static_cast<RE::VMHandle>(handle), vmHandle)) {
 			return false;
 		}
+		*newHandle = static_cast<std::uint64_t>(vmHandle);
+		return true;
 	}
 	else { // This will resolve game-created forms
-		TESForm* formCheck = LookupFormByID(handle & 0xFFFFFFFF);
+		RE::TESForm* formCheck = RE::TESForm::LookupByID(static_cast<RE::FormID>(handle));
 		if (!formCheck) {
 			return false;
 		}
-		TESObjectREFR* refr = DYNAMIC_CAST(formCheck, TESForm, TESObjectREFR);
-		if (!refr || (refr && (refr->flags & TESForm::kFlagIsDeleted) == TESForm::kFlagIsDeleted)) {
+		RE::TESObjectREFR* refr = formCheck ? formCheck->As<RE::TESObjectREFR>() : nullptr;
+		if (!refr || (refr && refr->IsDeleted())) {
 			return false;
 		}
 		*newHandle = handle;
@@ -1105,21 +1037,26 @@ bool ResolveAnyForm(SKSESerializationInterface* intfc, UInt32 handle, UInt32* ne
 	return true;
 }
 
-bool ResolveAnyHandle(SKSESerializationInterface* intfc, UInt64 handle, UInt64* newHandle)
+bool ResolveAnyHandle(SKSE::SerializationInterface* intfc, std::uint64_t handle, std::uint64_t* newHandle)
 {
 	if (((handle & 0xFF000000) >> 24) != 0xFF) {
 		// Skip if handle is no longer valid.
-		if (!intfc->ResolveHandle(handle, newHandle)) {
+		RE::VMHandle resolvedHandle;
+		if (!intfc->ResolveHandle(static_cast<RE::VMHandle>(handle), resolvedHandle)) {
+			return false;
+		}
+		*newHandle = static_cast<std::uint64_t>(resolvedHandle);
+		if (false) {
 			return false;
 		}
 	}
 	else { // This will resolve game-created forms
-		TESForm* formCheck = LookupFormByID(handle & 0xFFFFFFFF);
+		RE::TESForm* formCheck = RE::TESForm::LookupByID(static_cast<RE::FormID>(handle));
 		if (!formCheck) {
 			return false;
 		}
-		TESObjectREFR* refr = DYNAMIC_CAST(formCheck, TESForm, TESObjectREFR);
-		if (!refr || (refr && (refr->flags & TESForm::kFlagIsDeleted) == TESForm::kFlagIsDeleted)) {
+		RE::TESObjectREFR* refr = formCheck ? formCheck->As<RE::TESObjectREFR>() : nullptr;
+		if (!refr || (refr && refr->IsDeleted())) {
 			return false;
 		}
 		*newHandle = handle;
@@ -1130,77 +1067,62 @@ bool ResolveAnyHandle(SKSESerializationInterface* intfc, UInt64 handle, UInt64* 
 
 void SKSETaskExportTintMask::Run()
 {
-	BSFaceGenNiNode * faceNode = (*g_thePlayer)->GetFaceGenNiNode();
+	auto* p3d = RE::PlayerCharacter::GetSingleton()->Get3D();
+	RE::BSFaceGenNiNode * faceNode = p3d ? netimmerse_cast<RE::BSFaceGenNiNode*>(p3d) : nullptr;
 	if (faceNode) {
 		// Save the mesh
-		std::string ddsPath(m_filePath.data);
-		IFileStream::MakeAllDirs(ddsPath.c_str());
-		ddsPath.append(m_fileName.data);
+		std::string ddsPath(m_filePath.c_str());
+		FileUtils::MakeAllDirs(ddsPath.c_str());
+		ddsPath.append(m_fileName.c_str());
 		ddsPath.append(".dds");
 
-		PlayerCharacter * player = (*g_thePlayer);
+		RE::PlayerCharacter * player = RE::PlayerCharacter::GetSingleton();
 		ExportTintMaskDDS(player, ddsPath.c_str());
 	}
 }
 
 void SKSEUpdateFaceModel::Run()
 {
-	TESForm * form = LookupFormByID(m_formId);
-	Actor * actor = DYNAMIC_CAST(form, TESForm, Actor);
+	RE::TESForm * form = RE::TESForm::LookupByID(m_formId);
+	RE::Actor * actor = form ? form->As<RE::Actor>() : nullptr;
 	if (!actor)
 		return;
 
-	NiNode * rootFaceGen = actor->GetFaceGenNiNode();
-	UpdateModelFace(rootFaceGen);
+	RE::NiNode * rootFaceGen = actor->GetFaceNode();
+	SKEE::UpdateModelFace(rootFaceGen);
 }
 
-SKSEUpdateFaceModel::SKSEUpdateFaceModel(Actor * actor)
+SKSEUpdateFaceModel::SKSEUpdateFaceModel(RE::Actor * actor)
 {
 	m_formId = actor->formID;
 }
 
+// NifStreamWrapper - wraps a stack-allocated RE::NiStream using the game's real
+// ctor/dtor (SKEE::NiStreamCtor / SKEE::NiStreamDtor), matching the legacy hack.
 NifStreamWrapper::NifStreamWrapper()
 {
-	CALL_MEMBER_FN(reinterpret_cast<NiStream*>(mem), ctor)();
+	std::memset(mem, 0, sizeof(mem));
+	SKEE::NiStreamCtor(reinterpret_cast<RE::NiStream*>(mem));
 }
 
 NifStreamWrapper::~NifStreamWrapper()
 {
-	CALL_MEMBER_FN(reinterpret_cast<NiStream*>(mem), dtor)();
+	SKEE::NiStreamDtor(reinterpret_cast<RE::NiStream*>(mem));
 }
 
-bool NifStreamWrapper::LoadStream(NiBinaryStream* stream)
+bool NifStreamWrapper::LoadStream(RE::NiBinaryStream* stream)
 {
-	return reinterpret_cast<NiStream*>(mem)->LoadStream(stream);
+	return reinterpret_cast<RE::NiStream*>(mem)->Load1(stream);
 }
 
-bool NifStreamWrapper::VisitObjects(std::function<bool(NiObject*)> functor)
+bool NifStreamWrapper::VisitObjects(std::function<bool(RE::NiObject*)> functor)
 {
-	NiStream* stream = reinterpret_cast<NiStream*>(mem);
-	for (UInt32 i = 0; i < stream->m_rootObjects.m_emptyRunStart; ++i)
+	auto* stream = reinterpret_cast<RE::NiStream*>(mem);
+	for (std::uint32_t i = 0; i < stream->topObjects.size(); ++i)
 	{
-		if(stream->m_rootObjects.m_data[i] && functor(stream->m_rootObjects.m_data[i]))
+		if (stream->topObjects[i].get() && functor(stream->topObjects[i].get()))
 			return true;
 	}
-	
 	return false;
 }
 
-NiExtraData* NifUtils::GetExtraData(NiObjectNET* object, BSFixedString name)
-{
-	auto item = object->GetExtraData(name);
-
-	// Do exhaustive search instead
-	if (!item)
-	{
-		for (UInt32 i = 0; i < object->m_extraDataLen; ++i)
-		{
-			if (object->m_extraData[i] && object->m_extraData[i]->m_pcName == name.data)
-			{
-				return object->m_extraData[i];
-			}
-		}
-	}
-
-	return item;
-}

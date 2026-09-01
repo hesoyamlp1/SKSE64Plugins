@@ -1,24 +1,21 @@
 #include "AttachmentInterface.h"
+#include "SKEETasks.h"
 #include "BodyMorphInterface.h"
 #include "OverrideInterface.h"
 
-#include "skse64/GameReferences.h"
-#include "skse64/GameStreams.h"
-#include "skse64/GameObjects.h"
-#include "skse64/GameRTTI.h"
 
-#include "skse64/NiNodes.h"
-#include "skse64/NiGeometry.h"
+#include "RE/N/NiGeometry.h"
 
 #include "NifUtils.h"
+#include <cstdint>
 
-extern SKSETaskInterface* g_task;
+extern const SKSE::TaskInterface* g_task;
 extern AttachmentInterface	g_attachmentInterface;
 extern BodyMorphInterface	g_bodyMorphInterface;
 extern OverrideInterface	g_overrideInterface;
 const char* AttachmentInterface::ATTACHMENT_HOLDER = "NiAttachments [NiOA]";
 
-SKSEAttachSkinnedMesh::SKSEAttachSkinnedMesh(TESObjectREFR* ref, const BSFixedString& nifPath, const BSFixedString& name, bool firstPerson, bool replace, const std::vector<BSFixedString>& filter)
+SKSEAttachSkinnedMesh::SKSEAttachSkinnedMesh(RE::TESObjectREFR* ref, const RE::BSFixedString& nifPath, const RE::BSFixedString& name, bool firstPerson, bool replace, const std::vector<RE::BSFixedString>& filter)
 	: m_formId(ref->formID)
 	, m_nifPath(nifPath)
 	, m_name(name)
@@ -31,19 +28,19 @@ SKSEAttachSkinnedMesh::SKSEAttachSkinnedMesh(TESObjectREFR* ref, const BSFixedSt
 
 void SKSEDetachSkinnedMesh::Run()
 {
-	TESForm* form = LookupFormByID(m_formId);
+	RE::TESForm* form = RE::TESForm::LookupByID(m_formId);
 	if (!form) {
 		return;
 	}
 
-	if (form->formType != Character::kTypeID && form->formType != TESObjectREFR::kTypeID) {
+	if (form->IsNot(RE::FormType::ActorCharacter) && form->IsNot(RE::FormType::Reference)) {
 		return;
 	}
 
-	g_attachmentInterface.DetachMesh(static_cast<TESObjectREFR*>(form), m_name.c_str(), m_firstPerson);
+	g_attachmentInterface.DetachMesh(static_cast<RE::TESObjectREFR*>(form), m_name.c_str(), m_firstPerson);
 }
 
-SKSEDetachSkinnedMesh::SKSEDetachSkinnedMesh(TESObjectREFR* ref, const BSFixedString& name, bool firstPerson)
+SKSEDetachSkinnedMesh::SKSEDetachSkinnedMesh(RE::TESObjectREFR* ref, const RE::BSFixedString& name, bool firstPerson)
 	: m_formId(ref->formID)
 	, m_name(name)
 	, m_firstPerson(firstPerson)
@@ -51,20 +48,19 @@ SKSEDetachSkinnedMesh::SKSEDetachSkinnedMesh(TESObjectREFR* ref, const BSFixedSt
 
 }
 
-
 void SKSEAttachSkinnedMesh::Run()
 {
-	TESForm* form = LookupFormByID(m_formId);
+	RE::TESForm* form = RE::TESForm::LookupByID(m_formId);
 	if (!form) {
 		return;
 	}
 
-	if (form->formType != Character::kTypeID && form->formType != TESObjectREFR::kTypeID) {
+	if (form->IsNot(RE::FormType::ActorCharacter) && form->IsNot(RE::FormType::Reference)) {
 		return;
 	}
 
-	TESObjectREFR* reference = static_cast<TESObjectREFR*>(form);
-	NiAVObject* outRoot = nullptr;
+	RE::TESObjectREFR* reference = static_cast<RE::TESObjectREFR*>(form);
+	RE::NiAVObject* outRoot = nullptr;
 
 	const char** filter = nullptr;
 	if (m_filter.size())
@@ -76,7 +72,7 @@ void SKSEAttachSkinnedMesh::Run()
 		}
 	}
 
-	if (g_attachmentInterface.AttachMesh(reference, m_nifPath.c_str(), m_name.c_str(), m_firstPerson, m_replace, filter, m_filter.size(), outRoot, nullptr, 0) && form->formType == Character::kTypeID)
+	if (g_attachmentInterface.AttachMesh(reference, m_nifPath.c_str(), m_name.c_str(), m_firstPerson, m_replace, filter, m_filter.size(), outRoot, nullptr, 0) && form->IsActor())
 	{
 		g_bodyMorphInterface.ApplyVertexDiff(reference, outRoot);
 		g_overrideInterface.Impl_ApplyNodeOverrides(reference, outRoot, true);
@@ -90,102 +86,100 @@ void SKSEAttachSkinnedMesh::Run()
 
 void SKSEDetachAllSkinnedMeshes::Run()
 {
-	TESForm* form = LookupFormByID(m_formId);
+	RE::TESForm* form = RE::TESForm::LookupByID(m_formId);
 	if (!form) {
 		return;
 	}
 
-	if (form->formType != Character::kTypeID && form->formType != TESObjectREFR::kTypeID) {
+	if (form->IsNot(RE::FormType::ActorCharacter) && form->IsNot(RE::FormType::Reference)) {
 		return;
 	}
 
-	TESObjectREFR* reference = static_cast<TESObjectREFR*>(form);
+	RE::TESObjectREFR* reference = static_cast<RE::TESObjectREFR*>(form);
 
-	VisitSkeletalRoots(reference, [&](NiNode* rootNode, bool isFirstPerson)
+	VisitSkeletalRoots(reference, [&](RE::NiNode* rootNode, bool isFirstPerson)
 	{
-		BSFixedString parentName("NPC Root [Root]");
-		NiAVObject* destination = rootNode->GetObjectByName(&parentName.data);
+		RE::BSFixedString parentName("NPC Root [Root]");
+		RE::NiAVObject* destination = rootNode->GetObjectByName(parentName);
 		if (destination) {
-			NiNode* destinationNode = destination->GetAsNiNode();
+			RE::NiNode* destinationNode = destination ? destination->AsNode() : nullptr;
 			if (destinationNode) {
-				BSFixedString holderName(AttachmentInterface::ATTACHMENT_HOLDER);
-				auto holderNode = destinationNode->GetObjectByName(&holderName.data);
+				RE::BSFixedString holderName(AttachmentInterface::ATTACHMENT_HOLDER);
+				auto holderNode = destinationNode->GetObjectByName(holderName);
 				if (holderNode) {
-					destinationNode->RemoveChild(holderNode);
+					destinationNode->DetachChild(holderNode);
 				}
 			}
 		}
 	});
 }
 
-
 void AttachmentInterface::Revert()
 {
-	if (g_task)
+	if (auto* task = SKSE::GetTaskInterface())
 	{
 		m_attachedLock.lock();
 		for (auto& formId : m_attached)
 		{
-			g_task->AddTask(new SKSEDetachAllSkinnedMeshes(formId));
+			SKEE_AddTask(task, new SKSEDetachAllSkinnedMeshes(formId));
 		}
 		m_attachedLock.unlock();
 	}
 }
 
-bool AttachmentInterface::AttachMesh(TESObjectREFR* ref, const char* path, const char* nodeName, bool firstPerson, bool replace, const char** filter, skee_u32 filterSize, NiAVObject*& out, char* errBuf, skee_u64 errBufLen)
+bool AttachmentInterface::AttachMesh(RE::TESObjectREFR* ref, const char* path, const char* nodeName, bool firstPerson, bool replace, const char** filter, skee_u32 filterSize, RE::NiAVObject*& out, char* errBuf, skee_u64 errBufLen)
 {
-	NiNode* root = ref->GetNiRootNode(firstPerson ? 1 : 0);
+	RE::NiNode* root = ref->Get3D(firstPerson) ? ref->Get3D(firstPerson)->AsNode() : nullptr;
 	if (!root) {
 		return false;
 	}
 
 	float weight = 100.0;
-	TESNPC* npc = DYNAMIC_CAST(ref->baseForm, TESForm, TESNPC);
-	if (npc && npc->nextTemplate) {
-		TESNPC* temp = npc->GetRootTemplate();
-		if (temp) {
-			weight = temp->weight;
-		}
+	RE::TESNPC* npc = ref->GetBaseObject() ? ref->GetBaseObject()->As<RE::TESNPC>() : nullptr;
+	if (npc && npc->faceNPC) {
+		// Legacy GetRootTemplate(): follow the face chain to its root for the effective weight.
+		// GetRootFaceNPC() cannot return null here (it starts at `this`).
+		weight = npc->GetRootFaceNPC()->weight;
+	} else {
+		weight = ref->GetWeight();
 	}
-	else
-		weight = CALL_MEMBER_FN(ref, GetWeight)();
 	weight /= 100.0;
 
 	DirectX::XMVECTOR weightScale = DirectX::XMVectorReplicate(weight);
 
-	BSFixedString parentName("NPC Root [Root]");
-	NiAVObject* rootDestination = root->GetObjectByName(&parentName.data);
+	RE::BSFixedString parentName("NPC Root [Root]");
+	RE::NiAVObject* rootDestination = root->GetObjectByName(parentName);
 	if (!rootDestination) {
 		return false;
 	}
 
-	NiNode* rootNode = rootDestination->GetAsNiNode();
+	RE::NiNode* rootNode = rootDestination ? rootDestination->AsNode() : nullptr;
 	if (!rootNode) {
 		return false;
 	}
 
 	bool createdHolder = false;
-	BSFixedString holderName(ATTACHMENT_HOLDER);
+	RE::BSFixedString holderName(ATTACHMENT_HOLDER);
 
-	NiPointer<NiAVObject> holder = rootDestination->GetObjectByName(&holderName.data);
+	RE::NiPointer<RE::NiAVObject> holder(rootDestination->GetObjectByName(holderName));
 	if (!holder)
 	{
-		holder = NiNode::Create(0);
-		holder->m_name = holderName.data;
+		holder = RE::NiPointer<RE::NiAVObject>(RE::NiNode::Create(0));
+		holder->name = holderName;
 		createdHolder = true;
 	}
 
-	NiNode* holderNode = holder->GetAsNiNode();
+	RE::NiNode* holderNode = holder.get() ? holder.get()->AsNode() : nullptr;
 	if (!holderNode) {
 		return false;
 	}
 
-	BSFixedString targetNodeName(nodeName);
-	NiAVObject* target = holderNode->GetObjectByName(&targetNodeName.data);
+	RE::BSFixedString targetNodeName(nodeName);
+	RE::NiAVObject* target = holderNode->GetObjectByName(targetNodeName);
 	if (target) {
 		if (replace)
 		{
-			holderNode->RemoveChild(target);
+			holderNode->DetachChild(target);
 		}
 		else
 		{
@@ -194,10 +188,10 @@ bool AttachmentInterface::AttachMesh(TESObjectREFR* ref, const char* path, const
 		}
 	}
 	
-	BSFixedString nifPath(path);
+	RE::BSFixedString nifPath(path);
 	NifStreamWrapper niStream;
-	BSResourceNiBinaryStream binaryStream(nifPath.data);
-	if (!binaryStream.IsValid()) {
+	RE::BSResourceNiBinaryStream binaryStream(nifPath.c_str());
+	if (!binaryStream.good()) {
 		std::snprintf(errBuf, errBufLen, "No file exists at (%s)\n", path);
 		return false;
 	}
@@ -210,19 +204,20 @@ bool AttachmentInterface::AttachMesh(TESObjectREFR* ref, const char* path, const
 	// Try searching for the _0 version of the mesh
 	NifStreamWrapper lowStream;
 	std::string lowPath(path);
-	NiNode* lowRoot = nullptr;
+	RE::NiNode* lowRoot = nullptr;
 	size_t foundWeight = lowPath.find("_1");
 	if (foundWeight != std::string::npos)
 	{
 		lowPath[foundWeight + 1] = '0';
-		BSFixedString lowFile(lowPath.c_str());
+		RE::BSFixedString lowFile(lowPath.c_str());
 
-		BSResourceNiBinaryStream lowBinaryStream(lowFile.data);
-		if (lowBinaryStream.IsValid() && lowStream.LoadStream(&lowBinaryStream)) {
-			lowStream.VisitObjects([&lowRoot](NiObject* object)
+		RE::BSResourceNiBinaryStream lowBinaryStream(lowFile.c_str());
+		if (lowBinaryStream.good() && lowStream.LoadStream(&lowBinaryStream)) {
+			lowStream.VisitObjects([&lowRoot](RE::NiObject* object)
 			{
-				if (object->GetAsNiNode()) {
-					lowRoot = object->GetAsNiNode();
+				auto* node = object ? object->AsNode() : nullptr;
+				if (node) {
+					lowRoot = node;
 					return true;
 				}
 
@@ -231,17 +226,18 @@ bool AttachmentInterface::AttachMesh(TESObjectREFR* ref, const char* path, const
 		}
 	}
 
-	std::unordered_set<BSFixedString> filteredNames;
-	for (UInt32 i = 0; i < filterSize; ++i)
+	std::unordered_set<RE::BSFixedString> filteredNames;
+	for (std::uint32_t i = 0; i < filterSize; ++i)
 	{
 		filteredNames.emplace(filter[i]);
 	}
 
-	NiNode* loadedRoot = nullptr;
-	niStream.VisitObjects([&loadedRoot](NiObject* object)
+	RE::NiNode* loadedRoot = nullptr;
+	niStream.VisitObjects([&loadedRoot](RE::NiObject* object)
 	{
-		if (object->GetAsNiNode()) {
-			loadedRoot = object->GetAsNiNode();
+		auto* node = object ? object->AsNode() : nullptr;
+		if (node) {
+			loadedRoot = node;
 			return true;
 		}
 
@@ -252,48 +248,48 @@ bool AttachmentInterface::AttachMesh(TESObjectREFR* ref, const char* path, const
 		return false;
 	}
 
-	NiPointer<NiNode> targetRoot = NiNode::Create(0);
-	targetRoot->m_name = targetNodeName.data;
+	RE::NiPointer<RE::NiNode> targetRoot(RE::NiNode::Create(0));
+	targetRoot->name = targetNodeName;
 
 	int c = 0;
-	if (VisitGeometry(loadedRoot, [&](BSGeometry* geometry)
+	if (VisitGeometry(loadedRoot, [&](RE::BSGeometry* geometry)
 	{
-		if (filteredNames.count(geometry->m_name))
+		if (filteredNames.count(geometry->name))
 		{
 			return false;
 		}
 
 		targetRoot->AttachChild(geometry, true);
 
-		auto skinInstance = geometry->m_spSkinInstance;
+		auto skinInstance = geometry->skinInstance;
 		if (skinInstance) {
-			auto skinData = skinInstance->m_spSkinData;
+			auto skinData = skinInstance->skinData;
 			if (!skinData) {
-				c += std::snprintf(errBuf + c, std::max(0LL, static_cast<SInt64>(errBufLen) - c), "Error attaching skinned mesh to ref (%08X) nif (%s) shape (%s) has no skin data\n", ref->formID, path, geometry->m_name);
+				c += std::snprintf(errBuf + c, std::max(0LL, static_cast<std::int64_t>(errBufLen) - c), "Error attaching skinned mesh to ref (%08X) nif (%s) shape (%s) has no skin data\n", ref->formID, path, geometry->name.c_str());
 				return true;
 			}
 
-			auto skinPartition = skinInstance->m_spSkinPartition;
+			auto skinPartition = skinInstance->skinPartition;
 			if (skinPartition && lowRoot)
 			{
-				NiAVObject* weightedGeom = lowRoot->GetObjectByName(&geometry->m_name);
+				RE::NiAVObject* weightedGeom = lowRoot->GetObjectByName(geometry->name);
 				if (weightedGeom) {
-					BSGeometry* lowGeometry = weightedGeom->GetAsBSGeometry();
+					RE::BSGeometry* lowGeometry = weightedGeom ? weightedGeom->AsGeometry() : nullptr;
 					if (lowGeometry) {
-						auto lowSkinInstance = lowGeometry->m_spSkinInstance;
+						auto lowSkinInstance = lowGeometry->skinInstance;
 						if (lowSkinInstance) {
-							auto lowSkinPartition = lowSkinInstance->m_spSkinPartition;
+							auto lowSkinPartition = lowSkinInstance->skinPartition;
 							if (lowSkinPartition) {
-								UInt32 hiVerts = skinPartition->vertexCount;
-								UInt32 loVerts = lowSkinPartition->vertexCount;
+								std::uint32_t hiVerts = skinPartition->vertexCount;
+								std::uint32_t loVerts = lowSkinPartition->vertexCount;
 
-								if (geometry->vertexDesc == lowGeometry->vertexDesc && hiVerts == loVerts) {
-									bool hasVertices = (NiSkinPartition::GetVertexFlags(geometry->vertexDesc) & VertexFlags::VF_VERTEX) == VertexFlags::VF_VERTEX;
+								if (geometry->vertexDesc.GetFlags() == lowGeometry->vertexDesc.GetFlags() && geometry->vertexDesc.GetSize() == lowGeometry->vertexDesc.GetSize() && hiVerts == loVerts) {
+									bool hasVertices = geometry->vertexDesc.HasFlag(RE::BSGraphics::Vertex::VF_VERTEX);
 									if (hasVertices) {
-										UInt32 vertexSize = NiSkinPartition::GetVertexSize(geometry->vertexDesc);
-										UInt8* hiBlock = reinterpret_cast<UInt8*>(skinPartition->m_pkPartitions[0].shapeData->m_RawVertexData);
-										UInt8* loBlock = reinterpret_cast<UInt8*>(lowSkinPartition->m_pkPartitions[0].shapeData->m_RawVertexData);
-										for (UInt32 i = 0; i < hiVerts; ++i)
+										std::uint32_t vertexSize = geometry->vertexDesc.GetSize();
+										std::uint8_t* hiBlock = reinterpret_cast<std::uint8_t*>(skinPartition->partitions[0].buffData->rawVertexData);
+										std::uint8_t* loBlock = reinterpret_cast<std::uint8_t*>(lowSkinPartition->partitions[0].buffData->rawVertexData);
+										for (std::uint32_t i = 0; i < hiVerts; ++i)
 										{
 											DirectX::XMVECTOR hiVertex = *reinterpret_cast<DirectX::XMVECTOR*>(&hiBlock[i * vertexSize]);
 											DirectX::XMVECTOR loVertex = *reinterpret_cast<DirectX::XMVECTOR*>(&loBlock[i * vertexSize]);
@@ -301,7 +297,7 @@ bool AttachmentInterface::AttachMesh(TESObjectREFR* ref, const char* path, const
 										}
 
 										// Update the resources and propagate to duplicate partitions
-										NIOVTaskUpdateSkinPartition update(skinInstance, skinPartition);
+										NIOVTaskUpdateSkinPartition update(skinInstance.get(), skinPartition.get());
 										update.Run();
 									}
 								}
@@ -311,23 +307,23 @@ bool AttachmentInterface::AttachMesh(TESObjectREFR* ref, const char* path, const
 				}
 			}
 
-			for (UInt32 i = 0; i < skinData->m_uiBones; ++i)
+			for (std::uint32_t i = 0; i < skinData->GetBoneCount(); ++i)
 			{
-				auto bone = skinInstance->m_ppkBones[i];
+				auto bone = skinInstance->bones[i];
 				if (!bone) {
-					c += std::snprintf(errBuf + c, std::max(0LL, static_cast<SInt64>(errBufLen) - c), "Error attaching skinned mesh to ref (%08X) nif (%s) shape (%s) has invalid bone at index (%d)\n", ref->formID, path, geometry->m_name, i);
+					c += std::snprintf(errBuf + c, std::max(0LL, static_cast<std::int64_t>(errBufLen) - c), "Error attaching skinned mesh to ref (%08X) nif (%s) shape (%s) has invalid bone at index (%d)\n", ref->formID, path, geometry->name.c_str(), i);
 					return true;
 				}
 
-				auto boneNode = root->GetObjectByName(&bone->m_name);
+				auto boneNode = root->GetObjectByName(bone->name);
 				if (!boneNode) {
-					c += std::snprintf(errBuf + c, std::max(0LL, static_cast<SInt64>(errBufLen) - c), "Error attaching skinned mesh to ref (%08X) nif (%s) shape (%s) missing bone (%s) on ref root skeleton\n", ref->formID, path, geometry->m_name, bone->m_name);
+					c += std::snprintf(errBuf + c, std::max(0LL, static_cast<std::int64_t>(errBufLen) - c), "Error attaching skinned mesh to ref (%08X) nif (%s) shape (%s) missing bone (%s) on ref root skeleton\n", ref->formID, path, geometry->name.c_str(), bone->name.c_str());
 					return true;
 				}
 
-				skinInstance->m_ppkBones[i] = boneNode;
-				skinInstance->m_worldTransforms[i] = &boneNode->m_worldTransform;
-				skinInstance->m_pkRootParent = root;
+				skinInstance->bones[i] = boneNode;
+				skinInstance->boneWorldTransforms[i] = &boneNode->world;
+				skinInstance->rootParent = root;
 			}
 		}
 
@@ -337,7 +333,7 @@ bool AttachmentInterface::AttachMesh(TESObjectREFR* ref, const char* path, const
 		return false;
 	}
 
-	holderNode->AttachChild(targetRoot, false);
+	holderNode->AttachChild(targetRoot.get(), false);
 	if (createdHolder)
 	{
 		rootNode->AttachChild(holderNode, false);
@@ -347,42 +343,41 @@ bool AttachmentInterface::AttachMesh(TESObjectREFR* ref, const char* path, const
 	m_attached.emplace(ref->formID);
 	m_attachedLock.unlock();
 
-	out = targetRoot;
+	out = targetRoot.get();
 	return true;
 }
 
-bool AttachmentInterface::DetachMesh(TESObjectREFR* ref, const char* nodeName, bool firstPerson)
+bool AttachmentInterface::DetachMesh(RE::TESObjectREFR* ref, const char* nodeName, bool firstPerson)
 {
-	NiNode* root = ref->GetNiRootNode(firstPerson ? 1 : 0);
+	RE::NiNode* root = ref->Get3D(firstPerson) ? ref->Get3D(firstPerson)->AsNode() : nullptr;
 	if (!root) {
 		return false;
 	}
 
-	BSFixedString parentName("NPC Root [Root]");
-	NiAVObject* destination = root->GetObjectByName(&parentName.data);
+	RE::BSFixedString parentName("NPC Root [Root]");
+	RE::NiAVObject* destination = root->GetObjectByName(parentName);
 	if (!destination) {
 		return false;
 	}
 
-	BSFixedString holderName(ATTACHMENT_HOLDER);
-	destination = destination->GetObjectByName(&holderName.data);
+	RE::BSFixedString holderName(ATTACHMENT_HOLDER);
+	destination = destination->GetObjectByName(holderName);
 	if (!destination) {
 		return false;
 	}
 
-	NiNode* destinationNode = destination->GetAsNiNode();
+	RE::NiNode* destinationNode = destination ? destination->AsNode() : nullptr;
 	if (!destinationNode) {
 		return false;
 	}
 
-	BSFixedString targetNodeName(nodeName);
-	NiAVObject* target = destinationNode->GetObjectByName(&targetNodeName.data);
+	RE::BSFixedString targetNodeName(nodeName);
+	RE::NiAVObject* target = destinationNode->GetObjectByName(targetNodeName);
 	if (!target) {
 		return false;
 	}
 
-	destinationNode->RemoveChild(target);
+	destinationNode->DetachChild(target);
 	return true;
 }
-
 

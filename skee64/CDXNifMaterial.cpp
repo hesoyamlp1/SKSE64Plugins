@@ -1,12 +1,14 @@
 #include "CDXNifMaterial.h"
-#include <d3d11_3.h>
+#include "REX/W32/D3D11_3.h"
 
-void CDXNifMaterial::SetNiTexture(int index, NiTexture* texture)
+
+
+void CDXNifMaterial::SetNiTexture(int index, RE::NiTexture* texture)
 {
-	m_pTextures[index] = texture;
+	m_pTextures[index].reset(texture);
 
-	auto rendererData = m_pTextures[index]->rendererData;
-	if (rendererData) {
-		SetTexture(index, rendererData->resourceView);
+	auto srcTex = static_cast<RE::NiSourceTexture*>(m_pTextures[index].get());
+	if (srcTex && srcTex->rendererTexture) {
+		SetTexture(index, REX::W32::ComPtr<REX::W32::ID3D11ShaderResourceView>(reinterpret_cast<REX::W32::ID3D11ShaderResourceView*>(srcTex->rendererTexture->resourceView)));
 	}
 }

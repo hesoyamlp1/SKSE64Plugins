@@ -1,28 +1,29 @@
 #pragma once
 
-#include "skse64/GameTypes.h"
-#include "skse64/NiTypes.h"
-
 #include "StringTable.h"
 
-extern StringTable g_stringTable;
+#include <RE/B/BSFixedString.h>
+#include <RE/N/NiColor.h>
+#include <RE/T/TESForm.h>
 
-struct SKSESerializationInterface;
-class BGSTextureSet;
-
+#include <cstdint>
+namespace RE
+{
+	class RE::BGSTextureSet;
+}
 class OverrideVariant
 {
 public:
 	OverrideVariant() : type(kType_None), index(-1) { };
-	~OverrideVariant() { };
+	~OverrideVariant() = default;
 
-	bool operator<(const OverrideVariant & rhs) const	{ return key < rhs.key || (key == rhs.key && index < rhs.index); }
-	bool operator==(const OverrideVariant & rhs) const	{ return key == rhs.key && index == rhs.index; }
+	bool operator<(const OverrideVariant& rhs) const { return key < rhs.key || (key == rhs.key && index < rhs.index); }
+	bool operator==(const OverrideVariant& rhs) const { return key == rhs.key && index == rhs.index; }
 
-	void Save(SKSESerializationInterface * intfc, UInt32 kVersion);
-	bool Load(SKSESerializationInterface * intfc, UInt32 kVersion, const StringIdMap & stringTable);
+	void Save(SKSE::SerializationInterface* intfc, std::uint32_t kVersion);
+	bool Load(SKSE::SerializationInterface* intfc, std::uint32_t kVersion, const StringIdMap& stringTable);
 
-	UInt16 key;
+	std::uint16_t key;
 	enum
 	{
 		kKeyMax = 0xFFFF,
@@ -68,19 +69,19 @@ public:
 		kType_Bool = 5
 	};
 
-	UInt8	type;
-	SInt8	index;
+	std::uint8_t	type;
+	std::int8_t	index;
 	union
 	{
-		SInt32			i;
-		UInt32			u;
+		std::int32_t			i;
+		std::uint32_t			u;
 		float			f;
 		bool			b;
-		void			* p;
+		void*			p;
 	} data;
-	StringTableItem		str;
+	StringTableItem		str = nullptr;
 
-	void	SetNone(void)
+	void SetNone(void)
 	{
 		type = kType_None;
 		index = -1;
@@ -88,7 +89,7 @@ public:
 		str = nullptr;
 	}
 
-	void	SetInt(UInt16 paramKey, SInt8 controllerIndex, SInt32 i)
+	void SetInt(std::uint16_t paramKey, std::int8_t controllerIndex, std::int32_t i)
 	{
 		key = paramKey;
 		type = kType_Int;
@@ -97,7 +98,7 @@ public:
 		str = nullptr;
 	}
 
-	void	SetFloat(UInt16 paramKey, SInt8 controllerIndex, float f)
+	void SetFloat(std::uint16_t paramKey, std::int8_t controllerIndex, float f)
 	{
 		key = paramKey;
 		type = kType_Float;
@@ -106,7 +107,7 @@ public:
 		str = nullptr;
 	}
 
-	void	SetBool(UInt16 paramKey, SInt8 controllerIndex, bool b)
+	void SetBool(std::uint16_t paramKey, std::int8_t controllerIndex, bool b)
 	{
 		key = paramKey;
 		type = kType_Bool;
@@ -115,7 +116,7 @@ public:
 		str = nullptr;
 	}
 
-	void	SetString(UInt16 paramKey, SInt8 controllerIndex, SKEEFixedString string)
+	void SetString(std::uint16_t paramKey, std::int8_t controllerIndex, const SKEEFixedString& string)
 	{
 		key = paramKey;
 		type = kType_String;
@@ -124,25 +125,25 @@ public:
 		str = g_stringTable.GetString(string);
 	}
 
-	void	SetColor(UInt16 paramKey, SInt8 controllerIndex, NiColor color)
+	void SetColor(std::uint16_t paramKey, std::int8_t controllerIndex, const RE::NiColor& color)
 	{
 		key = paramKey;
 		type = kType_Int;
 		index = controllerIndex;
-		data.u = (UInt8)(color.r * 255) << 16 | (UInt8)(color.g * 255) << 8 | (UInt8)(color.b * 255);
+		data.u = (static_cast<std::uint8_t>(color.red * 255) << 16) | (static_cast<std::uint8_t>(color.green * 255) << 8) | static_cast<std::uint8_t>(color.blue * 255);
 		str = nullptr;
 	}
 
-	void	SetColorA(UInt16 paramKey, SInt8 controllerIndex, NiColorA color)
+	void SetColorA(std::uint16_t paramKey, std::int8_t controllerIndex, const RE::NiColorA& color)
 	{
 		key = paramKey;
 		type = kType_Int;
 		index = controllerIndex;
-		data.u = (UInt8)(color.a * 255) << 24 | (UInt8)(color.r * 255) << 16 | (UInt8)(color.g * 255) << 8 | (UInt8)(color.b * 255);
+		data.u = (static_cast<std::uint8_t>(color.alpha * 255) << 24) | (static_cast<std::uint8_t>(color.red * 255) << 16) | (static_cast<std::uint8_t>(color.green * 255) << 8) | static_cast<std::uint8_t>(color.blue * 255);
 		str = nullptr;
 	}
 
-	void SetIdentifier(UInt16 paramKey, SInt8 controllerIndex, void * ptr)
+	void SetIdentifier(std::uint16_t paramKey, std::int8_t controllerIndex, void* ptr)
 	{
 		key = paramKey;
 		type = kType_Identifier;
@@ -151,31 +152,31 @@ public:
 		str = nullptr;
 	}
 
-	static bool IsIndexValid(UInt16 key);
+	static bool IsIndexValid(std::uint16_t key);
 };
 
 template <typename T>
-void UnpackValue(T * dst, OverrideVariant * src);
+void UnpackValue(T* dst, OverrideVariant* src);
 
-template <> void UnpackValue <float>(float * dst, OverrideVariant * src);
-template <> void UnpackValue <UInt32>(UInt32 * dst, OverrideVariant * src);
-template <> void UnpackValue <SInt32>(SInt32 * dst, OverrideVariant * src);
-template <> void UnpackValue <bool>(bool * dst, OverrideVariant * src);
-template <> void UnpackValue <SKEEFixedString>(SKEEFixedString * dst, OverrideVariant * src);
-template <> void UnpackValue <BSFixedString>(BSFixedString * dst, OverrideVariant * src);
-template <> void UnpackValue <NiColor>(NiColor * dst, OverrideVariant * src);
-template <> void UnpackValue <NiColorA>(NiColorA * dst, OverrideVariant * src);
-template <> void UnpackValue <BGSTextureSet*>(BGSTextureSet ** dst, OverrideVariant * src);
+template <> void UnpackValue<float>(float* dst, OverrideVariant* src);
+template <> void UnpackValue<std::uint32_t>(std::uint32_t* dst, OverrideVariant* src);
+template <> void UnpackValue<std::int32_t>(std::int32_t* dst, OverrideVariant* src);
+template <> void UnpackValue<bool>(bool* dst, OverrideVariant* src);
+template <> void UnpackValue<SKEEFixedString>(SKEEFixedString* dst, OverrideVariant* src);
+template <> void UnpackValue<RE::BSFixedString>(RE::BSFixedString* dst, OverrideVariant* src);
+template <> void UnpackValue<RE::NiColor>(RE::NiColor* dst, OverrideVariant* src);
+template <> void UnpackValue<RE::NiColorA>(RE::NiColorA* dst, OverrideVariant* src);
+template <> void UnpackValue<RE::BGSTextureSet*>(RE::BGSTextureSet** dst, OverrideVariant* src);
 
 template <typename T>
-void PackValue(OverrideVariant * dst, UInt16 key, UInt8 index, T * src);
+void PackValue(OverrideVariant* dst, std::uint16_t key, std::uint8_t index, T* src);
 
-template <> void PackValue <float>(OverrideVariant * dst, UInt16 key, UInt8 index, float * src);
-template <> void PackValue <UInt32>(OverrideVariant * dst, UInt16 key, UInt8 index, UInt32 * src);
-template <> void PackValue <SInt32>(OverrideVariant * dst, UInt16 key, UInt8 index, SInt32 * src);
-template <> void PackValue <bool>(OverrideVariant * dst, UInt16 key, UInt8 index, bool * src);
-template <> void PackValue <SKEEFixedString>(OverrideVariant * dst, UInt16 key, UInt8 index, SKEEFixedString * src);
-template <> void PackValue <BSFixedString>(OverrideVariant * dst, UInt16 key, UInt8 index, BSFixedString * src);
-template <> void PackValue <NiColor>(OverrideVariant * dst, UInt16 key, UInt8 index, NiColor * src);
-template <> void PackValue <NiColorA>(OverrideVariant * dst, UInt16 key, UInt8 index, NiColorA * src);
-template <> void PackValue <BGSTextureSet*>(OverrideVariant * dst, UInt16 key, UInt8 index, BGSTextureSet ** src);
+template <> void PackValue<float>(OverrideVariant* dst, std::uint16_t key, std::uint8_t index, float* src);
+template <> void PackValue<std::uint32_t>(OverrideVariant* dst, std::uint16_t key, std::uint8_t index, std::uint32_t* src);
+template <> void PackValue<std::int32_t>(OverrideVariant* dst, std::uint16_t key, std::uint8_t index, std::int32_t* src);
+template <> void PackValue<bool>(OverrideVariant* dst, std::uint16_t key, std::uint8_t index, bool* src);
+template <> void PackValue<SKEEFixedString>(OverrideVariant* dst, std::uint16_t key, std::uint8_t index, SKEEFixedString* src);
+template <> void PackValue<RE::BSFixedString>(OverrideVariant* dst, std::uint16_t key, std::uint8_t index, RE::BSFixedString* src);
+template <> void PackValue<RE::NiColor>(OverrideVariant* dst, std::uint16_t key, std::uint8_t index, RE::NiColor* src);
+template <> void PackValue<RE::NiColorA>(OverrideVariant* dst, std::uint16_t key, std::uint8_t index, RE::NiColorA* src);
+template <> void PackValue<RE::BGSTextureSet*>(OverrideVariant* dst, std::uint16_t key, std::uint8_t index, RE::BGSTextureSet** src);

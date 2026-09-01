@@ -1,24 +1,22 @@
 #include "OverrideInterface.h"
-#include "skse64/PluginAPI.h"
-#include "skse64/PapyrusVM.h"
+#include "SKEETasks.h"
 
 #include "ShaderUtilities.h"
 #include "OverrideVariant.h"
 #include "StringTable.h"
 #include "NifUtils.h"
+#include "NiRTTIUtils.h"
 #include "Utilities.h"
 #include "ActorUpdateManager.h"
 
-#include "skse64/GameReferences.h"
-#include "skse64/GameObjects.h"
-#include "skse64/GameRTTI.h"
-#include "skse64/GameTypes.h"
 
-#include "skse64/NiGeometry.h"
+#include "RE/N/NiGeometry.h"
+#include <cstdint>
+
 
 extern ActorUpdateManager	g_actorUpdateManager;
 extern OverrideInterface	g_overrideInterface;
-extern SKSETaskInterface	* g_task;
+extern const SKSE::TaskInterface* g_task;
 extern StringTable			g_stringTable;
 
 skee_u32 OverrideInterface::GetVersion()
@@ -26,7 +24,7 @@ skee_u32 OverrideInterface::GetVersion()
 	return kCurrentPluginVersion;
 }
 
-void OverrideInterface::Impl_AddRawOverride(OverrideHandle handle, bool isFemale, OverrideHandle armorHandle, OverrideHandle addonHandle, BSFixedString nodeName, OverrideVariant & value)
+void OverrideInterface::Impl_AddRawOverride(OverrideHandle handle, bool isFemale, OverrideHandle armorHandle, OverrideHandle addonHandle, RE::BSFixedString nodeName, OverrideVariant & value)
 {
 	armorData.Lock();
 	armorData.m_data[handle][isFemale ? 1 : 0][armorHandle][addonHandle][g_stringTable.GetString(nodeName)].erase(value);
@@ -34,7 +32,7 @@ void OverrideInterface::Impl_AddRawOverride(OverrideHandle handle, bool isFemale
 	armorData.Release();
 }
 
-void OverrideInterface::Impl_AddOverride(TESObjectREFR * refr, bool isFemale, TESObjectARMO * armor, TESObjectARMA * addon, BSFixedString nodeName, OverrideVariant & value)
+void OverrideInterface::Impl_AddOverride(RE::TESObjectREFR * refr, bool isFemale, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::BSFixedString nodeName, OverrideVariant & value)
 {
 	OverrideHandle formId = refr->formID;
 	OverrideHandle armorFormId = armor->formID;
@@ -45,7 +43,7 @@ void OverrideInterface::Impl_AddOverride(TESObjectREFR * refr, bool isFemale, TE
 	armorData.Release();
 }
 
-void OverrideInterface::Impl_AddRawNodeOverride(OverrideHandle handle, bool isFemale, BSFixedString nodeName, OverrideVariant & value)
+void OverrideInterface::Impl_AddRawNodeOverride(OverrideHandle handle, bool isFemale, RE::BSFixedString nodeName, OverrideVariant & value)
 {
 	nodeData.Lock();
 	nodeData.m_data[handle][isFemale ? 1 : 0][g_stringTable.GetString(nodeName)].erase(value);
@@ -53,7 +51,7 @@ void OverrideInterface::Impl_AddRawNodeOverride(OverrideHandle handle, bool isFe
 	nodeData.Release();
 }
 
-void OverrideInterface::Impl_AddNodeOverride(TESObjectREFR * refr, bool isFemale, BSFixedString nodeName, OverrideVariant & value)
+void OverrideInterface::Impl_AddNodeOverride(RE::TESObjectREFR * refr, bool isFemale, RE::BSFixedString nodeName, OverrideVariant & value)
 {
 	OverrideHandle handle = refr->formID;
 	nodeData.Lock();
@@ -62,7 +60,7 @@ void OverrideInterface::Impl_AddNodeOverride(TESObjectREFR * refr, bool isFemale
 	nodeData.Release();
 }
 
-void OverrideInterface::Impl_AddRawWeaponOverride(OverrideHandle handle, bool isFemale, bool firstPerson, OverrideHandle weaponHandle, BSFixedString nodeName, OverrideVariant & value)
+void OverrideInterface::Impl_AddRawWeaponOverride(OverrideHandle handle, bool isFemale, bool firstPerson, OverrideHandle weaponHandle, RE::BSFixedString nodeName, OverrideVariant & value)
 {
 	weaponData.Lock();
 	weaponData.m_data[handle][isFemale ? 1 : 0][firstPerson ? 1 : 0][weaponHandle][g_stringTable.GetString(nodeName)].erase(value);
@@ -70,7 +68,7 @@ void OverrideInterface::Impl_AddRawWeaponOverride(OverrideHandle handle, bool is
 	weaponData.Release();
 }
 
-void OverrideInterface::Impl_AddWeaponOverride(TESObjectREFR * refr, bool isFemale, bool firstPerson, TESObjectWEAP * weapon, BSFixedString nodeName, OverrideVariant & value)
+void OverrideInterface::Impl_AddWeaponOverride(RE::TESObjectREFR * refr, bool isFemale, bool firstPerson, RE::TESObjectWEAP * weapon, RE::BSFixedString nodeName, OverrideVariant & value)
 {
 	OverrideHandle handle = refr->formID;
 	OverrideHandle weaponHandle = weapon->formID;
@@ -80,7 +78,7 @@ void OverrideInterface::Impl_AddWeaponOverride(TESObjectREFR * refr, bool isFema
 	weaponData.Release();
 }
 
-void OverrideInterface::Impl_AddRawSkinOverride(OverrideHandle handle, bool isFemale, bool firstPerson, UInt32 slotMask, OverrideVariant & value)
+void OverrideInterface::Impl_AddRawSkinOverride(OverrideHandle handle, bool isFemale, bool firstPerson, std::uint32_t slotMask, OverrideVariant & value)
 {
 	skinData.Lock();
 	skinData.m_data[handle][isFemale ? 1 : 0][firstPerson ? 1 : 0][slotMask].erase(value);
@@ -88,15 +86,15 @@ void OverrideInterface::Impl_AddRawSkinOverride(OverrideHandle handle, bool isFe
 	skinData.Release();
 }
 
-void OverrideInterface::Impl_AddSkinOverride(TESObjectREFR * refr, bool isFemale, bool firstPerson, UInt32 slotMask, OverrideVariant & value)
+void OverrideInterface::Impl_AddSkinOverride(RE::TESObjectREFR * refr, bool isFemale, bool firstPerson, std::uint32_t slotMask, OverrideVariant & value)
 {
 	Impl_AddRawSkinOverride(refr->formID, isFemale, firstPerson, slotMask, value);
 }
 
-OverrideVariant * OverrideInterface::Impl_GetOverride(TESObjectREFR * refr, bool isFemale, TESObjectARMO * armor, TESObjectARMA * addon, BSFixedString nodeName, UInt16 key, UInt8 index)
+OverrideVariant * OverrideInterface::Impl_GetOverride(RE::TESObjectREFR * refr, bool isFemale, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::BSFixedString nodeName, std::uint16_t key, std::uint8_t index)
 {
-	UInt8 gender = isFemale ? 1 : 0;
-	SimpleLocker locker(&armorData.m_lock);
+	std::uint8_t gender = isFemale ? 1 : 0;
+	std::lock_guard<std::recursive_mutex> locker(armorData.m_lock);
 	auto it = armorData.m_data.find(refr->formID);
 	if(it != armorData.m_data.end())
 	{
@@ -125,10 +123,10 @@ OverrideVariant * OverrideInterface::Impl_GetOverride(TESObjectREFR * refr, bool
 	return NULL;
 }
 
-OverrideVariant * OverrideInterface::Impl_GetNodeOverride(TESObjectREFR * refr, bool isFemale, BSFixedString nodeName, UInt16 key, UInt8 index)
+OverrideVariant * OverrideInterface::Impl_GetNodeOverride(RE::TESObjectREFR * refr, bool isFemale, RE::BSFixedString nodeName, std::uint16_t key, std::uint8_t index)
 {
-	UInt8 gender = isFemale ? 1 : 0;
-	SimpleLocker locker(&nodeData.m_lock);
+	std::uint8_t gender = isFemale ? 1 : 0;
+	std::lock_guard<std::recursive_mutex> locker(nodeData.m_lock);
 	auto it = nodeData.m_data.find(refr->formID);
 	if(it != nodeData.m_data.end())
 	{
@@ -149,10 +147,10 @@ OverrideVariant * OverrideInterface::Impl_GetNodeOverride(TESObjectREFR * refr, 
 	return NULL;
 }
 
-OverrideVariant * OverrideInterface::Impl_GetWeaponOverride(TESObjectREFR * refr, bool isFemale, bool firstPerson, TESObjectWEAP * weapon, BSFixedString nodeName, UInt16 key, UInt8 index)
+OverrideVariant * OverrideInterface::Impl_GetWeaponOverride(RE::TESObjectREFR * refr, bool isFemale, bool firstPerson, RE::TESObjectWEAP * weapon, RE::BSFixedString nodeName, std::uint16_t key, std::uint8_t index)
 {
-	UInt8 gender = isFemale ? 1 : 0;
-	SimpleLocker locker(&weaponData.m_lock);
+	std::uint8_t gender = isFemale ? 1 : 0;
+	std::lock_guard<std::recursive_mutex> locker(weaponData.m_lock);
 	auto it = weaponData.m_data.find(refr->formID);
 	if (it != weaponData.m_data.end())
 	{
@@ -177,10 +175,10 @@ OverrideVariant * OverrideInterface::Impl_GetWeaponOverride(TESObjectREFR * refr
 	return NULL;
 }
 
-OverrideVariant * OverrideInterface::Impl_GetSkinOverride(TESObjectREFR * refr, bool isFemale, bool firstPerson, UInt32 slotMask, UInt16 key, UInt8 index)
+OverrideVariant * OverrideInterface::Impl_GetSkinOverride(RE::TESObjectREFR * refr, bool isFemale, bool firstPerson, std::uint32_t slotMask, std::uint16_t key, std::uint8_t index)
 {
-	UInt8 gender = isFemale ? 1 : 0;
-	SimpleLocker locker(&skinData.m_lock);
+	std::uint8_t gender = isFemale ? 1 : 0;
+	std::lock_guard<std::recursive_mutex> locker(skinData.m_lock);
 	auto it = skinData.m_data.find(refr->formID);
 	if (it != skinData.m_data.end())
 	{
@@ -201,38 +199,38 @@ OverrideVariant * OverrideInterface::Impl_GetSkinOverride(TESObjectREFR * refr, 
 	return NULL;
 }
 
-void OverrideInterface::Impl_RemoveAllReferenceOverrides(TESObjectREFR * refr)
+void OverrideInterface::Impl_RemoveAllReferenceOverrides(RE::TESObjectREFR * refr)
 {
 	armorData.Lock();
 	armorData.m_data.erase(refr->formID);
 	armorData.Release();
 }
 
-void OverrideInterface::Impl_RemoveAllReferenceNodeOverrides(TESObjectREFR * refr)
+void OverrideInterface::Impl_RemoveAllReferenceNodeOverrides(RE::TESObjectREFR * refr)
 {
 	nodeData.Lock();
 	nodeData.m_data.erase(refr->formID);
 	nodeData.Release();
 }
 
-void OverrideInterface::Impl_RemoveAllReferenceWeaponOverrides(TESObjectREFR * refr)
+void OverrideInterface::Impl_RemoveAllReferenceWeaponOverrides(RE::TESObjectREFR * refr)
 {
 	weaponData.Lock();
 	weaponData.m_data.erase(refr->formID);
 	weaponData.Release();
 }
 
-void OverrideInterface::Impl_RemoveAllReferenceSkinOverrides(TESObjectREFR * refr)
+void OverrideInterface::Impl_RemoveAllReferenceSkinOverrides(RE::TESObjectREFR * refr)
 {
 	skinData.Lock();
 	skinData.m_data.erase(refr->formID);
 	skinData.Release();
 }
 
-void OverrideInterface::Impl_RemoveAllArmorOverrides(TESObjectREFR * refr, bool isFemale, TESObjectARMO * armor)
+void OverrideInterface::Impl_RemoveAllArmorOverrides(RE::TESObjectREFR * refr, bool isFemale, RE::TESObjectARMO * armor)
 {
-	UInt8 gender = isFemale ? 1 : 0;
-	SimpleLocker locker(&armorData.m_lock);
+	std::uint8_t gender = isFemale ? 1 : 0;
+	std::lock_guard<std::recursive_mutex> locker(armorData.m_lock);
 	auto it = armorData.m_data.find(refr->formID);
 	if(it != armorData.m_data.end())
 	{
@@ -243,10 +241,10 @@ void OverrideInterface::Impl_RemoveAllArmorOverrides(TESObjectREFR * refr, bool 
 	}
 }
 
-void OverrideInterface::Impl_RemoveAllArmorAddonOverrides(TESObjectREFR * refr, bool isFemale, TESObjectARMO * armor, TESObjectARMA * addon)
+void OverrideInterface::Impl_RemoveAllArmorAddonOverrides(RE::TESObjectREFR * refr, bool isFemale, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon)
 {
-	UInt8 gender = isFemale ? 1 : 0;
-	SimpleLocker locker(&armorData.m_lock);
+	std::uint8_t gender = isFemale ? 1 : 0;
+	std::lock_guard<std::recursive_mutex> locker(armorData.m_lock);
 	auto it = armorData.m_data.find(refr->formID);
 	if(it != armorData.m_data.end())
 	{
@@ -262,10 +260,10 @@ void OverrideInterface::Impl_RemoveAllArmorAddonOverrides(TESObjectREFR * refr, 
 	}
 }
 
-void OverrideInterface::Impl_RemoveAllArmorAddonNodeOverrides(TESObjectREFR * refr, bool isFemale, TESObjectARMO * armor, TESObjectARMA * addon, BSFixedString nodeName)
+void OverrideInterface::Impl_RemoveAllArmorAddonNodeOverrides(RE::TESObjectREFR * refr, bool isFemale, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::BSFixedString nodeName)
 {
-	UInt8 gender = isFemale ? 1 : 0;
-	SimpleLocker locker(&armorData.m_lock);
+	std::uint8_t gender = isFemale ? 1 : 0;
+	std::lock_guard<std::recursive_mutex> locker(armorData.m_lock);
 	auto it = armorData.m_data.find(refr->formID);
 	if(it != armorData.m_data.end())
 	{
@@ -285,10 +283,10 @@ void OverrideInterface::Impl_RemoveAllArmorAddonNodeOverrides(TESObjectREFR * re
 	}
 }
 
-void OverrideInterface::Impl_RemoveArmorAddonOverride(TESObjectREFR * refr, bool isFemale, TESObjectARMO * armor, TESObjectARMA * addon, BSFixedString nodeName, UInt16 key, UInt8 index)
+void OverrideInterface::Impl_RemoveArmorAddonOverride(RE::TESObjectREFR * refr, bool isFemale, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::BSFixedString nodeName, std::uint16_t key, std::uint8_t index)
 {
-	UInt8 gender = isFemale ? 1 : 0;
-	SimpleLocker locker(&armorData.m_lock);
+	std::uint8_t gender = isFemale ? 1 : 0;
+	std::lock_guard<std::recursive_mutex> locker(armorData.m_lock);
 	auto it = armorData.m_data.find(refr->formID);
 	if(it != armorData.m_data.end())
 	{
@@ -315,10 +313,10 @@ void OverrideInterface::Impl_RemoveArmorAddonOverride(TESObjectREFR * refr, bool
 	}
 }
 
-void OverrideInterface::Impl_RemoveAllNodeNameOverrides(TESObjectREFR * refr, bool isFemale, BSFixedString nodeName)
+void OverrideInterface::Impl_RemoveAllNodeNameOverrides(RE::TESObjectREFR * refr, bool isFemale, RE::BSFixedString nodeName)
 {
-	UInt8 gender = isFemale ? 1 : 0;
-	SimpleLocker locker(&nodeData.m_lock);
+	std::uint8_t gender = isFemale ? 1 : 0;
+	std::lock_guard<std::recursive_mutex> locker(nodeData.m_lock);
 	auto it = nodeData.m_data.find(refr->formID);
 	if(it != nodeData.m_data.end())
 	{
@@ -330,10 +328,10 @@ void OverrideInterface::Impl_RemoveAllNodeNameOverrides(TESObjectREFR * refr, bo
 	}
 }
 
-void OverrideInterface::Impl_RemoveNodeOverride(TESObjectREFR * refr, bool isFemale, BSFixedString nodeName, UInt16 key, UInt8 index)
+void OverrideInterface::Impl_RemoveNodeOverride(RE::TESObjectREFR * refr, bool isFemale, RE::BSFixedString nodeName, std::uint16_t key, std::uint8_t index)
 {
-	UInt8 gender = isFemale ? 1 : 0;
-	SimpleLocker locker(&nodeData.m_lock);
+	std::uint8_t gender = isFemale ? 1 : 0;
+	std::lock_guard<std::recursive_mutex> locker(nodeData.m_lock);
 	auto it = nodeData.m_data.find(refr->formID);
 	if(it != nodeData.m_data.end())
 	{
@@ -352,10 +350,10 @@ void OverrideInterface::Impl_RemoveNodeOverride(TESObjectREFR * refr, bool isFem
 	}
 }
 
-void OverrideInterface::Impl_RemoveAllWeaponOverrides(TESObjectREFR * refr, bool isFemale, bool firstPerson, TESObjectWEAP * weapon)
+void OverrideInterface::Impl_RemoveAllWeaponOverrides(RE::TESObjectREFR * refr, bool isFemale, bool firstPerson, RE::TESObjectWEAP * weapon)
 {
-	UInt8 gender = isFemale ? 1 : 0;
-	SimpleLocker locker(&weaponData.m_lock);
+	std::uint8_t gender = isFemale ? 1 : 0;
+	std::lock_guard<std::recursive_mutex> locker(weaponData.m_lock);
 	auto it = weaponData.m_data.find(refr->formID);
 	if(it != weaponData.m_data.end())
 	{
@@ -367,12 +365,12 @@ void OverrideInterface::Impl_RemoveAllWeaponOverrides(TESObjectREFR * refr, bool
 	}
 }
 
-void OverrideInterface::Impl_RemoveAllWeaponNodeOverrides(TESObjectREFR * refr, bool isFemale, bool firstPerson, TESObjectWEAP * weapon, BSFixedString nodeName)
+void OverrideInterface::Impl_RemoveAllWeaponNodeOverrides(RE::TESObjectREFR * refr, bool isFemale, bool firstPerson, RE::TESObjectWEAP * weapon, RE::BSFixedString nodeName)
 {
-	UInt8 gender = isFemale ? 1 : 0;
-	UInt8 fPerson = firstPerson ? 1 : 0;
+	std::uint8_t gender = isFemale ? 1 : 0;
+	std::uint8_t fPerson = firstPerson ? 1 : 0;
 
-	SimpleLocker locker(&weaponData.m_lock);
+	std::lock_guard<std::recursive_mutex> locker(weaponData.m_lock);
 	auto it = weaponData.m_data.find(refr->formID);
 	if(it != weaponData.m_data.end())
 	{
@@ -388,12 +386,12 @@ void OverrideInterface::Impl_RemoveAllWeaponNodeOverrides(TESObjectREFR * refr, 
 	}
 }
 
-void OverrideInterface::Impl_RemoveWeaponOverride(TESObjectREFR * refr, bool isFemale, bool firstPerson, TESObjectWEAP * weapon, BSFixedString nodeName, UInt16 key, UInt8 index)
+void OverrideInterface::Impl_RemoveWeaponOverride(RE::TESObjectREFR * refr, bool isFemale, bool firstPerson, RE::TESObjectWEAP * weapon, RE::BSFixedString nodeName, std::uint16_t key, std::uint8_t index)
 {
-	UInt8 gender = isFemale ? 1 : 0;
-	UInt8 fPerson = firstPerson ? 1 : 0;
+	std::uint8_t gender = isFemale ? 1 : 0;
+	std::uint8_t fPerson = firstPerson ? 1 : 0;
 
-	SimpleLocker locker(&weaponData.m_lock);
+	std::lock_guard<std::recursive_mutex> locker(weaponData.m_lock);
 	auto it = weaponData.m_data.find(refr->formID);
 	if(it != weaponData.m_data.end())
 	{
@@ -416,10 +414,10 @@ void OverrideInterface::Impl_RemoveWeaponOverride(TESObjectREFR * refr, bool isF
 	}
 }
 
-void OverrideInterface::Impl_RemoveAllSkinOverrides(TESObjectREFR * refr, bool isFemale, bool firstPerson, UInt32 slotMask)
+void OverrideInterface::Impl_RemoveAllSkinOverrides(RE::TESObjectREFR * refr, bool isFemale, bool firstPerson, std::uint32_t slotMask)
 {
-	UInt8 gender = isFemale ? 1 : 0;
-	SimpleLocker locker(&skinData.m_lock);
+	std::uint8_t gender = isFemale ? 1 : 0;
+	std::lock_guard<std::recursive_mutex> locker(skinData.m_lock);
 	auto it = skinData.m_data.find(refr->formID);
 	if (it != skinData.m_data.end())
 	{
@@ -431,12 +429,12 @@ void OverrideInterface::Impl_RemoveAllSkinOverrides(TESObjectREFR * refr, bool i
 	}
 }
 
-void OverrideInterface::Impl_RemoveSkinOverride(TESObjectREFR * refr, bool isFemale, bool firstPerson, UInt32 slotMask, UInt16 key, UInt8 index)
+void OverrideInterface::Impl_RemoveSkinOverride(RE::TESObjectREFR * refr, bool isFemale, bool firstPerson, std::uint32_t slotMask, std::uint16_t key, std::uint8_t index)
 {
-	UInt8 gender = isFemale ? 1 : 0;
-	UInt8 fPerson = firstPerson ? 1 : 0;
+	std::uint8_t gender = isFemale ? 1 : 0;
+	std::uint8_t fPerson = firstPerson ? 1 : 0;
 
-	SimpleLocker locker(&skinData.m_lock);
+	std::lock_guard<std::recursive_mutex> locker(skinData.m_lock);
 	auto it = skinData.m_data.find(refr->formID);
 	if (it != skinData.m_data.end())
 	{
@@ -455,18 +453,18 @@ void OverrideInterface::Impl_RemoveSkinOverride(TESObjectREFR * refr, bool isFem
 	}
 }
 
-void OverrideInterface::Impl_SetArmorAddonProperty(TESObjectREFR * refr, bool firstPerson, TESObjectARMO * armor, TESObjectARMA * addon, BSFixedString nodeName, OverrideVariant * value, bool immediate)
+void OverrideInterface::Impl_SetArmorAddonProperty(RE::TESObjectREFR * refr, bool firstPerson, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::BSFixedString nodeName, OverrideVariant * value, bool immediate)
 {
-	Actor * actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor);
+	RE::Actor * actor = refr ? refr->As<RE::Actor>() : nullptr;
 	if (actor) {
-		VisitArmorAddon(actor, armor, addon, [&](bool isFP, NiNode * rootNode, NiAVObject * armorNode)
+		VisitArmorAddon(actor, armor, addon, [&](bool isFP, RE::NiNode * rootNode, RE::NiAVObject * armorNode)
 		{
 			if (firstPerson == isFP) {
-				bool isRoot = nodeName == BSFixedString("");
-				if (!armorNode->GetAsNiNode() && !isRoot) {
-					_WARNING("%s - Warning, override for Armor %08X Addon %08X has no children, use an empty string for the node name to access the root instead.", __FUNCTION__, armor->formID, addon->formID);
+				bool isRoot = nodeName == RE::BSFixedString("");
+				if (!armorNode ? armorNode->AsNode() : nullptr && !isRoot) {
+					SKSE::log::warn("{} - Warning, override for Armor {:08X} Addon {:08X} has no children, use an empty string for the node name to access the root instead.", __FUNCTION__, armor->formID, addon->formID);
 				}
-				NiAVObject* foundNode = isRoot ? armorNode : armorNode->GetObjectByName(&nodeName.data);
+				RE::NiAVObject* foundNode = isRoot ? armorNode : armorNode->GetObjectByName(nodeName);
 				if (foundNode) {
 					SetShaderProperty(foundNode, value, immediate);
 				}
@@ -475,14 +473,14 @@ void OverrideInterface::Impl_SetArmorAddonProperty(TESObjectREFR * refr, bool fi
 	}
 }
 
-void OverrideInterface::Impl_GetArmorAddonProperty(TESObjectREFR * refr, bool firstPerson, TESObjectARMO * armor, TESObjectARMA * addon, BSFixedString nodeName, OverrideVariant * value)
+void OverrideInterface::Impl_GetArmorAddonProperty(RE::TESObjectREFR * refr, bool firstPerson, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::BSFixedString nodeName, OverrideVariant * value)
 {
-	Actor * actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor);
+	RE::Actor * actor = refr ? refr->As<RE::Actor>() : nullptr;
 	if (actor) {
-		VisitArmorAddon(actor, armor, addon, [&](bool isFP, NiNode * rootNode, NiAVObject * armorNode)
+		VisitArmorAddon(actor, armor, addon, [&](bool isFP, RE::NiNode * rootNode, RE::NiAVObject * armorNode)
 		{
 			if (firstPerson == isFP) {
-				NiAVObject * foundNode = nodeName == BSFixedString("") ? armorNode : armorNode->GetObjectByName(&nodeName.data);
+				RE::NiAVObject * foundNode = nodeName == RE::BSFixedString("") ? armorNode : armorNode->GetObjectByName(nodeName);
 				if (foundNode) {
 					GetShaderProperty(foundNode, value);
 				}
@@ -491,28 +489,28 @@ void OverrideInterface::Impl_GetArmorAddonProperty(TESObjectREFR * refr, bool fi
 	}
 }
 
-bool OverrideInterface::Impl_HasArmorAddonNode(TESObjectREFR * refr, bool firstPerson, TESObjectARMO * armor, TESObjectARMA * addon, BSFixedString nodeName, bool debug)
+bool OverrideInterface::Impl_HasArmorAddonNode(RE::TESObjectREFR * refr, bool firstPerson, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::BSFixedString nodeName, bool debug)
 {
 	if(!refr) {
 		if(debug)
-			_DMESSAGE("%s - No reference", __FUNCTION__);
+			SKSE::log::debug("{} - No reference", __FUNCTION__);
 		return false;
 	}
 	bool found = false;
-	Actor * actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor);
+	RE::Actor * actor = refr ? refr->As<RE::Actor>() : nullptr;
 	if (actor) {
-		VisitArmorAddon(actor, armor, addon, [&](bool isFP, NiNode * rootNode, NiAVObject * armorNode)
+		VisitArmorAddon(actor, armor, addon, [&](bool isFP, RE::NiNode * rootNode, RE::NiAVObject * armorNode)
 		{
 			if (firstPerson == isFP) {
-				NiAVObject * foundNode = nodeName == BSFixedString("") ? armorNode : armorNode->GetObjectByName(&nodeName.data);
+				RE::NiAVObject * foundNode = nodeName == RE::BSFixedString("") ? armorNode : armorNode->GetObjectByName(nodeName);
 				if (foundNode) {
 					if (debug)
-						_DMESSAGE("%s - Success, found node name '%s' for Armor %08X, Addon %08X.", __FUNCTION__, nodeName.data, armor->formID, addon->formID);
+						SKSE::log::debug("{} - Success, found node name '{}' for Armor {:08X}, Addon {:08X}.", __FUNCTION__, nodeName.c_str(), armor->formID, addon->formID);
 
 					found = true;
 				}
 				else if (debug)
-					_DMESSAGE("%s - Failed to find node name '%s' for Armor %08X, Addon %08X.", __FUNCTION__, nodeName.data, armor->formID, addon->formID);
+					SKSE::log::debug("{} - Failed to find node name '{}' for Armor {:08X}, Addon {:08X}.", __FUNCTION__, nodeName.c_str(), armor->formID, addon->formID);
 			}
 		});
 	}
@@ -520,25 +518,25 @@ bool OverrideInterface::Impl_HasArmorAddonNode(TESObjectREFR * refr, bool firstP
 	return found;
 }
 
-void OverrideInterface::Impl_SetWeaponProperty(TESObjectREFR * refr, bool isFemale, bool firstPerson, TESObjectWEAP * weapon, BSFixedString nodeName, OverrideVariant * value, bool immediate)
+void OverrideInterface::Impl_SetWeaponProperty(RE::TESObjectREFR * refr, bool isFemale, bool firstPerson, RE::TESObjectWEAP * weapon, RE::BSFixedString nodeName, OverrideVariant * value, bool immediate)
 {
-	char weaponString[MAX_PATH];
+	char weaponString[REX::W32::MAX_PATH];
 
-	UInt8 gender = isFemale ? 1 : 0;
+	std::uint8_t gender = isFemale ? 1 : 0;
 
-	memset(weaponString, 0, MAX_PATH);
+	memset(weaponString, 0, REX::W32::MAX_PATH);
 	weapon->GetNodeName(weaponString);
 
-	NiPointer<NiNode> root = refr->GetNiRootNode(firstPerson ? 1 : 0); // Apply to third and first person
+	RE::NiPointer<RE::NiNode> root{refr->Get3D(firstPerson) ? refr->Get3D(firstPerson)->AsNode() : nullptr}; // Apply to third and first person
 	if(root) {
-		BSFixedString weaponName(weaponString); // Find the Armor name from the root
-		NiAVObject * weaponNode = root->GetObjectByName(&weaponName.data);
+		RE::BSFixedString weaponName(weaponString); // Find the Armor name from the root
+		RE::NiAVObject * weaponNode = root->GetObjectByName(weaponName);
 		if(weaponNode) {
-			bool isRoot = nodeName == BSFixedString("");
-			if(!weaponNode->GetAsNiNode() && !isRoot) {
-				_WARNING("%s - Warning, override for Weapon %08X has no children, use an empty string for the node name to access the root instead.", __FUNCTION__, weapon->formID);
+			bool isRoot = nodeName == RE::BSFixedString("");
+			if(!weaponNode ? weaponNode->AsNode() : nullptr && !isRoot) {
+				SKSE::log::warn("{} - Warning, override for Weapon {:08X} has no children, use an empty string for the node name to access the root instead.", __FUNCTION__, weapon->formID);
 			}
-			NiAVObject * foundNode = isRoot ? weaponNode : weaponNode->GetObjectByName(&nodeName.data);
+			RE::NiAVObject * foundNode = isRoot ? weaponNode : weaponNode->GetObjectByName(nodeName);
 			if(foundNode) {
 				SetShaderProperty(foundNode, value, immediate);
 			}
@@ -546,24 +544,24 @@ void OverrideInterface::Impl_SetWeaponProperty(TESObjectREFR * refr, bool isFema
 	}
 }
 
-void OverrideInterface::Impl_GetWeaponProperty(TESObjectREFR * refr, bool firstPerson, TESObjectWEAP * weapon, BSFixedString nodeName, OverrideVariant * value)
+void OverrideInterface::Impl_GetWeaponProperty(RE::TESObjectREFR * refr, bool firstPerson, RE::TESObjectWEAP * weapon, RE::BSFixedString nodeName, OverrideVariant * value)
 {
-	char weaponString[MAX_PATH];
+	char weaponString[REX::W32::MAX_PATH];
 
-	UInt8 gender = 0;
-	TESNPC * actorBase = DYNAMIC_CAST(refr->baseForm, TESForm, TESNPC);
+	std::uint8_t gender = 0;
+	RE::TESNPC * actorBase = refr->GetBaseObject() ? refr->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 	if(actorBase)
-		gender = CALL_MEMBER_FN(actorBase, GetSex)();
+		gender = actorBase->GetSex();
 
-	memset(weaponString, 0, MAX_PATH);
+	memset(weaponString, 0, REX::W32::MAX_PATH);
 	weapon->GetNodeName(weaponString);
 
-	NiPointer<NiNode> root = refr->GetNiRootNode(firstPerson ? 1 : 0); // Apply to third and first person
+	RE::NiPointer<RE::NiNode> root{refr->Get3D(firstPerson) ? refr->Get3D(firstPerson)->AsNode() : nullptr}; // Apply to third and first person
 	if(root) {
-		BSFixedString weaponName(weaponString); // Find the Armor name from the root
-		NiAVObject * weaponNode = root->GetObjectByName(&weaponName.data);
+		RE::BSFixedString weaponName(weaponString); // Find the Armor name from the root
+		RE::NiAVObject * weaponNode = root->GetObjectByName(weaponName);
 		if(weaponNode) {
-			NiAVObject * foundNode = nodeName == BSFixedString("") ? weaponNode : weaponNode->GetObjectByName(&nodeName.data);
+			RE::NiAVObject * foundNode = nodeName == RE::BSFixedString("") ? weaponNode : weaponNode->GetObjectByName(nodeName);
 			if(foundNode) {
 				GetShaderProperty(foundNode, value);
 			}
@@ -571,67 +569,67 @@ void OverrideInterface::Impl_GetWeaponProperty(TESObjectREFR * refr, bool firstP
 	}
 }
 
-bool OverrideInterface::Impl_HasWeaponNode(TESObjectREFR * refr, bool firstPerson, TESObjectWEAP * weapon, BSFixedString nodeName, bool debug)
+bool OverrideInterface::Impl_HasWeaponNode(RE::TESObjectREFR * refr, bool firstPerson, RE::TESObjectWEAP * weapon, RE::BSFixedString nodeName, bool debug)
 {
 	if(!refr) {
 		if(debug)
-			_DMESSAGE("%s - No reference", __FUNCTION__);
+			SKSE::log::debug("{} - No reference", __FUNCTION__);
 		return false;
 	}
-	char weaponString[MAX_PATH];
+	char weaponString[REX::W32::MAX_PATH];
 
-	UInt8 gender = 0;
-	TESNPC * actorBase = DYNAMIC_CAST(refr->baseForm, TESForm, TESNPC);
+	std::uint8_t gender = 0;
+	RE::TESNPC * actorBase = refr->GetBaseObject() ? refr->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 	if(actorBase)
-		gender = CALL_MEMBER_FN(actorBase, GetSex)();
+		gender = actorBase->GetSex();
 
-	memset(weaponString, 0, MAX_PATH);
+	memset(weaponString, 0, REX::W32::MAX_PATH);
 	weapon->GetNodeName(weaponString);
 
-	NiPointer<NiNode> root = refr->GetNiRootNode(firstPerson ? 1 : 0); // Apply to third and first person
+	RE::NiPointer<RE::NiNode> root{refr->Get3D(firstPerson) ? refr->Get3D(firstPerson)->AsNode() : nullptr}; // Apply to third and first person
 	if(root) {
-		BSFixedString weaponName(weaponString); // Find the Armor name from the root
-		NiAVObject * weaponNode = root->GetObjectByName(&weaponName.data);
+		RE::BSFixedString weaponName(weaponString); // Find the Armor name from the root
+		RE::NiAVObject * weaponNode = root->GetObjectByName(weaponName);
 		if(weaponNode) {
-			NiAVObject * foundNode = nodeName == BSFixedString("") ? weaponNode : weaponNode->GetObjectByName(&nodeName.data);
+			RE::NiAVObject * foundNode = nodeName == RE::BSFixedString("") ? weaponNode : weaponNode->GetObjectByName(nodeName);
 			if(foundNode) {
 				if(debug)	
-					_DMESSAGE("%s - Success, found node name '%s' for Weapon %08X.", __FUNCTION__, nodeName.data, weapon->formID);
+					SKSE::log::debug("{} - Success, found node name '{}' for Weapon {:08X}.", __FUNCTION__, nodeName.c_str(), weapon->formID);
 				return true;
 			} else if(debug)
-				_DMESSAGE("%s - Failed to find node name '%s' for Weapon %08X.", __FUNCTION__, nodeName.data, weapon->formID);
+				SKSE::log::debug("{} - Failed to find node name '{}' for Weapon {:08X}.", __FUNCTION__, nodeName.c_str(), weapon->formID);
 		} else if(debug)
-			_DMESSAGE("%s - Failed to acquire weapon node '%s' for Weapon %08X.", __FUNCTION__, weaponName.data, weapon->formID);
+			SKSE::log::debug("{} - Failed to acquire weapon node '{}' for Weapon {:08X}.", __FUNCTION__, weaponName.c_str(), weapon->formID);
 	} else if(debug)
-		_DMESSAGE("%s - Failed to acquire skeleton for Reference %08X", __FUNCTION__, refr->formID);
+		SKSE::log::debug("{} - Failed to acquire skeleton for Reference {:08X}", __FUNCTION__, refr->formID);
 
 	return false;
 }
 
-void OverrideInterface::Impl_SetSkinProperty(TESObjectREFR * refr, bool firstPerson, UInt32 slotMask, OverrideVariant * value, bool immediate)
+void OverrideInterface::Impl_SetSkinProperty(RE::TESObjectREFR * refr, bool firstPerson, std::uint32_t slotMask, OverrideVariant * value, bool immediate)
 {
-	Actor * actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor);
+	RE::Actor * actor = refr ? refr->As<RE::Actor>() : nullptr;
 	if (actor) {
-		TESForm * pForm = GetSkinForm(actor, slotMask);
-		TESObjectARMO * armor = DYNAMIC_CAST(pForm, TESForm, TESObjectARMO);
+		RE::TESForm * pForm = GetSkinForm(actor, slotMask);
+		RE::TESObjectARMO * armor = pForm ? pForm->As<RE::TESObjectARMO>() : nullptr;
 		if (armor) {
-			for (UInt32 i = 0; i < armor->armorAddons.count; i++) {
-				TESObjectARMA * addon = NULL;
-				if (armor->armorAddons.GetNthItem(i, addon)) {
-					VisitArmorAddon(actor, armor, addon, [&](bool isFP, NiNode * rootNode, NiAVObject * armorNode)
+			for (std::uint32_t i = 0; i < armor->armorAddons.size(); i++) {
+				RE::TESObjectARMA* addon = armor->armorAddons[i];
+				if (addon) {
+					VisitArmorAddon(actor, armor, addon, [&](bool isFP, RE::NiNode * rootNode, RE::NiAVObject * armorNode)
 					{
 						if (firstPerson == isFP)
 						{
-							VisitObjects(armorNode, [&](NiAVObject* object)
+							VisitObjects(armorNode, [&](RE::NiAVObject* object)
 							{
-								BSGeometry * geometry = object->GetAsBSGeometry();
+								RE::BSGeometry * geometry = object ? object->AsGeometry() : nullptr;
 								if (geometry)
 								{
-									BSShaderProperty * shaderProperty = niptr_cast<BSShaderProperty>(geometry->m_spEffectState);
-									if (shaderProperty && ni_is_type(shaderProperty->GetRTTI(), BSLightingShaderProperty))
+									RE::BSShaderProperty * shaderProperty = geometry->GetGeometryRuntimeData().shaderProperty.get();
+									if (shaderProperty && netimmerse_isKind<RE::BSLightingShaderProperty>(shaderProperty))
 									{
-										BSLightingShaderMaterial * material = (BSLightingShaderMaterial *)shaderProperty->material;
-										if (material && material->GetShaderType() == BSLightingShaderMaterial::kShaderType_FaceGenRGBTint)
+										RE::BSLightingShaderMaterial * material = (RE::BSLightingShaderMaterial *)shaderProperty->material;
+										if (material && material->GetFeature() == RE::BSShaderMaterial::Feature::kFaceGenRGBTint)
 										{
 											SetShaderProperty(geometry, value, immediate);
 										}
@@ -647,31 +645,31 @@ void OverrideInterface::Impl_SetSkinProperty(TESObjectREFR * refr, bool firstPer
 	}
 }
 
-void OverrideInterface::Impl_GetSkinProperty(TESObjectREFR * refr, bool firstPerson, UInt32 slotMask, OverrideVariant * value)
+void OverrideInterface::Impl_GetSkinProperty(RE::TESObjectREFR * refr, bool firstPerson, std::uint32_t slotMask, OverrideVariant * value)
 {
-	Actor * actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor);
+	RE::Actor * actor = refr ? refr->As<RE::Actor>() : nullptr;
 	if (actor) {
-		TESForm * pForm = GetSkinForm(actor, slotMask);
-		TESObjectARMO * armor = DYNAMIC_CAST(pForm, TESForm, TESObjectARMO);
+		RE::TESForm * pForm = GetSkinForm(actor, slotMask);
+		RE::TESObjectARMO * armor = pForm ? pForm->As<RE::TESObjectARMO>() : nullptr;
 		if (armor) {
-			for (UInt32 i = 0; i < armor->armorAddons.count; i++) {
-				TESObjectARMA * addon = NULL;
-				if (armor->armorAddons.GetNthItem(i, addon)) {
+			for (std::uint32_t i = 0; i < armor->armorAddons.size(); i++) {
+				RE::TESObjectARMA* addon = armor->armorAddons[i];
+				if (addon) {
 
-					VisitArmorAddon(actor, armor, addon, [&](bool isFP, NiNode * rootNode, NiAVObject * armorNode)
+					VisitArmorAddon(actor, armor, addon, [&](bool isFP, RE::NiNode * rootNode, RE::NiAVObject * armorNode)
 					{
 						if (firstPerson == isFP)
 						{
-							VisitObjects(armorNode, [&](NiAVObject* object)
+							VisitObjects(armorNode, [&](RE::NiAVObject* object)
 							{
-								BSGeometry * geometry = object->GetAsBSGeometry();
+								RE::BSGeometry * geometry = object ? object->AsGeometry() : nullptr;
 								if (geometry)
 								{
-									BSShaderProperty * shaderProperty = niptr_cast<BSShaderProperty>(geometry->m_spEffectState);
-									if (shaderProperty && ni_is_type(shaderProperty->GetRTTI(), BSLightingShaderProperty))
+									RE::BSShaderProperty * shaderProperty = geometry->GetGeometryRuntimeData().shaderProperty.get();
+									if (shaderProperty && netimmerse_isKind<RE::BSLightingShaderProperty>(shaderProperty))
 									{
-										BSLightingShaderMaterial * material = (BSLightingShaderMaterial *)shaderProperty->material;
-										if (material && material->GetShaderType() == BSLightingShaderMaterial::kShaderType_FaceGenRGBTint)
+										RE::BSLightingShaderMaterial * material = (RE::BSLightingShaderMaterial *)shaderProperty->material;
+										if (material && material->GetFeature() == RE::BSShaderMaterial::Feature::kFaceGenRGBTint)
 										{
 											GetShaderProperty(geometry, value);
 										}
@@ -689,48 +687,48 @@ void OverrideInterface::Impl_GetSkinProperty(TESObjectREFR * refr, bool firstPer
 
 void OverrideInterface::Impl_SetProperties(OverrideHandle formId, bool immediate)
 {
-	TESForm* form = LookupFormByID(formId);
-	if (!form || form->formType != Character::kTypeID) {
+	RE::TESForm* form = RE::TESForm::LookupByID(formId);
+	if (!form || form->IsNot(RE::FormType::ActorCharacter)) {
 		return;
 	}
 
-	Actor* actor = static_cast<Actor*>(form);
+	RE::Actor* actor = static_cast<RE::Actor*>(form);
 	if (!actor) {
 		return;
 	}
 
-	UInt8 gender = 0;
-	TESNPC * actorBase = DYNAMIC_CAST(actor->baseForm, TESForm, TESNPC);
+	std::uint8_t gender = 0;
+	RE::TESNPC * actorBase = actor->GetBaseObject() ? actor->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 	if(actorBase)
-		gender = CALL_MEMBER_FN(actorBase, GetSex)();
+		gender = actorBase->GetSex();
 
-	SimpleLocker locker(&armorData.m_lock);
+	std::lock_guard<std::recursive_mutex> locker(armorData.m_lock);
 	auto it = armorData.m_data.find(formId); // Find ActorHandle
 	if(it != armorData.m_data.end())
 	{
 		for(ArmorRegistration::iterator ait = it->second[gender].begin(); ait != it->second[gender].end(); ++ait) // Loop Armors
 		{
-			TESObjectARMO * armor = static_cast<TESObjectARMO *>(LookupFormByID(ait->first));
+			RE::TESObjectARMO * armor = static_cast<RE::TESObjectARMO *>(RE::TESForm::LookupByID(ait->first));
 			if(!armor)
 				continue;
 
 			for(AddonRegistration::iterator dit = ait->second.begin(); dit != ait->second.end(); ++dit) // Loop Addons
 			{
-				TESObjectARMA * addon = static_cast<TESObjectARMA *>(LookupFormByID(dit->first));
+				RE::TESObjectARMA * addon = static_cast<RE::TESObjectARMA *>(RE::TESForm::LookupByID(dit->first));
 				if(!addon)
 					continue;
 
-				VisitArmorAddon(actor, armor, addon, [&](bool isFP, NiNode * rootNode, NiAVObject * armorNode)
+				VisitArmorAddon(actor, armor, addon, [&](bool isFP, RE::NiNode * rootNode, RE::NiAVObject * armorNode)
 				{
 					dit->second.Visit([&](const StringTableItem & key, OverrideSet * set)
 					{
-						BSFixedString nodeName(key->c_str());
-						NiAVObject * foundNode = nodeName == BSFixedString("") ? armorNode : armorNode->GetObjectByName(&nodeName.data);
+						RE::BSFixedString nodeName(key->c_str());
+						RE::NiAVObject * foundNode = nodeName == RE::BSFixedString("") ? armorNode : armorNode->GetObjectByName(nodeName);
 						if (foundNode) {
 							set->Visit([&](OverrideVariant * value)
 							{
 								if (!immediate) {
-									g_task->AddTask(new NIOVTaskSetShaderProperty(foundNode, *value));
+									SKEE_AddTask(g_task, new NIOVTaskSetShaderProperty(foundNode, *value));
 								}
 								else {
 									SetShaderProperty(foundNode, value, true);
@@ -747,14 +745,14 @@ void OverrideInterface::Impl_SetProperties(OverrideHandle formId, bool immediate
 	}
 }
 
-void OverrideInterface::Impl_SetNodeProperty(TESObjectREFR * refr, bool firstPerson, BSFixedString nodeName, OverrideVariant * value, bool immediate)
+void OverrideInterface::Impl_SetNodeProperty(RE::TESObjectREFR * refr, bool firstPerson, RE::BSFixedString nodeName, OverrideVariant * value, bool immediate)
 {
-	NiPointer<NiNode> root = refr->GetNiRootNode(firstPerson ? 1 : 0); // Apply to third and first person
+	RE::NiPointer<RE::NiNode> root{refr->Get3D(firstPerson) ? refr->Get3D(firstPerson)->AsNode() : nullptr}; // Apply to third and first person
 	if(root) {
-		NiAVObject * foundNode = root->GetObjectByName(&nodeName.data);
+		RE::NiAVObject * foundNode = root->GetObjectByName(nodeName);
 		if(foundNode) {
 			if (!immediate) {
-				g_task->AddTask(new NIOVTaskSetShaderProperty(foundNode, *value));
+				SKEE_AddTask(g_task, new NIOVTaskSetShaderProperty(foundNode, *value));
 			}
 			else {
 				SetShaderProperty(foundNode, value, true);
@@ -763,11 +761,11 @@ void OverrideInterface::Impl_SetNodeProperty(TESObjectREFR * refr, bool firstPer
 	}
 }
 
-void OverrideInterface::Impl_GetNodeProperty(TESObjectREFR * refr, bool firstPerson, BSFixedString nodeName, OverrideVariant * value)
+void OverrideInterface::Impl_GetNodeProperty(RE::TESObjectREFR * refr, bool firstPerson, RE::BSFixedString nodeName, OverrideVariant * value)
 {
-	NiPointer<NiNode> root = refr->GetNiRootNode(firstPerson ? 1 : 0); // Apply to third and first person
+	RE::NiPointer<RE::NiNode> root{refr->Get3D(firstPerson) ? refr->Get3D(firstPerson)->AsNode() : nullptr}; // Apply to third and first person
 	if(root) {
-		NiAVObject * foundNode = root->GetObjectByName(&nodeName.data);
+		RE::NiAVObject * foundNode = root->GetObjectByName(nodeName);
 		if(foundNode) {
 			GetShaderProperty(foundNode, value);
 		}
@@ -776,35 +774,35 @@ void OverrideInterface::Impl_GetNodeProperty(TESObjectREFR * refr, bool firstPer
 
 void OverrideInterface::Impl_SetNodeProperties(OverrideHandle formId, bool immediate)
 {
-	TESForm* form = LookupFormByID(formId);
-	if (!form || form->formType != Character::kTypeID) {
+	RE::TESForm* form = RE::TESForm::LookupByID(formId);
+	if (!form || form->IsNot(RE::FormType::ActorCharacter)) {
 		return;
 	}
 
-	TESObjectREFR* refr = static_cast<TESObjectREFR*>(form);
-	UInt8 gender = 0;
-	TESNPC * actorBase = DYNAMIC_CAST(refr->baseForm, TESForm, TESNPC);
+	RE::TESObjectREFR* refr = static_cast<RE::TESObjectREFR*>(form);
+	std::uint8_t gender = 0;
+	RE::TESNPC * actorBase = refr->GetBaseObject() ? refr->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 	if(actorBase)
-		gender = CALL_MEMBER_FN(actorBase, GetSex)();
+		gender = actorBase->GetSex();
 
-	SimpleLocker locker(&nodeData.m_lock);
+	std::lock_guard<std::recursive_mutex> locker(nodeData.m_lock);
 	auto nit = nodeData.m_data.find(formId); // Find ActorHandle
 	if(nit != nodeData.m_data.end())
 	{
-		NiNode * lastRoot = NULL;
-		for(UInt8 i = 0; i <= 1; i++)
+		RE::NiNode * lastRoot = NULL;
+		for(std::uint8_t i = 0; i <= 1; i++)
 		{
-			NiNode * root = refr->GetNiRootNode(i);
+			RE::NiNode* root = refr->Get3D(i != 0) ? refr->Get3D(i != 0)->AsNode() : nullptr;
 			if(root == lastRoot) // First and third are the same, skip
 				continue;
 
 			if(root)
 			{
-				root->IncRef();
+				root->IncRefCount();
 				nit->second[gender].Visit([&](const StringTableItem & key, OverrideSet * set)
 				{
-					BSFixedString nodeName(key->c_str());
-					NiAVObject * foundNode = nodeName == BSFixedString("") ? root : root->GetObjectByName(&nodeName.data);
+					RE::BSFixedString nodeName(key->c_str());
+					RE::NiAVObject * foundNode = nodeName == RE::BSFixedString("") ? root : root->GetObjectByName(nodeName);
 					if (foundNode) {
 						set->Visit([&](OverrideVariant * value)
 						{
@@ -815,7 +813,7 @@ void OverrideInterface::Impl_SetNodeProperties(OverrideHandle formId, bool immed
 
 					return false;
 				});
-				root->DecRef();
+				root->DecRefCount();
 			}
 
 			lastRoot = root;
@@ -825,51 +823,51 @@ void OverrideInterface::Impl_SetNodeProperties(OverrideHandle formId, bool immed
 
 void OverrideInterface::Impl_SetWeaponProperties(OverrideHandle formId, bool immediate)
 {
-	TESForm* form = LookupFormByID(formId);
-	if (!form || form->formType != Character::kTypeID) {
+	RE::TESForm* form = RE::TESForm::LookupByID(formId);
+	if (!form || form->IsNot(RE::FormType::ActorCharacter)) {
 		return;
 	}
 
-	TESObjectREFR* refr = static_cast<TESObjectREFR*>(form);
+	RE::TESObjectREFR* refr = static_cast<RE::TESObjectREFR*>(form);
 
-	char weaponString[MAX_PATH];
+	char weaponString[REX::W32::MAX_PATH];
 
-	UInt8 gender = 0;
-	TESNPC * actorBase = DYNAMIC_CAST(refr->baseForm, TESForm, TESNPC);
+	std::uint8_t gender = 0;
+	RE::TESNPC * actorBase = refr->GetBaseObject() ? refr->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 	if (actorBase)
-		gender = CALL_MEMBER_FN(actorBase, GetSex)();
+		gender = actorBase->GetSex();
 
-	SimpleLocker locker(&weaponData.m_lock);
+	std::lock_guard<std::recursive_mutex> locker(weaponData.m_lock);
 	auto it = weaponData.m_data.find(refr->formID); // Find ActorHandle
 	if (it != weaponData.m_data.end())
 	{
-		for (UInt8 i = 0; i <= 1; i++)
+		for (std::uint8_t i = 0; i <= 1; i++)
 		{
 			for (WeaponRegistration::iterator ait = it->second[gender][i].begin(); ait != it->second[gender][i].end(); ++ait) // Loop Armors
 			{
-				TESObjectWEAP * weapon = static_cast<TESObjectWEAP *>(LookupFormByID(ait->first));
+				RE::TESObjectWEAP * weapon = static_cast<RE::TESObjectWEAP *>(RE::TESForm::LookupByID(ait->first));
 				if (!weapon)
 					continue;
 
-				memset(weaponString, 0, MAX_PATH);
+				memset(weaponString, 0, REX::W32::MAX_PATH);
 				weapon->GetNodeName(weaponString);
 
-				NiPointer<NiNode> lastNode = nullptr;
-				BSFixedString weaponName(weaponString);
+				RE::NiPointer<RE::NiNode> lastNode = nullptr;
+				RE::BSFixedString weaponName(weaponString);
 
-				NiPointer<NiNode> root = refr->GetNiRootNode(i);
+				RE::NiPointer<RE::NiNode> root{refr->Get3D(i != 0) ? refr->Get3D(i != 0)->AsNode() : nullptr};
 				if (root == lastNode) // First and Third are the same, skip
 					continue;
 
 				if (root)
 				{
 					// Find the Armor node
-					NiAVObject * weaponNode = root->GetObjectByName(&weaponName.data);
+					RE::NiAVObject * weaponNode = root->GetObjectByName(weaponName);
 					if (weaponNode) {
 						ait->second.Visit([&](const StringTableItem & key, OverrideSet * set)
 						{
-							BSFixedString nodeName(key->c_str());
-							NiAVObject * foundNode = nodeName == BSFixedString("") ? weaponNode : weaponNode->GetObjectByName(&nodeName.data);
+							RE::BSFixedString nodeName(key->c_str());
+							RE::NiAVObject * foundNode = nodeName == RE::BSFixedString("") ? weaponNode : weaponNode->GetObjectByName(nodeName);
 							if (foundNode) {
 								set->Visit([&](OverrideVariant * value)
 								{
@@ -891,60 +889,60 @@ void OverrideInterface::Impl_SetWeaponProperties(OverrideHandle formId, bool imm
 
 void OverrideInterface::Impl_SetSkinProperties(OverrideHandle formId, bool immediate)
 {
-	TESForm* form = LookupFormByID(formId);
-	if (!form || form->formType != Character::kTypeID) {
+	RE::TESForm* form = RE::TESForm::LookupByID(formId);
+	if (!form || form->IsNot(RE::FormType::ActorCharacter)) {
 		return;
 	}
 
-	TESObjectREFR* refr = static_cast<TESObjectREFR*>(form);
-	Actor * actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor);
+	RE::TESObjectREFR* refr = static_cast<RE::TESObjectREFR*>(form);
+	RE::Actor * actor = refr ? refr->As<RE::Actor>() : nullptr;
 	if (!actor) {
 		return;
 	}
 
-	UInt8 gender = 0;
-	TESNPC * actorBase = DYNAMIC_CAST(refr->baseForm, TESForm, TESNPC);
+	std::uint8_t gender = 0;
+	RE::TESNPC * actorBase = refr->GetBaseObject() ? refr->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 	if (actorBase)
-		gender = CALL_MEMBER_FN(actorBase, GetSex)();
+		gender = actorBase->GetSex();
 
-	SimpleLocker locker(&skinData.m_lock);
+	std::lock_guard<std::recursive_mutex> locker(skinData.m_lock);
 	auto it = skinData.m_data.find(refr->formID); // Find ActorHandle
 	if (it != skinData.m_data.end())
 	{
-		for (UInt8 fp = 0; fp <= 1; fp++)
+		for (std::uint8_t fp = 0; fp <= 1; fp++)
 		{
 			for (auto overridePair : it->second[gender][fp]) // Loop Armors
 			{
-				NiPointer<NiNode> lastNode = nullptr;
-				NiPointer<NiNode> root = refr->GetNiRootNode(fp);
+				RE::NiPointer<RE::NiNode> lastNode = nullptr;
+				RE::NiPointer<RE::NiNode> root{refr->Get3D(fp) ? refr->Get3D(fp)->AsNode() : nullptr};
 				if (root == lastNode) // First and Third are the same, skip
 					continue;
 
 				if (root)
 				{
-					TESForm * pForm = GetSkinForm(actor, overridePair.first);
-					TESObjectARMO * armor = DYNAMIC_CAST(pForm, TESForm, TESObjectARMO);
+					RE::TESForm * pForm = GetSkinForm(actor, overridePair.first);
+					RE::TESObjectARMO * armor = pForm ? pForm->As<RE::TESObjectARMO>() : nullptr;
 					if (armor) {
-						for (UInt32 i = 0; i < armor->armorAddons.count; i++) {
-							TESObjectARMA * arma = NULL;
-							if (armor->armorAddons.GetNthItem(i, arma)) {
+						for (std::uint32_t i = 0; i < armor->armorAddons.size(); i++) {
+							RE::TESObjectARMA* arma = armor->armorAddons[i];
+							if (arma) {
 								if (!IsSlotMatch(arma, overridePair.first)) {
 									continue;
 								}
-								VisitArmorAddon(actor, armor, arma, [&](bool isFirstPerson, NiAVObject * rootNode, NiAVObject * parent)
+								VisitArmorAddon(actor, armor, arma, [&](bool isFirstPerson, RE::NiAVObject * rootNode, RE::NiAVObject * parent)
 								{
 									if ((fp == 0 && isFirstPerson) || (fp == 1 && !isFirstPerson))
 									{
-										VisitObjects(parent, [&](NiAVObject* object)
+										VisitObjects(parent, [&](RE::NiAVObject* object)
 										{
-											BSGeometry * geometry = object->GetAsBSGeometry();
+											RE::BSGeometry * geometry = object ? object->AsGeometry() : nullptr;
 											if (geometry)
 											{
-												BSShaderProperty * shaderProperty = niptr_cast<BSShaderProperty>(geometry->m_spEffectState);
-												if (shaderProperty && ni_is_type(shaderProperty->GetRTTI(), BSLightingShaderProperty))
+												RE::BSShaderProperty * shaderProperty = geometry->GetGeometryRuntimeData().shaderProperty.get();
+												if (shaderProperty && netimmerse_isKind<RE::BSLightingShaderProperty>(shaderProperty))
 												{
-													BSLightingShaderMaterial * material = (BSLightingShaderMaterial *)shaderProperty->material;
-													if (material && material->GetShaderType() == BSLightingShaderMaterial::kShaderType_FaceGenRGBTint)
+													RE::BSLightingShaderMaterial * material = (RE::BSLightingShaderMaterial *)shaderProperty->material;
+													if (material && material->GetFeature() == RE::BSShaderMaterial::Feature::kFaceGenRGBTint)
 													{
 														overridePair.second.Visit([&](OverrideVariant * value)
 														{
@@ -968,14 +966,14 @@ void OverrideInterface::Impl_SetSkinProperties(OverrideHandle formId, bool immed
 	}
 }
 
-void OverrideInterface::VisitNodes(TESObjectREFR * refr, std::function<void(SKEEFixedString, OverrideVariant&)> functor)
+void OverrideInterface::VisitNodes(RE::TESObjectREFR * refr, std::function<void(SKEEFixedString, OverrideVariant&)> functor)
 {	
-	UInt8 gender = 0;
-	TESNPC * actorBase = DYNAMIC_CAST(refr->baseForm, TESForm, TESNPC);
+	std::uint8_t gender = 0;
+	RE::TESNPC * actorBase = refr->GetBaseObject() ? refr->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 	if (actorBase)
-		gender = CALL_MEMBER_FN(actorBase, GetSex)();
+		gender = actorBase->GetSex();
 
-	SimpleLocker locker(&nodeData.m_lock);
+	std::lock_guard<std::recursive_mutex> locker(nodeData.m_lock);
 	auto nit = nodeData.m_data.find(refr->formID); // Find ActorHandle
 	if (nit != nodeData.m_data.end())
 	{
@@ -988,15 +986,15 @@ void OverrideInterface::VisitNodes(TESObjectREFR * refr, std::function<void(SKEE
 	}
 }
 
-void OverrideInterface::VisitSkin(TESObjectREFR * refr, bool isFemale, bool firstPerson, std::function<void(UInt32, OverrideVariant&)> functor)
+void OverrideInterface::VisitSkin(RE::TESObjectREFR * refr, bool isFemale, bool firstPerson, std::function<void(std::uint32_t, OverrideVariant&)> functor)
 {
-	UInt8 fp = firstPerson ? 1 : 0;
-	UInt8 gender = 0;
-	TESNPC * actorBase = DYNAMIC_CAST(refr->baseForm, TESForm, TESNPC);
+	std::uint8_t fp = firstPerson ? 1 : 0;
+	std::uint8_t gender = 0;
+	RE::TESNPC * actorBase = refr->GetBaseObject() ? refr->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 	if (actorBase)
-		gender = CALL_MEMBER_FN(actorBase, GetSex)();
+		gender = actorBase->GetSex();
 
-	SimpleLocker locker(&skinData.m_lock);
+	std::lock_guard<std::recursive_mutex> locker(skinData.m_lock);
 	auto it = skinData.m_data.find(refr->formID);
 	if (it != skinData.m_data.end())
 	{
@@ -1014,9 +1012,9 @@ class NodeOverrideApplicator : public GeometryVisitor
 public:
 	NodeOverrideApplicator(OverrideRegistration<StringTableItem> * overrides, bool immediate) : m_overrides(overrides), m_immediate(immediate) {}
 
-	virtual bool Accept(BSGeometry * geometry)
+	virtual bool Accept(RE::BSGeometry * geometry)
 	{
-		SKEEFixedString nodeName(geometry->m_name);
+		SKEEFixedString nodeName(geometry->name);
 		auto nit = m_overrides->find(g_stringTable.GetString(nodeName));
 		if(nit != m_overrides->end())
 		{
@@ -1038,7 +1036,7 @@ class OverrideApplicator : public GeometryVisitor
 public:
 	OverrideApplicator(OverrideRegistration<StringTableItem> * overrides, bool immediate) : m_overrides(overrides), m_immediate(immediate) {}
 
-	virtual bool Accept(BSGeometry * geometry)
+	virtual bool Accept(RE::BSGeometry * geometry)
 	{
 		m_geometryList.push_back(geometry);
 		return false;
@@ -1048,7 +1046,7 @@ public:
 	{
 		for(auto & geometry : m_geometryList)
 		{
-			SKEEFixedString objectName(m_geometryList.size() == 1 ? "" : geometry->m_name);
+			SKEEFixedString objectName(m_geometryList.size() == 1 ? "" : geometry->name);
 			auto nit = m_overrides->find(g_stringTable.GetString(objectName));
 			if(nit != m_overrides->end())
 			{
@@ -1061,21 +1059,20 @@ public:
 		}
 	}
 
-	std::vector<BSGeometry*>				m_geometryList;
+	std::vector<RE::BSGeometry*>				m_geometryList;
 	OverrideRegistration<StringTableItem>	* m_overrides;
 	bool									m_immediate;
 };
 
-
 class SkinOverrideApplicator : public GeometryVisitor
 {
 public:
-	SkinOverrideApplicator(TESObjectARMO * armor, TESObjectARMA * addon, UInt32 slotMask, OverrideSet * overrides, bool immediate) : m_armor(armor), m_addon(addon), m_overrides(overrides), m_slotMask(slotMask), m_immediate(immediate) {}
+	SkinOverrideApplicator(RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, std::uint32_t slotMask, OverrideSet * overrides, bool immediate) : m_armor(armor), m_addon(addon), m_overrides(overrides), m_slotMask(slotMask), m_immediate(immediate) {}
 
-	virtual bool Accept(BSGeometry * geometry)
+	virtual bool Accept(RE::BSGeometry * geometry)
 	{
-		UInt32 armorMask = m_armor->bipedObject.GetSlotMask();
-		UInt32 addonMask = m_addon->biped.GetSlotMask();
+		std::uint32_t armorMask = m_armor->GetSlotMask().underlying();
+		std::uint32_t addonMask = m_addon->GetSlotMask().underlying();
 
 		if ((armorMask & m_slotMask) == m_slotMask && (addonMask & m_slotMask) == m_slotMask)
 		{
@@ -1089,11 +1086,11 @@ public:
 	{
 		for (auto & geometry : m_geometryList)
 		{
-			BSShaderProperty * shaderProperty = niptr_cast<BSShaderProperty>(geometry->m_spEffectState);
-			if (shaderProperty && ni_is_type(shaderProperty->GetRTTI(), BSLightingShaderProperty))
+			RE::BSShaderProperty * shaderProperty = geometry->GetGeometryRuntimeData().shaderProperty.get();
+			if (shaderProperty && netimmerse_isKind<RE::BSLightingShaderProperty>(shaderProperty))
 			{
-				BSLightingShaderMaterial * material = (BSLightingShaderMaterial *)shaderProperty->material;
-				if (material && material->GetShaderType() == BSLightingShaderMaterial::kShaderType_FaceGenRGBTint)
+				RE::BSLightingShaderMaterial * material = (RE::BSLightingShaderMaterial *)shaderProperty->material;
+				if (material && material->GetFeature() == RE::BSShaderMaterial::Feature::kFaceGenRGBTint)
 				{
 					if (m_overrides) {
 						m_overrides->Visit([&](OverrideVariant* value)
@@ -1107,22 +1104,22 @@ public:
 		}
 	}
 
-	std::vector<BSGeometry*>	m_geometryList;
-	TESObjectARMO * m_armor;
-	TESObjectARMA * m_addon;
+	std::vector<RE::BSGeometry*>	m_geometryList;
+	RE::TESObjectARMO * m_armor;
+	RE::TESObjectARMA * m_addon;
 	OverrideSet	* m_overrides;
-	UInt32	m_slotMask;
+	std::uint32_t	m_slotMask;
 	bool	m_immediate;
 };
 
-void OverrideInterface::Impl_ApplyNodeOverrides(TESObjectREFR * refr, NiAVObject * object, bool immediate)
+void OverrideInterface::Impl_ApplyNodeOverrides(RE::TESObjectREFR * refr, RE::NiAVObject * object, bool immediate)
 {
-	UInt8 gender = 0;
-	TESNPC * actorBase = DYNAMIC_CAST(refr->baseForm, TESForm, TESNPC);
+	std::uint8_t gender = 0;
+	RE::TESNPC * actorBase = refr->GetBaseObject() ? refr->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 	if(actorBase)
-		gender = CALL_MEMBER_FN(actorBase, GetSex)();
+		gender = actorBase->GetSex();
 
-	SimpleLocker locker(&nodeData.m_lock);
+	std::lock_guard<std::recursive_mutex> locker(nodeData.m_lock);
 	auto nit = nodeData.m_data.find(refr->formID);
 	if(nit != nodeData.m_data.end()) {
 		NodeOverrideApplicator applicator(&nit->second[gender], immediate);
@@ -1130,14 +1127,14 @@ void OverrideInterface::Impl_ApplyNodeOverrides(TESObjectREFR * refr, NiAVObject
 	}
 }
 
-void OverrideInterface::Impl_ApplyOverrides(TESObjectREFR * refr, TESObjectARMO * armor, TESObjectARMA * addon, NiAVObject * object, bool immediate)
+void OverrideInterface::Impl_ApplyOverrides(RE::TESObjectREFR * refr, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::NiAVObject * object, bool immediate)
 {
-	UInt8 gender = 0;
-	TESNPC * actorBase = DYNAMIC_CAST(refr->baseForm, TESForm, TESNPC);
+	std::uint8_t gender = 0;
+	RE::TESNPC * actorBase = refr->GetBaseObject() ? refr->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 	if(actorBase)
-		gender = CALL_MEMBER_FN(actorBase, GetSex)();
+		gender = actorBase->GetSex();
 
-	SimpleLocker locker(&armorData.m_lock);
+	std::lock_guard<std::recursive_mutex> locker(armorData.m_lock);
 	auto it = armorData.m_data.find(refr->formID); // Find ActorHandle
 	if(it != armorData.m_data.end())
 	{
@@ -1155,14 +1152,14 @@ void OverrideInterface::Impl_ApplyOverrides(TESObjectREFR * refr, TESObjectARMO 
 	}
 }
 
-void OverrideInterface::Impl_ApplyWeaponOverrides(TESObjectREFR * refr, bool firstPerson, TESObjectWEAP * weapon, NiAVObject * object, bool immediate)
+void OverrideInterface::Impl_ApplyWeaponOverrides(RE::TESObjectREFR * refr, bool firstPerson, RE::TESObjectWEAP * weapon, RE::NiAVObject * object, bool immediate)
 {
-	UInt8 gender = 0;
-	TESNPC * actorBase = DYNAMIC_CAST(refr->baseForm, TESForm, TESNPC);
+	std::uint8_t gender = 0;
+	RE::TESNPC * actorBase = refr->GetBaseObject() ? refr->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 	if(actorBase)
-		gender = CALL_MEMBER_FN(actorBase, GetSex)();
+		gender = actorBase->GetSex();
 
-	SimpleLocker locker(&weaponData.m_lock);
+	std::lock_guard<std::recursive_mutex> locker(weaponData.m_lock);
 	auto it = weaponData.m_data.find(refr->formID); // Find ActorHandle
 	if(it != weaponData.m_data.end())
 	{
@@ -1176,14 +1173,14 @@ void OverrideInterface::Impl_ApplyWeaponOverrides(TESObjectREFR * refr, bool fir
 	}
 }
 
-void OverrideInterface::Impl_ApplySkinOverrides(TESObjectREFR * refr, bool firstPerson, TESObjectARMO * armor, TESObjectARMA * addon, UInt32 slotMask, NiAVObject * object, bool immediate)
+void OverrideInterface::Impl_ApplySkinOverrides(RE::TESObjectREFR * refr, bool firstPerson, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, std::uint32_t slotMask, RE::NiAVObject * object, bool immediate)
 {
-	UInt8 gender = 0;
-	TESNPC * actorBase = DYNAMIC_CAST(refr->baseForm, TESForm, TESNPC);
+	std::uint8_t gender = 0;
+	RE::TESNPC * actorBase = refr->GetBaseObject() ? refr->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 	if (actorBase)
-		gender = CALL_MEMBER_FN(actorBase, GetSex)();
+		gender = actorBase->GetSex();
 
-	SimpleLocker locker(&skinData.m_lock);
+	std::lock_guard<std::recursive_mutex> locker(skinData.m_lock);
 	auto it = skinData.m_data.find(refr->formID); // Find ActorHandle
 	if (it != skinData.m_data.end())
 	{
@@ -1258,9 +1255,11 @@ void OverrideInterface::Impl_RemoveAllSkinBasedOverrides()
 }
 
 // OverrideVariant
-void OverrideVariant::Save(SKSESerializationInterface * intfc, UInt32 kVersion)
+void OverrideVariant::Save(SKSE::SerializationInterface * intfc, std::uint32_t kVersion)
 {
-	intfc->OpenRecord('OVRV', kVersion);
+	if (!intfc->OpenRecord('OVRV', kVersion)) {
+		SKSE::log::error("{} - Failed to open record", __FUNCTION__);
+	}
 	// Key
 	intfc->WriteRecordData(&key, sizeof(key));
 
@@ -1286,37 +1285,36 @@ void OverrideVariant::Save(SKSESerializationInterface * intfc, UInt32 kVersion)
 			break;
 		case kType_Identifier:
 			{
-				VMClassRegistry		* registry =	(*g_skyrimVM)->GetClassRegistry();
-				IObjectHandlePolicy	* policy =		registry->GetHandlePolicy();
-				UInt64 handle = policy->Create(BGSTextureSet::kTypeID, data.p);
+				RE::BSScript::IObjectHandlePolicy* policy = RE::BSScript::Internal::VirtualMachine::GetSingleton()->GetObjectHandlePolicy();
+				std::uint64_t handle = policy->GetHandleForObject(RE::FormType::TextureSet, static_cast<const RE::TESForm*>(data.p));
 				intfc->WriteRecordData(&handle, sizeof(handle));
 			}
 			break;
 	}
 
 #ifdef _DEBUG
-	_MESSAGE("Saving %d %d %X %f", key, type, data.u, data.f);
+	SKSE::log::info("Saving {} {} {:X} {}", key, type, data.u, data.f);
 #endif
 }
 
-bool OverrideVariant::Load(SKSESerializationInterface * intfc, UInt32 kVersion, const StringIdMap & stringTable)
+bool OverrideVariant::Load(SKSE::SerializationInterface * intfc, std::uint32_t kVersion, const StringIdMap & stringTable)
 {
-	UInt32 type, length, version;
+	std::uint32_t type, length, version;
 	bool error = false;
 
 	SetNone();
 
-	if(intfc->GetNextRecordInfo(&type, &version, &length))
+	if(intfc->GetNextRecordInfo(type, version, length))
 	{
 		switch (type)
 		{
 		case 'OVRV':
 			{
-				UInt16 keyValue;
+				std::uint16_t keyValue;
 				// Key
 				if (!intfc->ReadRecordData(&keyValue, sizeof(keyValue)))
 				{
-					_ERROR("%s - Error loading override value key", __FUNCTION__);
+					SKSE::log::error("{} - Error loading override value key", __FUNCTION__);
 					error = true;
 					return error;
 				}
@@ -1325,7 +1323,7 @@ bool OverrideVariant::Load(SKSESerializationInterface * intfc, UInt32 kVersion, 
 
 				if (!intfc->ReadRecordData(&this->type, sizeof(this->type)))
 				{
-					_ERROR("%s - Error loading override value type", __FUNCTION__);
+					SKSE::log::error("{} - Error loading override value type", __FUNCTION__);
 					error = true;
 					return error;
 				}
@@ -1334,7 +1332,7 @@ bool OverrideVariant::Load(SKSESerializationInterface * intfc, UInt32 kVersion, 
 				{
 					if (!intfc->ReadRecordData(&this->index, sizeof(this->index)))
 					{
-						_ERROR("%s - Error loading override value index", __FUNCTION__);
+						SKSE::log::error("{} - Error loading override value index", __FUNCTION__);
 						error = true;
 						return error;
 					}
@@ -1345,7 +1343,7 @@ bool OverrideVariant::Load(SKSESerializationInterface * intfc, UInt32 kVersion, 
 					case kType_Int:
 						{
 							if (!intfc->ReadRecordData(&data.u, sizeof(data.u))) {
-								_ERROR("%s - Error loading override value data", __FUNCTION__);
+								SKSE::log::error("{} - Error loading override value data", __FUNCTION__);
 								error = true;
 								return error;
 							}
@@ -1354,7 +1352,7 @@ bool OverrideVariant::Load(SKSESerializationInterface * intfc, UInt32 kVersion, 
 					case kType_Float:
 						{
 							if (!intfc->ReadRecordData(&data.f, sizeof(data.f))) {
-								_ERROR("%s - Error loading override value data", __FUNCTION__);
+								SKSE::log::error("{} - Error loading override value data", __FUNCTION__);
 								error = true;
 								return error;
 							}
@@ -1363,7 +1361,7 @@ bool OverrideVariant::Load(SKSESerializationInterface * intfc, UInt32 kVersion, 
 					case kType_Bool:
 						{
 							if (!intfc->ReadRecordData(&data.b, sizeof(data.b))) {
-								_ERROR("%s - Error loading override value data", __FUNCTION__);
+								SKSE::log::error("{} - Error loading override value data", __FUNCTION__);
 								error = true;
 								return error;
 							}
@@ -1385,22 +1383,21 @@ bool OverrideVariant::Load(SKSESerializationInterface * intfc, UInt32 kVersion, 
 						break;
 					case kType_Identifier:
 						{
-							UInt64 handle;
+							std::uint64_t handle;
 							if (!intfc->ReadRecordData(&handle, sizeof(handle)))
 							{
-								_ERROR("%s - Error loading override value key handle", __FUNCTION__);
+								SKSE::log::error("{} - Error loading override value key handle", __FUNCTION__);
 								error = true;
 								return error;
 							}
 
-							UInt64 newHandle = 0;
-							if (intfc->ResolveHandle(handle, &newHandle))
+							std::uint64_t newHandle = 0;
+							if (intfc->ResolveHandle(handle, newHandle))
 							{
-								VMClassRegistry		* registry =	(*g_skyrimVM)->GetClassRegistry();
-								IObjectHandlePolicy	* policy =		registry->GetHandlePolicy();
+								RE::BSScript::IObjectHandlePolicy* policy = RE::BSScript::Internal::VirtualMachine::GetSingleton()->GetObjectHandlePolicy();
 
-								if(policy->IsType(BGSTextureSet::kTypeID, newHandle))
-									data.p = (void*)policy->Resolve(BGSTextureSet::kTypeID, newHandle);
+								if(policy->HandleIsType(RE::FormType::TextureSet, newHandle))
+									data.p = (void*)policy->GetObjectForHandle(RE::FormType::TextureSet, newHandle);
 								else
 									SetNone();
 							}
@@ -1414,7 +1411,7 @@ bool OverrideVariant::Load(SKSESerializationInterface * intfc, UInt32 kVersion, 
 			}
 		default:
 			{
-				_ERROR("%s - Error loading unexpected chunk type %08X (%.4s)", __FUNCTION__, type, reinterpret_cast<char*>(&type));
+				SKSE::log::error("{} - Error loading unexpected chunk type {:08X} ({:.4})", __FUNCTION__, type, std::string(reinterpret_cast<char*>(&type), 4));
 				error = true;
 				return error;
 			}
@@ -1427,8 +1424,8 @@ bool OverrideVariant::Load(SKSESerializationInterface * intfc, UInt32 kVersion, 
 void OverrideInterface::VisitStrings(std::function<void(SKEEFixedString)> functor)
 {
 	for (auto & i1 : armorData.m_data){
-		for (UInt8 gender = 0; gender <= 1; gender++) {
-			for (UInt8 fp = 0; fp <= 1; fp++) {
+		for (std::uint8_t gender = 0; gender <= 1; gender++) {
+			for (std::uint8_t fp = 0; fp <= 1; fp++) {
 				for (auto & i2 : i1.second[gender][fp]) {
 					for (auto & i3 : i2.second) {
 						functor(*i3.first);
@@ -1444,8 +1441,8 @@ void OverrideInterface::VisitStrings(std::function<void(SKEEFixedString)> functo
 	}
 
 	for (auto & i1 : weaponData.m_data) {
-		for (UInt8 gender = 0; gender <= 1; gender++) {
-			for (UInt8 fp = 0; fp <= 1; fp++) {
+		for (std::uint8_t gender = 0; gender <= 1; gender++) {
+			for (std::uint8_t fp = 0; fp <= 1; fp++) {
 				for (auto & i2 : i1.second[gender][fp]) {
 					for (auto & i3 : i2.second) {
 						functor(*i3.first);
@@ -1461,7 +1458,7 @@ void OverrideInterface::VisitStrings(std::function<void(SKEEFixedString)> functo
 	}
 
 	for (auto & i1 : nodeData.m_data) {
-		for (UInt8 fp = 0; fp <= 1; fp++) {
+		for (std::uint8_t fp = 0; fp <= 1; fp++) {
 			for (auto & i2 : i1.second[fp]) {
 				functor(*i2.first);
 				for (auto & i3 : i2.second) {
@@ -1474,8 +1471,8 @@ void OverrideInterface::VisitStrings(std::function<void(SKEEFixedString)> functo
 	}
 
 	for (auto & i1 : skinData.m_data) {
-		for (UInt8 gender = 0; gender <= 1; gender++) {
-			for (UInt8 fp = 0; fp <= 1; fp++) {
+		for (std::uint8_t gender = 0; gender <= 1; gender++) {
+			for (std::uint8_t fp = 0; fp <= 1; fp++) {
 				for (auto & i2 : i1.second[gender][fp]) {
 					for (auto & i3 : i2.second) {
 						if (i3.type == OverrideVariant::kType_String) {
@@ -1489,42 +1486,44 @@ void OverrideInterface::VisitStrings(std::function<void(SKEEFixedString)> functo
 }
 
 // ValueSet
-void OverrideSet::Save(SKSESerializationInterface * intfc, UInt32 kVersion)
+void OverrideSet::Save(SKSE::SerializationInterface * intfc, std::uint32_t kVersion)
 {
-	intfc->OpenRecord('OVST', kVersion);
+	if (!intfc->OpenRecord('OVST', kVersion)) {
+		SKSE::log::error("{} - Failed to open record", __FUNCTION__);
+	}
 
-	UInt32 numOverrides = this->size();
+	std::uint32_t numOverrides = this->size();
 	intfc->WriteRecordData(&numOverrides, sizeof(numOverrides));
 
 #ifdef _DEBUG
-	_MESSAGE("Saving %d values", numOverrides);
+	SKSE::log::info("Saving {} values", numOverrides);
 #endif
 
 	for(auto it = this->begin(); it != this->end(); ++it)
 		const_cast<OverrideVariant&>((*it)).Save(intfc, kVersion);
 }
 
-bool OverrideSet::Load(SKSESerializationInterface * intfc, UInt32 kVersion, const StringIdMap & stringTable)
+bool OverrideSet::Load(SKSE::SerializationInterface * intfc, std::uint32_t kVersion, const StringIdMap & stringTable)
 {
-	UInt32 type, length, version;
+	std::uint32_t type, length, version;
 	bool error = false;
 
-	if(intfc->GetNextRecordInfo(&type, &version, &length))
+	if(intfc->GetNextRecordInfo(type, version, length))
 	{
 		switch (type)
 		{
 		case 'OVST':
 			{
 				// Override Count
-				UInt32 numOverrides = 0;
+				std::uint32_t numOverrides = 0;
 				if (!intfc->ReadRecordData(&numOverrides, sizeof(numOverrides)))
 				{
-					_MESSAGE("%s - Error loading override count", __FUNCTION__);
+					SKSE::log::info("{} - Error loading override count", __FUNCTION__);
 					error = true;
 					return error;
 				}
 
-				for (UInt32 i = 0; i < numOverrides; i++)
+				for (std::uint32_t i = 0; i < numOverrides; i++)
 				{
 					OverrideVariant value;
 					if (!value.Load(intfc, version, stringTable))
@@ -1534,16 +1533,16 @@ bool OverrideSet::Load(SKSESerializationInterface * intfc, UInt32 kVersion, cons
 
 #ifdef _DEBUG
 						if (value.type != OverrideVariant::kType_String)
-							_MESSAGE("Loaded override value %d %X", value.key, value.data.u);
+							SKSE::log::info("Loaded override value {} {:X}", value.key, value.data.u);
 						else
-							_MESSAGE("Loaded override value %d %s", value.key, value.str->c_str());
+							SKSE::log::info("Loaded override value {} {}", value.key, value.str->c_str());
 #endif
 
 						this->insert(value);
 					}
 					else
 					{
-						_MESSAGE("%s - Error loading override value", __FUNCTION__);
+						SKSE::log::info("{} - Error loading override value", __FUNCTION__);
 						error = true;
 						return error;
 					}
@@ -1553,7 +1552,7 @@ bool OverrideSet::Load(SKSESerializationInterface * intfc, UInt32 kVersion, cons
 			}
 		default:
 			{
-				_MESSAGE("%s - Error loading unexpected chunk type %08X (%.4s)", __FUNCTION__, type, reinterpret_cast<char*>(&type));
+				SKSE::log::info("{} - Error loading unexpected chunk type {:08X} ({:.4})", __FUNCTION__, type, std::string(reinterpret_cast<char*>(&type), 4));
 				error = true;
 				return error;
 			}
@@ -1565,14 +1564,14 @@ bool OverrideSet::Load(SKSESerializationInterface * intfc, UInt32 kVersion, cons
 
 // OverrideRegistration
 template<>
-bool ReadKey(SKSESerializationInterface * intfc, StringTableItem & key, UInt32 kVersion, const StringIdMap & stringTable)
+bool ReadKey(SKSE::SerializationInterface * intfc, StringTableItem & key, std::uint32_t kVersion, const StringIdMap & stringTable)
 {
 	key = StringTable::ReadString(intfc, stringTable);
 	return false;
 }
 
 template<>
-bool ReadKey(SKSESerializationInterface * intfc, UInt32 & key, UInt32 kVersion, const StringIdMap & stringTable)
+bool ReadKey(SKSE::SerializationInterface * intfc, std::uint32_t & key, std::uint32_t kVersion, const StringIdMap & stringTable)
 {
 	if(!intfc->ReadRecordData(&key, sizeof(key))) {
 		return true;
@@ -1582,33 +1581,35 @@ bool ReadKey(SKSESerializationInterface * intfc, UInt32 & key, UInt32 kVersion, 
 }
 
 template<>
-void WriteKey(SKSESerializationInterface * intfc, const StringTableItem key, UInt32 kVersion)
+void WriteKey(SKSE::SerializationInterface * intfc, const StringTableItem key, std::uint32_t kVersion)
 {
 	g_stringTable.WriteString(intfc, key);
 
 #ifdef _DEBUG
-	_MESSAGE("Saving Key %s", key->c_str());
+	SKSE::log::info("Saving Key {}", key->c_str());
 #endif
 }
 
 template<>
-void WriteKey(SKSESerializationInterface * intfc, const UInt32 key, UInt32 kVersion)
+void WriteKey(SKSE::SerializationInterface * intfc, const std::uint32_t key, std::uint32_t kVersion)
 {
 	intfc->WriteRecordData(&key, sizeof(key));
 #ifdef _DEBUG
-	_MESSAGE("Saving Key %d", key);
+	SKSE::log::info("Saving Key {}", key);
 #endif
 }
 
 template<typename T>
-void OverrideRegistration<T>::Save(SKSESerializationInterface * intfc, UInt32 kVersion)
+void OverrideRegistration<T>::Save(SKSE::SerializationInterface * intfc, std::uint32_t kVersion)
 {
-	UInt32 numNodes = this->size();
+	std::uint32_t numNodes = this->size();
 	intfc->WriteRecordData(&numNodes, sizeof(numNodes));
 
 	for(auto it = this->begin(); it != this->end(); ++it)
 	{
-		intfc->OpenRecord('NOEN', kVersion);
+		if (!intfc->OpenRecord('NOEN', kVersion)) {
+			SKSE::log::error("{} - Failed to open record", __FUNCTION__);
+		}
 
 		// Key
 		WriteKey<T>(intfc, it->first, kVersion);
@@ -1619,23 +1620,23 @@ void OverrideRegistration<T>::Save(SKSESerializationInterface * intfc, UInt32 kV
 }
 
 template<typename T>
-bool OverrideRegistration<T>::Load(SKSESerializationInterface * intfc, UInt32 kVersion, const StringIdMap & stringTable)
+bool OverrideRegistration<T>::Load(SKSE::SerializationInterface * intfc, std::uint32_t kVersion, const StringIdMap & stringTable)
 {
-	UInt32 type, length, version;
+	std::uint32_t type, length, version;
 	bool error = false;
 
 	// Handle count
-	UInt32 numRegs = 0;
+	std::uint32_t numRegs = 0;
 	if (!intfc->ReadRecordData(&numRegs, sizeof(numRegs)))
 	{
-		_MESSAGE("%s - Error loading override registration count", __FUNCTION__);
+		SKSE::log::info("{} - Error loading override registration count", __FUNCTION__);
 		error = true;
 		return error;
 	}
 
-	for(UInt32 i = 0; i < numRegs; i++)
+	for(std::uint32_t i = 0; i < numRegs; i++)
 	{
-		if(intfc->GetNextRecordInfo(&type, &version, &length))
+		if(intfc->GetNextRecordInfo(type, version, length))
 		{
 			switch (type)
 			{
@@ -1643,7 +1644,7 @@ bool OverrideRegistration<T>::Load(SKSESerializationInterface * intfc, UInt32 kV
 				{
 					T key;
 					if(ReadKey<T>(intfc, key, kVersion, stringTable)) {
-						_MESSAGE("%s - Error loading node entry key", __FUNCTION__);
+						SKSE::log::info("{} - Error loading node entry key", __FUNCTION__);
 						error = true;
 						return error;
 					}
@@ -1660,7 +1661,7 @@ bool OverrideRegistration<T>::Load(SKSESerializationInterface * intfc, UInt32 kV
 					}
 					if(loadError)
 					{
-						_MESSAGE("%s - Error loading node overrides", __FUNCTION__);
+						SKSE::log::info("{} - Error loading node overrides", __FUNCTION__);
 						error = true;
 						return error;
 					}
@@ -1668,7 +1669,7 @@ bool OverrideRegistration<T>::Load(SKSESerializationInterface * intfc, UInt32 kV
 				}
 			default:
 				{
-					_MESSAGE("%s - Error loading unexpected chunk type %08X (%.4s)", __FUNCTION__, type, reinterpret_cast<char*>(&type));
+					SKSE::log::info("{} - Error loading unexpected chunk type {:08X} ({:.4})", __FUNCTION__, type, std::string(reinterpret_cast<char*>(&type), 4));
 					error = true;
 					return error;
 				}
@@ -1679,22 +1680,23 @@ bool OverrideRegistration<T>::Load(SKSESerializationInterface * intfc, UInt32 kV
 	return error;
 }
 
-
 // AddonRegistration
-void AddonRegistration::Save(SKSESerializationInterface * intfc, UInt32 kVersion)
+void AddonRegistration::Save(SKSE::SerializationInterface * intfc, std::uint32_t kVersion)
 {
-	UInt32 numRegs = this->size();
+	std::uint32_t numRegs = this->size();
 	intfc->WriteRecordData(&numRegs, sizeof(numRegs));
 
 	for(auto it = this->begin(); it != this->end(); ++it) {
-		intfc->OpenRecord('AAEN', kVersion);
+		if (!intfc->OpenRecord('AAEN', kVersion)) {
+			SKSE::log::error("{} - Failed to open record", __FUNCTION__);
+		}
 
 		// Key
-		UInt64 handle = it->first;
+		std::uint64_t handle = it->first;
 		intfc->WriteRecordData(&handle, sizeof(handle));
 
 #ifdef _DEBUG
-		_MESSAGE("Saving ArmorAddon Handle %016llX", handle);
+		SKSE::log::info("Saving ArmorAddon Handle %016llX", handle);
 #endif
 
 		// Value
@@ -1702,33 +1704,33 @@ void AddonRegistration::Save(SKSESerializationInterface * intfc, UInt32 kVersion
 	}
 }
 
-bool AddonRegistration::Load(SKSESerializationInterface * intfc, UInt32 kVersion, const StringIdMap & stringTable)
+bool AddonRegistration::Load(SKSE::SerializationInterface * intfc, std::uint32_t kVersion, const StringIdMap & stringTable)
 {
-	UInt32 type, length, version;
+	std::uint32_t type, length, version;
 	bool error = false;
 
 	// Handle count
-	UInt32 numRegs = 0;
+	std::uint32_t numRegs = 0;
 	if (!intfc->ReadRecordData(&numRegs, sizeof(numRegs)))
 	{
-		_MESSAGE("%s - Error loading Addon Registration count", __FUNCTION__);
+		SKSE::log::info("{} - Error loading Addon Registration count", __FUNCTION__);
 		error = true;
 		return error;
 	}
 
-	for(UInt32 i = 0; i < numRegs; i++)
+	for(std::uint32_t i = 0; i < numRegs; i++)
 	{
-		if(intfc->GetNextRecordInfo(&type, &version, &length))
+		if(intfc->GetNextRecordInfo(type, version, length))
 		{
 			switch (type)
 			{
 			case 'AAEN':
 				{
-					UInt64 handle;
+					std::uint64_t handle;
 					// Key
 					if (!intfc->ReadRecordData(&handle, sizeof(handle)))
 					{
-						_MESSAGE("%s - Error loading ArmorAddon key", __FUNCTION__);
+						SKSE::log::info("{} - Error loading ArmorAddon key", __FUNCTION__);
 						error = true;
 						return error;
 					}
@@ -1736,7 +1738,7 @@ bool AddonRegistration::Load(SKSESerializationInterface * intfc, UInt32 kVersion
 					OverrideRegistration<StringTableItem> overrideRegistration;
 					if (overrideRegistration.Load(intfc, version, stringTable))
 					{
-						_MESSAGE("%s - Error loading ArmorAddon override registrations", __FUNCTION__);
+						SKSE::log::info("{} - Error loading ArmorAddon override registrations", __FUNCTION__);
 						error = true;
 						return error;
 					}
@@ -1753,13 +1755,13 @@ bool AddonRegistration::Load(SKSESerializationInterface * intfc, UInt32 kVersion
 
 					emplace(newFormId, overrideRegistration);
 	#ifdef _DEBUG
-					_MESSAGE("Loaded ArmorAddon %08X", newFormId);
+					SKSE::log::info("Loaded ArmorAddon {:08X}", newFormId);
 	#endif
 					break;
 				}
 			default:
 				{
-					_MESSAGE("%s - Error loading unexpected chunk type %08X (%.4s)", __FUNCTION__, type, reinterpret_cast<char*>(&type));
+					SKSE::log::info("{} - Error loading unexpected chunk type {:08X} ({:.4})", __FUNCTION__, type, std::string(reinterpret_cast<char*>(&type), 4));
 					error = true;
 					return error;
 				}
@@ -1771,20 +1773,22 @@ bool AddonRegistration::Load(SKSESerializationInterface * intfc, UInt32 kVersion
 }
 
 // ArmorRegistration
-void ArmorRegistration::Save(SKSESerializationInterface * intfc, UInt32 kVersion)
+void ArmorRegistration::Save(SKSE::SerializationInterface * intfc, std::uint32_t kVersion)
 {
-	UInt32 numRegs = this->size();
+	std::uint32_t numRegs = this->size();
 	intfc->WriteRecordData(&numRegs, sizeof(numRegs));
 
 	for(auto it = this->begin(); it != this->end(); ++it) {
-		intfc->OpenRecord('AREN', kVersion);
+		if (!intfc->OpenRecord('AREN', kVersion)) {
+			SKSE::log::error("{} - Failed to open record", __FUNCTION__);
+		}
 
 		// Key
-		UInt64 handle = it->first;
+		std::uint64_t handle = it->first;
 		intfc->WriteRecordData(&handle, sizeof(handle));
 
 #ifdef _DEBUG
-		_MESSAGE("Saving Armor %08X", handle);
+		SKSE::log::info("Saving Armor {:08X}", handle);
 #endif
 
 		// Value
@@ -1792,22 +1796,22 @@ void ArmorRegistration::Save(SKSESerializationInterface * intfc, UInt32 kVersion
 	}
 }
 
-bool ArmorRegistration::Load(SKSESerializationInterface * intfc, UInt32 kVersion, const StringIdMap & stringTable)
+bool ArmorRegistration::Load(SKSE::SerializationInterface * intfc, std::uint32_t kVersion, const StringIdMap & stringTable)
 {
-	UInt32 type, length, version;
+	std::uint32_t type, length, version;
 	bool error = false;
 
-	if(intfc->GetNextRecordInfo(&type, &version, &length))
+	if(intfc->GetNextRecordInfo(type, version, length))
 	{
 		switch (type)
 		{
 		case 'AREN':
 			{
-				UInt64 handle;
+				std::uint64_t handle;
 				// Key
 				if (!intfc->ReadRecordData(&handle, sizeof(handle)))
 				{
-					_MESSAGE("%s - Error loading Armor key", __FUNCTION__);
+					SKSE::log::info("{} - Error loading Armor key", __FUNCTION__);
 					error = true;
 					return error;
 				}
@@ -1815,13 +1819,13 @@ bool ArmorRegistration::Load(SKSESerializationInterface * intfc, UInt32 kVersion
 				AddonRegistration addonRegistration;
 				if (addonRegistration.Load(intfc, version, stringTable))
 				{
-					_MESSAGE("%s - Error loading ArmorAddon registrations", __FUNCTION__);
+					SKSE::log::info("{} - Error loading ArmorAddon registrations", __FUNCTION__);
 					error = true;
 					return error;
 				}
 
-				UInt32 formId = handle & 0xFFFFFFFF;
-				UInt32 newFormId = 0;
+				std::uint32_t formId = handle & 0xFFFFFFFF;
+				std::uint32_t newFormId = 0;
 
 				// Skip if handle is no longer valid.
 				if (!ResolveAnyForm(intfc, formId, &newFormId))
@@ -1832,14 +1836,14 @@ bool ArmorRegistration::Load(SKSESerializationInterface * intfc, UInt32 kVersion
 
 				emplace(newFormId, addonRegistration);
 #ifdef _DEBUG
-				_MESSAGE("Loaded Armor %08X", newFormId);
+				SKSE::log::info("Loaded Armor {:08X}", newFormId);
 #endif
 
 				break;
 			}
 		default:
 			{
-				_MESSAGE("%s - Error loading unexpected chunk type %08X (%.4s)", __FUNCTION__, type, reinterpret_cast<char*>(&type));
+				SKSE::log::info("{} - Error loading unexpected chunk type {:08X} ({:.4})", __FUNCTION__, type, std::string(reinterpret_cast<char*>(&type), 4));
 				error = true;
 				return error;
 			}
@@ -1850,20 +1854,22 @@ bool ArmorRegistration::Load(SKSESerializationInterface * intfc, UInt32 kVersion
 }
 
 // WeaponRegistration
-void WeaponRegistration::Save(SKSESerializationInterface * intfc, UInt32 kVersion)
+void WeaponRegistration::Save(SKSE::SerializationInterface * intfc, std::uint32_t kVersion)
 {
-	UInt32 numRegs = this->size();
+	std::uint32_t numRegs = this->size();
 	intfc->WriteRecordData(&numRegs, sizeof(numRegs));
 
 	for(auto it = this->begin(); it != this->end(); ++it) {
-		intfc->OpenRecord('WAEN', kVersion);
+		if (!intfc->OpenRecord('WAEN', kVersion)) {
+			SKSE::log::error("{} - Failed to open record", __FUNCTION__);
+		}
 
 		// Key
-		UInt64 handle = it->first;
+		std::uint64_t handle = it->first;
 		intfc->WriteRecordData(&handle, sizeof(handle));
 
 #ifdef _DEBUG
-		_MESSAGE("Saving Weapon Handle %08X", handle);
+		SKSE::log::info("Saving Weapon Handle {:08X}", handle);
 #endif
 
 		// Value
@@ -1871,33 +1877,33 @@ void WeaponRegistration::Save(SKSESerializationInterface * intfc, UInt32 kVersio
 	}
 }
 
-bool WeaponRegistration::Load(SKSESerializationInterface * intfc, UInt32 kVersion, const StringIdMap & stringTable)
+bool WeaponRegistration::Load(SKSE::SerializationInterface * intfc, std::uint32_t kVersion, const StringIdMap & stringTable)
 {
-	UInt32 type, length, version;
+	std::uint32_t type, length, version;
 	bool error = false;
 
 	// Handle count
-	UInt32 numRegs = 0;
+	std::uint32_t numRegs = 0;
 	if (!intfc->ReadRecordData(&numRegs, sizeof(numRegs)))
 	{
-		_MESSAGE("%s - Error loading Weapon registration count", __FUNCTION__);
+		SKSE::log::info("{} - Error loading Weapon registration count", __FUNCTION__);
 		error = true;
 		return error;
 	}
 
-	for(UInt32 i = 0; i < numRegs; i++)
+	for(std::uint32_t i = 0; i < numRegs; i++)
 	{
-		if(intfc->GetNextRecordInfo(&type, &version, &length))
+		if(intfc->GetNextRecordInfo(type, version, length))
 		{
 			switch (type)
 			{
 			case 'WAEN':
 				{
-					UInt64 handle;
+					std::uint64_t handle;
 					// Key
 					if (!intfc->ReadRecordData(&handle, sizeof(handle)))
 					{
-						_MESSAGE("%s - Error loading Weapon key", __FUNCTION__);
+						SKSE::log::info("{} - Error loading Weapon key", __FUNCTION__);
 						error = true;
 						return error;
 					}
@@ -1905,7 +1911,7 @@ bool WeaponRegistration::Load(SKSESerializationInterface * intfc, UInt32 kVersio
 					OverrideRegistration<StringTableItem> overrideRegistration;
 					if (overrideRegistration.Load(intfc, version, stringTable))
 					{
-						_MESSAGE("%s - Error loading Weapon override registrations", __FUNCTION__);
+						SKSE::log::info("{} - Error loading Weapon override registrations", __FUNCTION__);
 						error = true;
 						return error;
 					}
@@ -1922,13 +1928,13 @@ bool WeaponRegistration::Load(SKSESerializationInterface * intfc, UInt32 kVersio
 
 					emplace(newFormId, overrideRegistration);
 	#ifdef _DEBUG
-					_MESSAGE("%s - Loaded Weapon %08X", __FUNCTION__, newFormId);
+					SKSE::log::info("{} - Loaded Weapon {:08X}", __FUNCTION__, newFormId);
 	#endif
 					break;
 				}
 			default:
 				{
-					_MESSAGE("%s - Error loading unexpected chunk type %08X (%.4s)", __FUNCTION__, type, reinterpret_cast<char*>(&type));
+					SKSE::log::info("{} - Error loading unexpected chunk type {:08X} ({:.4})", __FUNCTION__, type, std::string(reinterpret_cast<char*>(&type), 4));
 					error = true;
 					return error;
 				}
@@ -1940,20 +1946,22 @@ bool WeaponRegistration::Load(SKSESerializationInterface * intfc, UInt32 kVersio
 }
 
 // WeaponRegistration
-void SkinRegistration::Save(SKSESerializationInterface * intfc, UInt32 kVersion)
+void SkinRegistration::Save(SKSE::SerializationInterface * intfc, std::uint32_t kVersion)
 {
-	UInt32 numRegs = this->size();
+	std::uint32_t numRegs = this->size();
 	intfc->WriteRecordData(&numRegs, sizeof(numRegs));
 
 	for (auto it = this->begin(); it != this->end(); ++it) {
-		intfc->OpenRecord('SKND', kVersion);
+		if (!intfc->OpenRecord('SKND', kVersion)) {
+			SKSE::log::error("{} - Failed to open record", __FUNCTION__);
+		}
 
 		// Key
-		UInt64 handle = it->first;
+		std::uint64_t handle = it->first;
 		intfc->WriteRecordData(&handle, sizeof(handle));
 
 #ifdef _DEBUG
-		_MESSAGE("Saving Skin Handle %08X", handle);
+		SKSE::log::info("Saving Skin Handle {:08X}", handle);
 #endif
 
 		// Value
@@ -1961,33 +1969,33 @@ void SkinRegistration::Save(SKSESerializationInterface * intfc, UInt32 kVersion)
 	}
 }
 
-bool SkinRegistration::Load(SKSESerializationInterface * intfc, UInt32 kVersion, const StringIdMap & stringTable)
+bool SkinRegistration::Load(SKSE::SerializationInterface * intfc, std::uint32_t kVersion, const StringIdMap & stringTable)
 {
-	UInt32 type, length, version;
+	std::uint32_t type, length, version;
 	bool error = false;
 
 	// Handle count
-	UInt32 numRegs = 0;
+	std::uint32_t numRegs = 0;
 	if (!intfc->ReadRecordData(&numRegs, sizeof(numRegs)))
 	{
-		_MESSAGE("%s - Error loading skin registration count", __FUNCTION__);
+		SKSE::log::info("{} - Error loading skin registration count", __FUNCTION__);
 		error = true;
 		return error;
 	}
 
-	for (UInt32 i = 0; i < numRegs; i++)
+	for (std::uint32_t i = 0; i < numRegs; i++)
 	{
-		if (intfc->GetNextRecordInfo(&type, &version, &length))
+		if (intfc->GetNextRecordInfo(type, version, length))
 		{
 			switch (type)
 			{
 				case 'SKND':
 				{
-					UInt32 slotMask;
+					std::uint32_t slotMask;
 					// Key
 					if (!intfc->ReadRecordData(&slotMask, sizeof(slotMask)))
 					{
-						_MESSAGE("%s - Error loading skin slotMask", __FUNCTION__);
+						SKSE::log::info("{} - Error loading skin slotMask", __FUNCTION__);
 						error = true;
 						return error;
 					}
@@ -1995,7 +2003,7 @@ bool SkinRegistration::Load(SKSESerializationInterface * intfc, UInt32 kVersion,
 					OverrideSet overrideSet;
 					if (overrideSet.Load(intfc, version, stringTable))
 					{
-						_MESSAGE("%s - Error loading skin override set", __FUNCTION__);
+						SKSE::log::info("{} - Error loading skin override set", __FUNCTION__);
 						error = true;
 						return error;
 					}
@@ -2005,13 +2013,13 @@ bool SkinRegistration::Load(SKSESerializationInterface * intfc, UInt32 kVersion,
 
 					insert_or_assign(slotMask, overrideSet);
 #ifdef _DEBUG
-					_MESSAGE("%s - Loaded Skin SlotMask %08X", __FUNCTION__, slotMask);
+					SKSE::log::info("{} - Loaded Skin SlotMask {:08X}", __FUNCTION__, slotMask);
 #endif
 					break;
 				}
 				default:
 				{
-					_MESSAGE("%s - Error loading unexpected chunk type %08X (%.4s)", __FUNCTION__, type, reinterpret_cast<char*>(&type));
+					SKSE::log::info("{} - Error loading unexpected chunk type {:08X} ({:.4})", __FUNCTION__, type, std::string(reinterpret_cast<char*>(&type), 4));
 					error = true;
 					return error;
 				}
@@ -2022,19 +2030,19 @@ bool SkinRegistration::Load(SKSESerializationInterface * intfc, UInt32 kVersion,
 	return error;
 }
 
-bool NodeRegistrationMapHolder::Load(SKSESerializationInterface * intfc, UInt32 kVersion, OverrideHandle * outHandle, const StringIdMap & stringTable)
+bool NodeRegistrationMapHolder::Load(SKSE::SerializationInterface * intfc, std::uint32_t kVersion, OverrideHandle * outHandle, const StringIdMap & stringTable)
 {	
-	UInt64 handle = 0;
+	std::uint64_t handle = 0;
 	if (!intfc->ReadRecordData(&handle, sizeof(handle)))
 	{
-		_MESSAGE("%s - Error loading reg key", __FUNCTION__);
+		SKSE::log::info("{} - Error loading reg key", __FUNCTION__);
 		return true;
 	}
 
 	MultiRegistration<OverrideRegistration<StringTableItem>,2> reg;
 	if (reg.Load(intfc, kVersion, stringTable))
 	{
-		_MESSAGE("%s - Error loading override gender registrations", __FUNCTION__);
+		SKSE::log::info("{} - Error loading override gender registrations", __FUNCTION__);
 		return true;
 	}
 
@@ -2052,19 +2060,19 @@ bool NodeRegistrationMapHolder::Load(SKSESerializationInterface * intfc, UInt32 
 		return true;
 	}
 
-	TESForm* form = LookupFormByID(formId);
+	RE::TESForm* form = RE::TESForm::LookupByID(formId);
 	if (!form) {
-		_WARNING("%s - Discarding node overrides for (%08llX) form is invalid", __FUNCTION__, newFormId);
+		SKSE::log::warn("{} - Discarding node overrides for (%08llX) form is invalid", __FUNCTION__, newFormId);
 		*outHandle = 0;
 		return true;
 	}
-	else if (form->formType != kFormType_Reference && form->formType != kFormType_Character) {
-		_WARNING("%s - Discarding node overrides for (%08llX) form is not a reference (%d)", __FUNCTION__, newFormId, form->formType);
+	else if (form->IsNot(RE::FormType::Reference) && form->IsNot(RE::FormType::ActorCharacter)) {
+		SKSE::log::warn("{} - Discarding node overrides for ({:08X}) form is not a reference ({})", __FUNCTION__, newFormId, form->formType.underlying());
 		*outHandle = 0;
 		return true;
 	}
-	else if ((form->flags & TESForm::kFlagIsDeleted) == TESForm::kFlagIsDeleted) {
-		_WARNING("%s - Discarding node overrides for (%08llX) form is deleted", __FUNCTION__, newFormId);
+	else if (form->IsDeleted()) {
+		SKSE::log::warn("{} - Discarding node overrides for (%08llX) form is deleted", __FUNCTION__, newFormId);
 		*outHandle = 0;
 		return true;
 	}
@@ -2075,23 +2083,25 @@ bool NodeRegistrationMapHolder::Load(SKSESerializationInterface * intfc, UInt32 
 	m_data[newFormId] = reg;
 	Release();
 #ifdef _DEBUG
-	_DMESSAGE("%s - Loaded overrides for handle (%08llX) reference (%s)", __FUNCTION__, newFormId, CALL_MEMBER_FN(static_cast<TESObjectREFR*>(form), GetReferenceName)());
+	SKSE::log::debug("{} - Loaded overrides for handle (%08llX) reference ({})", __FUNCTION__, newFormId, static_cast<RE::TESObjectREFR*>(form)->GetName());
 #endif
 	return false;
 }
 
-void NodeRegistrationMapHolder::Save(SKSESerializationInterface* intfc, UInt32 kVersion)
+void NodeRegistrationMapHolder::Save(SKSE::SerializationInterface* intfc, std::uint32_t kVersion)
 {
-	SimpleLocker locker(&m_lock);
+	std::lock_guard<std::recursive_mutex> locker(m_lock);
 	for(auto it = m_data.begin(); it != m_data.end(); ++it) {
-		intfc->OpenRecord('NDEN', kVersion);
+		if (!intfc->OpenRecord('NDEN', kVersion)) {
+			SKSE::log::error("{} - Failed to open record", __FUNCTION__);
+		}
 
 		// Key
-		UInt64 handle = it->first;
+		std::uint64_t handle = it->first;
 		intfc->WriteRecordData(&handle, sizeof(handle));
 
 #ifdef _DEBUG
-		_MESSAGE("%s - Saving Handle %08X", __FUNCTION__, handle);
+		SKSE::log::info("{} - Saving Handle {:08X}", __FUNCTION__, handle);
 #endif
 
 		// Value
@@ -2099,18 +2109,20 @@ void NodeRegistrationMapHolder::Save(SKSESerializationInterface* intfc, UInt32 k
 	}
 }
 
-void ActorRegistrationMapHolder::Save(SKSESerializationInterface* intfc, UInt32 kVersion)
+void ActorRegistrationMapHolder::Save(SKSE::SerializationInterface* intfc, std::uint32_t kVersion)
 {
-	SimpleLocker locker(&m_lock);
+	std::lock_guard<std::recursive_mutex> locker(m_lock);
 	for(auto it = m_data.begin(); it != m_data.end(); ++it) {
-		intfc->OpenRecord('ACEN', kVersion);
+		if (!intfc->OpenRecord('ACEN', kVersion)) {
+			SKSE::log::error("{} - Failed to open record", __FUNCTION__);
+		}
 
 		// Key
-		UInt64 handle = it->first;
+		std::uint64_t handle = it->first;
 		intfc->WriteRecordData(&handle, sizeof(handle));
 
 #ifdef _DEBUG
-		_MESSAGE("%s - Saving Handle %016llX", __FUNCTION__, handle);
+		SKSE::log::info("{} - Saving Handle %016llX", __FUNCTION__, handle);
 #endif
 
 		// Value
@@ -2118,20 +2130,20 @@ void ActorRegistrationMapHolder::Save(SKSESerializationInterface* intfc, UInt32 
 	}
 }
 
-bool ActorRegistrationMapHolder::Load(SKSESerializationInterface* intfc, UInt32 kVersion, OverrideHandle * outHandle, const StringIdMap & stringTable)
+bool ActorRegistrationMapHolder::Load(SKSE::SerializationInterface* intfc, std::uint32_t kVersion, OverrideHandle * outHandle, const StringIdMap & stringTable)
 {
-	UInt64 handle = 0;
+	std::uint64_t handle = 0;
 	// Key
 	if (!intfc->ReadRecordData(&handle, sizeof(handle)))
 	{
-		_MESSAGE("%s - Error loading reg key", __FUNCTION__);
+		SKSE::log::info("{} - Error loading reg key", __FUNCTION__);
 		return true;
 	}
 
 	MultiRegistration<ArmorRegistration,2> reg;
 	if (reg.Load(intfc, kVersion, stringTable))
 	{
-		_MESSAGE("%s - Error loading armor gender registrations", __FUNCTION__);
+		SKSE::log::info("{} - Error loading armor gender registrations", __FUNCTION__);
 		return true;
 	}
 
@@ -2145,8 +2157,8 @@ bool ActorRegistrationMapHolder::Load(SKSESerializationInterface* intfc, UInt32 
 	}
 
 	// Invalid handle
-	TESForm* form = LookupFormByID(formId);
-	if (!form || (form->formType != kFormType_Reference && form->formType != kFormType_Character))
+	RE::TESForm* form = RE::TESForm::LookupByID(formId);
+	if (!form || (form->IsNot(RE::FormType::Reference) && form->IsNot(RE::FormType::ActorCharacter)))
 	{
 		*outHandle = 0;
 		return true;
@@ -2164,24 +2176,25 @@ bool ActorRegistrationMapHolder::Load(SKSESerializationInterface* intfc, UInt32 
 	Release();
 
 #ifdef _DEBUG
-	_MESSAGE("%s - Loaded %08X", __FUNCTION__, newFormId);
+	SKSE::log::info("{} - Loaded {:08X}", __FUNCTION__, newFormId);
 #endif
 	return false;
 }
 
-
-void WeaponRegistrationMapHolder::Save(SKSESerializationInterface* intfc, UInt32 kVersion)
+void WeaponRegistrationMapHolder::Save(SKSE::SerializationInterface* intfc, std::uint32_t kVersion)
 {
-	SimpleLocker locker(&m_lock);
+	std::lock_guard<std::recursive_mutex> locker(m_lock);
 	for(auto it = m_data.begin(); it != m_data.end(); ++it) {
-		intfc->OpenRecord('WPEN', kVersion);
+		if (!intfc->OpenRecord('WPEN', kVersion)) {
+			SKSE::log::error("{} - Failed to open record", __FUNCTION__);
+		}
 
 		// Key
-		UInt64 handle = it->first;
+		std::uint64_t handle = it->first;
 		intfc->WriteRecordData(&handle, sizeof(handle));
 
 #ifdef _DEBUG
-		_MESSAGE("%s - Saving Handle %08X", __FUNCTION__, handle);
+		SKSE::log::info("{} - Saving Handle {:08X}", __FUNCTION__, handle);
 #endif
 
 		// Value
@@ -2189,20 +2202,20 @@ void WeaponRegistrationMapHolder::Save(SKSESerializationInterface* intfc, UInt32
 	}
 }
 
-bool WeaponRegistrationMapHolder::Load(SKSESerializationInterface* intfc, UInt32 kVersion, OverrideHandle * outHandle, const StringIdMap & stringTable)
+bool WeaponRegistrationMapHolder::Load(SKSE::SerializationInterface* intfc, std::uint32_t kVersion, OverrideHandle * outHandle, const StringIdMap & stringTable)
 {
-	UInt64 handle = 0;
+	std::uint64_t handle = 0;
 	// Key
 	if (!intfc->ReadRecordData(&handle, sizeof(handle)))
 	{
-		_MESSAGE("%s - Error loading reg key", __FUNCTION__);
+		SKSE::log::info("{} - Error loading reg key", __FUNCTION__);
 		return true;
 	}
 
 	MultiRegistration<MultiRegistration<WeaponRegistration,2>,2> reg;
 	if (reg.Load(intfc, kVersion, stringTable))
 	{
-		_MESSAGE("%s - Error loading weapon registrations", __FUNCTION__);
+		SKSE::log::info("{} - Error loading weapon registrations", __FUNCTION__);
 		return true;
 	}
 
@@ -2216,8 +2229,8 @@ bool WeaponRegistrationMapHolder::Load(SKSESerializationInterface* intfc, UInt32
 	}
 
 	// Invalid handle
-	TESForm* form = LookupFormByID(formId);
-	if (!form || (form->formType != kFormType_Reference && form->formType != kFormType_Character)) {
+	RE::TESForm* form = RE::TESForm::LookupByID(formId);
+	if (!form || (form->IsNot(RE::FormType::Reference) && form->IsNot(RE::FormType::ActorCharacter))) {
 		*outHandle = 0;
 		return true;
 	}
@@ -2234,24 +2247,25 @@ bool WeaponRegistrationMapHolder::Load(SKSESerializationInterface* intfc, UInt32
 	Release();
 
 #ifdef _DEBUG
-	_MESSAGE("%s - Loaded %08X", __FUNCTION__, newFormId);
+	SKSE::log::info("{} - Loaded {:08X}", __FUNCTION__, newFormId);
 #endif
 	return false;
 }
 
-
-void SkinRegistrationMapHolder::Save(SKSESerializationInterface* intfc, UInt32 kVersion)
+void SkinRegistrationMapHolder::Save(SKSE::SerializationInterface* intfc, std::uint32_t kVersion)
 {
-	SimpleLocker locker(&m_lock);
+	std::lock_guard<std::recursive_mutex> locker(m_lock);
 	for (auto it = m_data.begin(); it != m_data.end(); ++it) {
-		intfc->OpenRecord('SKNR', kVersion);
+		if (!intfc->OpenRecord('SKNR', kVersion)) {
+			SKSE::log::error("{} - Failed to open record", __FUNCTION__);
+		}
 
 		// Key
-		UInt64 handle = it->first;
+		std::uint64_t handle = it->first;
 		intfc->WriteRecordData(&handle, sizeof(handle));
 
 #ifdef _DEBUG
-		_MESSAGE("%s - Saving Handle %016llX", __FUNCTION__, handle);
+		SKSE::log::info("{} - Saving Handle %016llX", __FUNCTION__, handle);
 #endif
 
 		// Value
@@ -2259,20 +2273,20 @@ void SkinRegistrationMapHolder::Save(SKSESerializationInterface* intfc, UInt32 k
 	}
 }
 
-bool SkinRegistrationMapHolder::Load(SKSESerializationInterface* intfc, UInt32 kVersion, OverrideHandle* outHandle, const StringIdMap & stringTable)
+bool SkinRegistrationMapHolder::Load(SKSE::SerializationInterface* intfc, std::uint32_t kVersion, OverrideHandle* outHandle, const StringIdMap & stringTable)
 {
-	UInt64 handle = 0;
+	std::uint64_t handle = 0;
 	// Key
 	if (!intfc->ReadRecordData(&handle, sizeof(handle)))
 	{
-		_MESSAGE("%s - Error loading reg key", __FUNCTION__);
+		SKSE::log::info("{} - Error loading reg key", __FUNCTION__);
 		return true;
 	}
 
 	MultiRegistration<MultiRegistration<SkinRegistration, 2>, 2> reg;
 	if (reg.Load(intfc, kVersion, stringTable))
 	{
-		_MESSAGE("%s - Error loading skin registrations", __FUNCTION__);
+		SKSE::log::info("{} - Error loading skin registrations", __FUNCTION__);
 		return true;
 	}
 
@@ -2286,8 +2300,8 @@ bool SkinRegistrationMapHolder::Load(SKSESerializationInterface* intfc, UInt32 k
 	}
 
 	// Invalid handle
-	TESForm* form = LookupFormByID(formId);
-	if (!form || form->formType != Character::kTypeID) {
+	RE::TESForm* form = RE::TESForm::LookupByID(formId);
+	if (!form || form->IsNot(RE::FormType::ActorCharacter)) {
 		*outHandle = 0;
 		return true;
 	}
@@ -2303,13 +2317,13 @@ bool SkinRegistrationMapHolder::Load(SKSESerializationInterface* intfc, UInt32 k
 	Release();
 
 #ifdef _DEBUG
-	_MESSAGE("%s - Loaded %08X", __FUNCTION__, newFormId);
+	SKSE::log::info("{} - Loaded {:08X}", __FUNCTION__, newFormId);
 #endif
 	return false;
 }
 
 // ActorRegistration
-void OverrideInterface::Save(SKSESerializationInterface * intfc, UInt32 kVersion)
+void OverrideInterface::Save(SKSE::SerializationInterface * intfc, std::uint32_t kVersion)
 {
 	armorData.Save(intfc, kVersion);
 	nodeData.Save(intfc, kVersion);
@@ -2317,10 +2331,10 @@ void OverrideInterface::Save(SKSESerializationInterface * intfc, UInt32 kVersion
 	skinData.Save(intfc, kVersion);
 }
 
-bool OverrideInterface::LoadWeaponOverrides(SKSESerializationInterface* intfc, UInt32 kVersion, const StringIdMap & stringTable)
+bool OverrideInterface::LoadWeaponOverrides(SKSE::SerializationInterface* intfc, std::uint32_t kVersion, const StringIdMap & stringTable)
 {
 #ifdef _DEBUG
-	_MESSAGE("%s - Loading Weapon Overrides...", __FUNCTION__);
+	SKSE::log::info("{} - Loading Weapon Overrides...", __FUNCTION__);
 #endif
 	OverrideHandle handle = 0;
 	if(!weaponData.Load(intfc, kVersion, &handle, stringTable))
@@ -2331,10 +2345,10 @@ bool OverrideInterface::LoadWeaponOverrides(SKSESerializationInterface* intfc, U
 	return false;
 }
 
-bool OverrideInterface::LoadOverrides(SKSESerializationInterface* intfc, UInt32 kVersion, const StringIdMap & stringTable)
+bool OverrideInterface::LoadOverrides(SKSE::SerializationInterface* intfc, std::uint32_t kVersion, const StringIdMap & stringTable)
 {
 #ifdef _DEBUG
-	_MESSAGE("%s - Loading Overrides...", __FUNCTION__);
+	SKSE::log::info("{} - Loading Overrides...", __FUNCTION__);
 #endif
 	OverrideHandle handle = 0;
 	if(!armorData.Load(intfc, kVersion, &handle, stringTable))
@@ -2345,10 +2359,10 @@ bool OverrideInterface::LoadOverrides(SKSESerializationInterface* intfc, UInt32 
 	return false;
 }
 
-bool OverrideInterface::LoadNodeOverrides(SKSESerializationInterface* intfc, UInt32 kVersion, const StringIdMap & stringTable)
+bool OverrideInterface::LoadNodeOverrides(SKSE::SerializationInterface* intfc, std::uint32_t kVersion, const StringIdMap & stringTable)
 {
 #ifdef _DEBUG
-	_MESSAGE("%s - Loading Node Overrides...", __FUNCTION__);
+	SKSE::log::info("{} - Loading Node Overrides...", __FUNCTION__);
 #endif
 	OverrideHandle handle = 0;
 	if(!nodeData.Load(intfc, kVersion, &handle, stringTable))
@@ -2359,10 +2373,10 @@ bool OverrideInterface::LoadNodeOverrides(SKSESerializationInterface* intfc, UIn
 	return false;
 }
 
-bool OverrideInterface::LoadSkinOverrides(SKSESerializationInterface* intfc, UInt32 kVersion, const StringIdMap & stringTable)
+bool OverrideInterface::LoadSkinOverrides(SKSE::SerializationInterface* intfc, std::uint32_t kVersion, const StringIdMap & stringTable)
 {
 #ifdef _DEBUG
-	_MESSAGE("%s - Loading Skin Overrides...", __FUNCTION__);
+	SKSE::log::info("{} - Loading Skin Overrides...", __FUNCTION__);
 #endif
 	OverrideHandle handle = 0;
 	if (!skinData.Load(intfc, kVersion, &handle, stringTable))
@@ -2392,35 +2406,35 @@ void OverrideInterface::PrintDiagnostics()
 
 void OverrideInterface::Dump()
 {
-	_MESSAGE("Dumping Overrides");
+	SKSE::log::info("Dumping Overrides");
 	armorData.Lock();
-	_MESSAGE("Dumping (%lld) actor overrides", armorData.m_data.size());
+	SKSE::log::info("Dumping ({}) actor overrides", armorData.m_data.size());
 	for(auto it : armorData.m_data)
 	{
-		for(UInt8 gender = 0; gender < 2; gender++)
+		for(std::uint8_t gender = 0; gender < 2; gender++)
 		{
-			_MESSAGE("Actor Handle: (%016llX) children (%d) Gender (%d)", it.first, it.second[gender].size(), gender);
+			SKSE::log::info("RE::Actor Handle: (%016llX) children ({}) Gender ({})", it.first, it.second[gender].size(), gender);
 			for(auto ait : it.second[gender]) // Loop Armors
 			{
-				_MESSAGE("\tArmor Handle: (%016llX) children (%lld)", ait.first, ait.second.size());
+				SKSE::log::info("\tArmor Handle: (%016llX) children ({})", ait.first, ait.second.size());
 				for(auto dit : ait.second) // Loop Addons
 				{
-					_MESSAGE("\t\tAddon Handle: (%016llX) children (%lld)", dit.first, dit.second.size());
+					SKSE::log::info("\t\tAddon Handle: (%016llX) children ({})", dit.first, dit.second.size());
 					for(auto nit : dit.second) // Loop Overrides
 					{
-						_MESSAGE("\t\t\tOverride Node: (%s) children (%lld)", nit.first->c_str(), nit.second.size());
+						SKSE::log::info("\t\t\tOverride Node: ({}) children ({})", nit.first->c_str(), nit.second.size());
 						for(auto ovr: nit.second)
 						{
 							switch(ovr.type)
 							{
 							case OverrideVariant::kType_String:
-								_MESSAGE("\t\t\t\tOverride: Key (%d) Value (%s)", ovr.key, ovr.str->c_str());
+								SKSE::log::info("\t\t\t\tOverride: Key ({}) Value ({})", ovr.key, ovr.str->c_str());
 								break;
 							case OverrideVariant::kType_Float:
-								_MESSAGE("\t\t\t\tOverride: Key (%d) Value (%f)", ovr.key, ovr.data.f);
+								SKSE::log::info("\t\t\t\tOverride: Key ({}) Value ({})", ovr.key, ovr.data.f);
 								break;
 							default:
-								_MESSAGE("\t\t\t\tOverride: Key (%d) Value (%X)", ovr.key, ovr.data.u);
+								SKSE::log::info("\t\t\t\tOverride: Key ({}) Value ({:X})", ovr.key, ovr.data.u);
 								break;
 							}
 						}
@@ -2432,27 +2446,27 @@ void OverrideInterface::Dump()
 	armorData.Release();
 
 	nodeData.Lock();
-	_MESSAGE("Dumping (%lld) node overrides", nodeData.m_data.size());
+	SKSE::log::info("Dumping ({}) node overrides", nodeData.m_data.size());
 	for(auto nit : nodeData.m_data)
 	{
-		for(UInt8 gender = 0; gender < 2; gender++)
+		for(std::uint8_t gender = 0; gender < 2; gender++)
 		{
-			_MESSAGE("Node Handle: (%016llX) children (%lld) Gender (%d)", nit.first, nit.second[gender].size(), gender);
+			SKSE::log::info("Node Handle: (%016llX) children ({}) Gender ({})", nit.first, nit.second[gender].size(), gender);
 			for(auto oit : nit.second[gender]) // Loop Overrides
 			{
-				_MESSAGE("\tOverride Node: (%s) children (%lld)", oit.first->c_str(), oit.second.size());
+				SKSE::log::info("\tOverride Node: ({}) children ({})", oit.first->c_str(), oit.second.size());
 				for(auto ovr : oit.second)
 				{
 					switch(ovr.type)
 					{
 					case OverrideVariant::kType_String:
-						_MESSAGE("\t\tOverride: Key (%d) Value (%s)", ovr.key, ovr.str->c_str());
+						SKSE::log::info("\t\tOverride: Key ({}) Value ({})", ovr.key, ovr.str->c_str());
 						break;
 					case OverrideVariant::kType_Float:
-						_MESSAGE("\t\tOverride: Key (%d) Value (%f)", ovr.key, ovr.data.f);
+						SKSE::log::info("\t\tOverride: Key ({}) Value ({})", ovr.key, ovr.data.f);
 						break;
 					default:
-						_MESSAGE("\t\tOverride: Key (%d) Value (%X)", ovr.key, ovr.data.u);
+						SKSE::log::info("\t\tOverride: Key ({}) Value ({:X})", ovr.key, ovr.data.u);
 						break;
 					}
 				}
@@ -2462,29 +2476,29 @@ void OverrideInterface::Dump()
 	nodeData.Release();
 
 	skinData.Lock();
-	_MESSAGE("Dumping (%lld) skin overrides", skinData.m_data.size());
+	SKSE::log::info("Dumping ({}) skin overrides", skinData.m_data.size());
 	for (auto nit : skinData.m_data)
 	{
-		for (UInt8 gender = 0; gender <= 1; gender++)
+		for (std::uint8_t gender = 0; gender <= 1; gender++)
 		{
-			for (UInt8 perspective = 0; perspective <= 1; perspective++)
+			for (std::uint8_t perspective = 0; perspective <= 1; perspective++)
 			{
-				_MESSAGE("Skin Handle: (%016llX) Gender (%d) Perspective (%d)", nit.first, gender, perspective);
+				SKSE::log::info("Skin Handle: (%016llX) Gender ({}) Perspective ({})", nit.first, gender, perspective);
 				for (auto oit : nit.second[gender][perspective]) // Loop Overrides
 				{
-					_MESSAGE("\tSkin Override: Slot (%08X) children (%lld)", oit.first, oit.second.size());
+					SKSE::log::info("\tSkin Override: Slot ({:08X}) children ({})", oit.first, oit.second.size());
 					for (auto ovr : oit.second)
 					{
 						switch (ovr.type)
 						{
 						case OverrideVariant::kType_String:
-							_MESSAGE("\t\tOverride: Key (%d) Value (%s)", ovr.key, ovr.str->c_str());
+							SKSE::log::info("\t\tOverride: Key ({}) Value ({})", ovr.key, ovr.str->c_str());
 							break;
 						case OverrideVariant::kType_Float:
-							_MESSAGE("\t\tOverride: Key (%d) Value (%f)", ovr.key, ovr.data.f);
+							SKSE::log::info("\t\tOverride: Key ({}) Value ({})", ovr.key, ovr.data.f);
 							break;
 						default:
-							_MESSAGE("\t\tOverride: Key (%d) Value (%X)", ovr.key, ovr.data.u);
+							SKSE::log::info("\t\tOverride: Key ({}) Value ({:X})", ovr.key, ovr.data.u);
 							break;
 						}
 					}
@@ -2497,16 +2511,16 @@ void OverrideInterface::Dump()
 
 extern bool	g_immediateArmor;
 
-void OverrideInterface::OnAttach(TESObjectREFR * refr, TESObjectARMO * armor, TESObjectARMA * addon, NiAVObject * object, bool isFirstPerson, NiNode * skeleton, NiNode * root)
+void OverrideInterface::OnAttach(RE::TESObjectREFR * refr, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::NiAVObject * object, bool isFirstPerson, RE::NiNode * skeleton, RE::NiNode * root)
 {
 	Impl_ApplyOverrides(refr, armor, addon, object, g_immediateArmor);
 
-	UInt32 armorMask = armor->bipedObject.GetSlotMask();
-	UInt32 addonMask = addon->biped.GetSlotMask();
+	std::uint32_t armorMask = armor->GetSlotMask().underlying();
+	std::uint32_t addonMask = addon->GetSlotMask().underlying();
 	Impl_ApplySkinOverrides(refr, isFirstPerson, armor, addon, armorMask & addonMask, object, g_immediateArmor);
 }
 
-bool OverrideInterface::HasArmorOverride(TESObjectREFR* refr, bool isFemale, TESObjectARMO* armor, TESObjectARMA* addon, const char* nodeName, skee_u16 key, skee_u8 index)
+bool OverrideInterface::HasArmorOverride(RE::TESObjectREFR* refr, bool isFemale, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, const char* nodeName, skee_u16 key, skee_u8 index)
 {
 	if (!refr)
 		return false;
@@ -2517,7 +2531,7 @@ bool OverrideInterface::HasArmorOverride(TESObjectREFR* refr, bool isFemale, TES
 	return Impl_GetOverride(refr, isFemale, armor, addon, nodeName, key, index) != nullptr;
 }
 
-bool OverrideInterface::HasArmorAddonNode(TESObjectREFR* refr, bool firstPerson, TESObjectARMO* armor, TESObjectARMA* addon, const char* nodeName, bool debug)
+bool OverrideInterface::HasArmorAddonNode(RE::TESObjectREFR* refr, bool firstPerson, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, const char* nodeName, bool debug)
 {
 	return Impl_HasArmorAddonNode(refr, firstPerson, armor, addon, nodeName, debug);
 }
@@ -2531,8 +2545,8 @@ void OverrideInterface::SetValueVariant(OverrideVariant& variant, skee_u16 key, 
 	{
 	case SetVariant::Type::Int:
 	{
-		SInt32 i = value.Int();
-		PackValue<SInt32>(&variant, key, index, &i);
+		std::int32_t i = value.Int();
+		PackValue<std::int32_t>(&variant, key, index, &i);
 		break;
 	}
 	case SetVariant::Type::Float:
@@ -2549,8 +2563,8 @@ void OverrideInterface::SetValueVariant(OverrideVariant& variant, skee_u16 key, 
 	}
 	case SetVariant::Type::TextureSet:
 	{
-		BGSTextureSet* ts = value.TextureSet();
-		PackValue<BGSTextureSet*>(&variant, key, index, &ts);
+		RE::BGSTextureSet* ts = value.TextureSet();
+		PackValue<RE::BGSTextureSet*>(&variant, key, index, &ts);
 		break;
 	}
 	case SetVariant::Type::String:
@@ -2568,8 +2582,8 @@ bool OverrideInterface::GetValueVariant(OverrideVariant& variant, skee_u16 key, 
 	{
 	case OverrideVariant::kType_Identifier:
 	{
-		BGSTextureSet* textureSet = nullptr;
-		UnpackValue<BGSTextureSet*>(&textureSet, &variant);
+		RE::BGSTextureSet* textureSet = nullptr;
+		UnpackValue<RE::BGSTextureSet*>(&textureSet, &variant);
 		value.TextureSet(textureSet);
 		return true;
 		break;
@@ -2584,7 +2598,7 @@ bool OverrideInterface::GetValueVariant(OverrideVariant& variant, skee_u16 key, 
 	}
 	case OverrideVariant::kType_Int:
 	{
-		SInt32 i = 0;
+		std::int32_t i = 0;
 		UnpackValue(&i, &variant);
 		value.Int(i);
 		return true;
@@ -2610,14 +2624,14 @@ bool OverrideInterface::GetValueVariant(OverrideVariant& variant, skee_u16 key, 
 	return false;
 }
 
-void OverrideInterface::AddArmorOverride(TESObjectREFR* refr, bool isFemale, TESObjectARMO* armor, TESObjectARMA* addon, const char* nodeName, skee_u16 key, skee_u8 index, SetVariant& value)
+void OverrideInterface::AddArmorOverride(RE::TESObjectREFR* refr, bool isFemale, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, const char* nodeName, skee_u16 key, skee_u8 index, SetVariant& value)
 {
 	OverrideVariant variant;
 	SetValueVariant(variant, key, index, value);
 	Impl_AddOverride(refr, isFemale, armor, addon, nodeName, variant);
 }
 
-bool OverrideInterface::GetArmorOverride(TESObjectREFR* refr, bool isFemale, TESObjectARMO* armor, TESObjectARMA* addon, const char* nodeName, skee_u16 key, skee_u8 index, GetVariant& visitor)
+bool OverrideInterface::GetArmorOverride(RE::TESObjectREFR* refr, bool isFemale, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, const char* nodeName, skee_u16 key, skee_u8 index, GetVariant& visitor)
 {
 	if (!refr || !armor || !addon || !nodeName)
 		return false;
@@ -2629,7 +2643,7 @@ bool OverrideInterface::GetArmorOverride(TESObjectREFR* refr, bool isFemale, TES
 	return GetValueVariant(*value, key, index, visitor);
 }
 
-void OverrideInterface::SetArmorProperties(TESObjectREFR* refr, bool immediate)
+void OverrideInterface::SetArmorProperties(RE::TESObjectREFR* refr, bool immediate)
 {
 	if (!refr)
 		return;
@@ -2637,7 +2651,7 @@ void OverrideInterface::SetArmorProperties(TESObjectREFR* refr, bool immediate)
 	Impl_SetProperties(refr->formID, immediate);
 }
 
-void OverrideInterface::SetArmorProperty(TESObjectREFR* refr, bool firstPerson, TESObjectARMO* armor, TESObjectARMA* addon, const char* nodeName, skee_u16 key, skee_u8 index, SetVariant& value, bool immediate)
+void OverrideInterface::SetArmorProperty(RE::TESObjectREFR* refr, bool firstPerson, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, const char* nodeName, skee_u16 key, skee_u8 index, SetVariant& value, bool immediate)
 {
 	if (!refr)
 		return;
@@ -2647,7 +2661,7 @@ void OverrideInterface::SetArmorProperty(TESObjectREFR* refr, bool firstPerson, 
 	Impl_SetArmorAddonProperty(refr, firstPerson, armor, addon, nodeName, &variant, immediate);
 }
 
-bool OverrideInterface::GetArmorProperty(TESObjectREFR* refr, bool firstPerson, TESObjectARMO* armor, TESObjectARMA* addon, const char* nodeName, skee_u16 key, skee_u8 index, GetVariant& value)
+bool OverrideInterface::GetArmorProperty(RE::TESObjectREFR* refr, bool firstPerson, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, const char* nodeName, skee_u16 key, skee_u8 index, GetVariant& value)
 {
 	if (!refr)
 		return false;
@@ -2659,7 +2673,7 @@ bool OverrideInterface::GetArmorProperty(TESObjectREFR* refr, bool firstPerson, 
 	return GetValueVariant(variant, key, index, value);
 }
 
-void OverrideInterface::ApplyArmorOverrides(TESObjectREFR* refr, TESObjectARMO* armor, TESObjectARMA* addon, NiAVObject* object, bool immediate)
+void OverrideInterface::ApplyArmorOverrides(RE::TESObjectREFR* refr, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, RE::NiAVObject* object, bool immediate)
 {
 	if (!refr || !armor || !addon || !object)
 		return;
@@ -2672,7 +2686,7 @@ void OverrideInterface::RemoveAllArmorOverrides()
 	Impl_RemoveAllOverrides();
 }
 
-void OverrideInterface::RemoveAllArmorOverridesByReference(TESObjectREFR* refr)
+void OverrideInterface::RemoveAllArmorOverridesByReference(RE::TESObjectREFR* refr)
 {
 	if (!refr)
 		return;
@@ -2680,7 +2694,7 @@ void OverrideInterface::RemoveAllArmorOverridesByReference(TESObjectREFR* refr)
 	Impl_RemoveAllReferenceOverrides(refr);
 }
 
-void OverrideInterface::RemoveAllArmorOverridesByArmor(TESObjectREFR* refr, bool isFemale, TESObjectARMO* armor)
+void OverrideInterface::RemoveAllArmorOverridesByArmor(RE::TESObjectREFR* refr, bool isFemale, RE::TESObjectARMO* armor)
 {
 	if (!refr || !armor)
 		return;
@@ -2688,7 +2702,7 @@ void OverrideInterface::RemoveAllArmorOverridesByArmor(TESObjectREFR* refr, bool
 	Impl_RemoveAllArmorOverrides(refr, isFemale, armor);
 }
 
-void OverrideInterface::RemoveAllArmorOverridesByAddon(TESObjectREFR* refr, bool isFemale, TESObjectARMO* armor, TESObjectARMA* addon)
+void OverrideInterface::RemoveAllArmorOverridesByAddon(RE::TESObjectREFR* refr, bool isFemale, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon)
 {
 	if (!refr || !armor || !addon)
 		return;
@@ -2696,7 +2710,7 @@ void OverrideInterface::RemoveAllArmorOverridesByAddon(TESObjectREFR* refr, bool
 	Impl_RemoveAllArmorAddonOverrides(refr, isFemale, armor, addon);
 }
 
-void OverrideInterface::RemoveAllArmorOverridesByNode(TESObjectREFR* refr, bool isFemale, TESObjectARMO* armor, TESObjectARMA* addon, const char* nodeName)
+void OverrideInterface::RemoveAllArmorOverridesByNode(RE::TESObjectREFR* refr, bool isFemale, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, const char* nodeName)
 {
 	if (!refr || !armor || !addon || !nodeName)
 		return;
@@ -2704,7 +2718,7 @@ void OverrideInterface::RemoveAllArmorOverridesByNode(TESObjectREFR* refr, bool 
 	Impl_RemoveAllArmorAddonNodeOverrides(refr, isFemale, armor, addon, nodeName);
 }
 
-void OverrideInterface::RemoveArmorOverride(TESObjectREFR* refr, bool isFemale, TESObjectARMO* armor, TESObjectARMA* addon, const char* nodeName, skee_u16 key, skee_u8 index)
+void OverrideInterface::RemoveArmorOverride(RE::TESObjectREFR* refr, bool isFemale, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, const char* nodeName, skee_u16 key, skee_u8 index)
 {
 	if (!refr || !armor || !addon || !nodeName)
 		return;
@@ -2712,7 +2726,7 @@ void OverrideInterface::RemoveArmorOverride(TESObjectREFR* refr, bool isFemale, 
 	Impl_RemoveArmorAddonOverride(refr, isFemale, armor, addon, nodeName, key, index);
 }
 
-bool OverrideInterface::HasNodeOverride(TESObjectREFR* refr, bool isFemale, const char* nodeName, skee_u16 key, skee_u8 index)
+bool OverrideInterface::HasNodeOverride(RE::TESObjectREFR* refr, bool isFemale, const char* nodeName, skee_u16 key, skee_u8 index)
 {
 	if (!refr || !nodeName)
 		return false;
@@ -2720,14 +2734,14 @@ bool OverrideInterface::HasNodeOverride(TESObjectREFR* refr, bool isFemale, cons
 	return Impl_GetNodeOverride(refr, isFemale, nodeName, key, index) != nullptr;
 }
 
-void OverrideInterface::AddNodeOverride(TESObjectREFR* refr, bool isFemale, const char* nodeName, skee_u16 key, skee_u8 index, SetVariant& value)
+void OverrideInterface::AddNodeOverride(RE::TESObjectREFR* refr, bool isFemale, const char* nodeName, skee_u16 key, skee_u8 index, SetVariant& value)
 {
 	OverrideVariant variant;
 	SetValueVariant(variant, key, index, value);
 	Impl_AddNodeOverride(refr, isFemale, nodeName, variant);
 }
 
-bool OverrideInterface::GetNodeOverride(TESObjectREFR* refr, bool isFemale, const char* nodeName, skee_u16 key, skee_u8 index, GetVariant& visitor)
+bool OverrideInterface::GetNodeOverride(RE::TESObjectREFR* refr, bool isFemale, const char* nodeName, skee_u16 key, skee_u8 index, GetVariant& visitor)
 {
 	if (!refr)
 		return false;
@@ -2739,7 +2753,7 @@ bool OverrideInterface::GetNodeOverride(TESObjectREFR* refr, bool isFemale, cons
 	return GetValueVariant(*value, key, index, visitor);
 }
 
-void OverrideInterface::SetNodeProperties(TESObjectREFR* refr, bool immediate)
+void OverrideInterface::SetNodeProperties(RE::TESObjectREFR* refr, bool immediate)
 {
 	if (!refr)
 		return;
@@ -2747,7 +2761,7 @@ void OverrideInterface::SetNodeProperties(TESObjectREFR* refr, bool immediate)
 	Impl_SetNodeProperties(refr->formID, immediate);
 }
 
-void OverrideInterface::SetNodeProperty(TESObjectREFR* refr, bool firstPerson, const char* nodeName, skee_u16 key, skee_u8 index, SetVariant& value, bool immediate)
+void OverrideInterface::SetNodeProperty(RE::TESObjectREFR* refr, bool firstPerson, const char* nodeName, skee_u16 key, skee_u8 index, SetVariant& value, bool immediate)
 {
 	if (!refr)
 		return;
@@ -2757,7 +2771,7 @@ void OverrideInterface::SetNodeProperty(TESObjectREFR* refr, bool firstPerson, c
 	Impl_SetNodeProperty(refr, firstPerson, nodeName, &variant, immediate);
 }
 
-bool OverrideInterface::GetNodeProperty(TESObjectREFR* refr, bool firstPerson, const char* nodeName, skee_u16 key, skee_u8 index, GetVariant& value)
+bool OverrideInterface::GetNodeProperty(RE::TESObjectREFR* refr, bool firstPerson, const char* nodeName, skee_u16 key, skee_u8 index, GetVariant& value)
 {
 	if (!refr)
 		return false;
@@ -2769,7 +2783,7 @@ bool OverrideInterface::GetNodeProperty(TESObjectREFR* refr, bool firstPerson, c
 	return GetValueVariant(variant, key, index, value);
 }
 
-void OverrideInterface::ApplyNodeOverrides(TESObjectREFR* refr, NiAVObject* object, bool immediate)
+void OverrideInterface::ApplyNodeOverrides(RE::TESObjectREFR* refr, RE::NiAVObject* object, bool immediate)
 {
 	Impl_ApplyNodeOverrides(refr, object, immediate);
 }
@@ -2779,22 +2793,22 @@ void OverrideInterface::RemoveAllNodeOverrides()
 	Impl_RemoveAllNodeOverrides();
 }
 
-void OverrideInterface::RemoveAllNodeOverridesByReference(TESObjectREFR* reference)
+void OverrideInterface::RemoveAllNodeOverridesByReference(RE::TESObjectREFR* reference)
 {
 	Impl_RemoveAllReferenceNodeOverrides(reference);
 }
 
-void OverrideInterface::RemoveAllNodeOverridesByNode(TESObjectREFR* refr, bool isFemale, const char* nodeName)
+void OverrideInterface::RemoveAllNodeOverridesByNode(RE::TESObjectREFR* refr, bool isFemale, const char* nodeName)
 {
 	Impl_RemoveAllNodeNameOverrides(refr, isFemale, nodeName);
 }
 
-void OverrideInterface::RemoveNodeOverride(TESObjectREFR* refr, bool isFemale, const char* nodeName, skee_u16 key, skee_u8 index)
+void OverrideInterface::RemoveNodeOverride(RE::TESObjectREFR* refr, bool isFemale, const char* nodeName, skee_u16 key, skee_u8 index)
 {
 	Impl_RemoveNodeOverride(refr, isFemale, nodeName, key, index);
 }
 
-bool OverrideInterface::HasSkinOverride(TESObjectREFR* refr, bool isFemale, bool firstPerson, skee_u32 slotMask, skee_u16 key, skee_u8 index)
+bool OverrideInterface::HasSkinOverride(RE::TESObjectREFR* refr, bool isFemale, bool firstPerson, skee_u32 slotMask, skee_u16 key, skee_u8 index)
 {
 	if (!refr)
 		return false;
@@ -2802,14 +2816,14 @@ bool OverrideInterface::HasSkinOverride(TESObjectREFR* refr, bool isFemale, bool
 	return Impl_GetSkinOverride(refr, isFemale, firstPerson, slotMask, key, index) != nullptr;
 }
 
-void OverrideInterface::AddSkinOverride(TESObjectREFR* refr, bool isFemale, bool firstPerson, skee_u32 slotMask, skee_u16 key, skee_u8 index, SetVariant& value)
+void OverrideInterface::AddSkinOverride(RE::TESObjectREFR* refr, bool isFemale, bool firstPerson, skee_u32 slotMask, skee_u16 key, skee_u8 index, SetVariant& value)
 {
 	OverrideVariant variant;
 	SetValueVariant(variant, key, index, value);
 	Impl_AddSkinOverride(refr, isFemale, firstPerson, slotMask, variant);
 }
 
-bool OverrideInterface::GetSkinOverride(TESObjectREFR* refr, bool isFemale, bool firstPerson, skee_u32 slotMask, skee_u16 key, skee_u8 index, GetVariant& visitor)
+bool OverrideInterface::GetSkinOverride(RE::TESObjectREFR* refr, bool isFemale, bool firstPerson, skee_u32 slotMask, skee_u16 key, skee_u8 index, GetVariant& visitor)
 {
 	if (!refr)
 		return false;
@@ -2821,7 +2835,7 @@ bool OverrideInterface::GetSkinOverride(TESObjectREFR* refr, bool isFemale, bool
 	return GetValueVariant(*value, key, index, visitor);
 }
 
-void OverrideInterface::SetSkinProperties(TESObjectREFR* refr, bool immediate)
+void OverrideInterface::SetSkinProperties(RE::TESObjectREFR* refr, bool immediate)
 {
 	if (!refr)
 		return;
@@ -2829,7 +2843,7 @@ void OverrideInterface::SetSkinProperties(TESObjectREFR* refr, bool immediate)
 	Impl_SetSkinProperties(refr->formID, immediate);
 }
 
-void OverrideInterface::SetSkinProperty(TESObjectREFR* refr, bool firstPerson, skee_u32 slotMask, skee_u16 key, skee_u8 index, SetVariant& value, bool immediate)
+void OverrideInterface::SetSkinProperty(RE::TESObjectREFR* refr, bool firstPerson, skee_u32 slotMask, skee_u16 key, skee_u8 index, SetVariant& value, bool immediate)
 {
 	if (!refr)
 		return;
@@ -2839,7 +2853,7 @@ void OverrideInterface::SetSkinProperty(TESObjectREFR* refr, bool firstPerson, s
 	Impl_SetSkinProperty(refr, firstPerson, slotMask, &variant, immediate);
 }
 
-bool OverrideInterface::GetSkinProperty(TESObjectREFR* refr, bool firstPerson, skee_u32 slotMask, skee_u16 key, skee_u8 index, GetVariant& value)
+bool OverrideInterface::GetSkinProperty(RE::TESObjectREFR* refr, bool firstPerson, skee_u32 slotMask, skee_u16 key, skee_u8 index, GetVariant& value)
 {
 	if (!refr)
 		return false;
@@ -2851,7 +2865,7 @@ bool OverrideInterface::GetSkinProperty(TESObjectREFR* refr, bool firstPerson, s
 	return GetValueVariant(variant, key, index, value);
 }
 
-void OverrideInterface::ApplySkinOverrides(TESObjectREFR* refr, bool firstPerson, TESObjectARMO* armor, TESObjectARMA* addon, skee_u32 slotMask, NiAVObject* object, bool immediate)
+void OverrideInterface::ApplySkinOverrides(RE::TESObjectREFR* refr, bool firstPerson, RE::TESObjectARMO* armor, RE::TESObjectARMA* addon, skee_u32 slotMask, RE::NiAVObject* object, bool immediate)
 {
 	if (!refr || !armor || !addon || !object)
 		return;
@@ -2859,12 +2873,12 @@ void OverrideInterface::ApplySkinOverrides(TESObjectREFR* refr, bool firstPerson
 	Impl_ApplySkinOverrides(refr, firstPerson, armor, addon, slotMask, object, immediate);
 }
 
-void OverrideInterface::RemoveAllSkinOverridesBySlot(TESObjectREFR* refr, bool isFemale, bool firstPerson, skee_u32 slotMask)
+void OverrideInterface::RemoveAllSkinOverridesBySlot(RE::TESObjectREFR* refr, bool isFemale, bool firstPerson, skee_u32 slotMask)
 {
 	Impl_RemoveAllSkinOverrides(refr, isFemale, firstPerson, slotMask);
 }
 
-void OverrideInterface::RemoveSkinOverride(TESObjectREFR* refr, bool isFemale, bool firstPerson, skee_u32 slotMask, skee_u16 key, skee_u8 index)
+void OverrideInterface::RemoveSkinOverride(RE::TESObjectREFR* refr, bool isFemale, bool firstPerson, skee_u32 slotMask, skee_u16 key, skee_u8 index)
 {
 	Impl_RemoveSkinOverride(refr, isFemale, firstPerson, slotMask, key, index);
 }
@@ -2874,7 +2888,7 @@ void OverrideInterface::RemoveAllSkinOverrides()
 	Impl_RemoveAllSkinBasedOverrides();
 }
 
-void OverrideInterface::RemoveAllSkinOverridesByReference(TESObjectREFR* reference)
+void OverrideInterface::RemoveAllSkinOverridesByReference(RE::TESObjectREFR* reference)
 {
 	Impl_RemoveAllReferenceSkinOverrides(reference);
 }

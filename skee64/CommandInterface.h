@@ -7,9 +7,10 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
-
-class TESObjectREFR;
-
+namespace RE
+{
+	class RE::TESObjectREFR;
+}
 class CommandInterface : public ICommandInterface
 {
 private:
@@ -35,7 +36,7 @@ public:
     virtual void Revert() override { }
     virtual bool RegisterCommand(const char* command, const char* desc, CommandCallback cb) override;
 
-    bool ExecuteCommand(const char* command, TESObjectREFR* ref, const char* argumentString);
+    bool ExecuteCommand(const char* command, RE::TESObjectREFR* ref, const char* argumentString);
 
     void RegisterCommands();
 
@@ -56,6 +57,7 @@ private:
         }
     };
 
+public:
     using lock_type = std::recursive_mutex;
 
     lock_type m_lock;

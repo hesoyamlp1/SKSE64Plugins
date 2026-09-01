@@ -2,77 +2,75 @@
 #include "ShaderUtilities.h"
 #include "NifUtils.h"
 
-#include "skse64/NiNodes.h"
-#include "skse64/NiObjects.h"
-#include "skse64/NiExtraData.h"
-#include "skse64/NiSerialization.h"
+#include "RE/N/NiExtraData.h"
+#include "RE/N/NiStringsExtraData.h"
+#include "RE/N/NiStringExtraData.h"
+#include "RE/N/NiFloatExtraData.h"
+#include "RE/N/NiStream.h"
+#include "RE/N/NiBinaryStream.h"
+#include "RE/N/NiMath.h"
+#include "RE/N/NiMatrix3.h"
+#include "SKEEHooks.h"
 
-#include "skse64/GameReferences.h"
-#include "skse64/GameStreams.h"
+#include <cstdint>
+#include <vector>
 
 extern bool	g_enableEquippableTransforms;
 
-void SkeletonExtenderInterface::Attach(TESObjectREFR * refr, NiNode * skeleton, NiAVObject * objectRoot)
+void SkeletonExtenderInterface::Attach(RE::TESObjectREFR * refr, RE::NiNode * skeleton, RE::NiAVObject * objectRoot)
 {
-	NiStringsExtraData * extraData = ni_cast(FindExtraData(objectRoot, "EXTN"), NiStringsExtraData);
+	RE::NiStringsExtraData * extraData = netimmerse_cast<RE::NiStringsExtraData*>(FindExtraData(objectRoot, "EXTN"));
 	if(extraData)
 	{
-		if(extraData->m_size % 3 != 0) {
+		if(extraData->size % 3 != 0) {
 	#ifdef _DEBUG
-			_ERROR("%s - Error attaching additional skeleton info to %08X invalid entry count, must be divisible by 3.", __FUNCTION__, refr->formID);
+			SKSE::log::error("{} - Error attaching additional skeleton info to {:08X} invalid entry count, must be divisible by 3.", __FUNCTION__, refr->formID);
 	#endif
 			return;
 		}
 
-		for(UInt32 i = 0; i < extraData->m_size; i += 3)
+		for(std::uint32_t i = 0; i < extraData->size; i += 3)
 		{
-			BSFixedString targetNodeName = extraData->m_data[i];
-			BSFixedString sourceNodeName = extraData->m_data[i+1];
-			BSFixedString templatePath = extraData->m_data[i+2];
+			RE::BSFixedString targetNodeName = extraData->value[i];
+			RE::BSFixedString sourceNodeName = extraData->value[i+1];
+			RE::BSFixedString templatePath = extraData->value[i+2];
 
-			NiAVObject * targetNode = skeleton->GetObjectByName(&targetNodeName.data);
+			RE::NiAVObject * targetNode = skeleton->GetObjectByName(targetNodeName);
 			if(targetNode) {
-				NiAVObject * sourceNode = targetNode->GetObjectByName(&sourceNodeName.data);
+				RE::NiAVObject * sourceNode = targetNode->GetObjectByName(sourceNodeName);
 				if(!sourceNode) { // Make sure the source node doesn't exist
-					NiNode * targetNiNode = targetNode->GetAsNiNode();
+					RE::NiNode * targetNiNode = targetNode ? targetNode->AsNode() : nullptr;
 					if(targetNiNode) {
-						if(!LoadTemplate(targetNiNode, templatePath.data))
-							_ERROR("%s - Error attaching additional skeleton info to %08X failed to load target path %s onto %s.", __FUNCTION__, refr->formID, templatePath.data, targetNodeName.data);
+						if(!LoadTemplate(targetNiNode, templatePath.c_str()))
+							SKSE::log::error("{} - Error attaching additional skeleton info to {:08X} failed to load target path {} onto {}.", __FUNCTION__, refr->formID, templatePath.c_str(), targetNodeName.c_str());
 					}
 				}
 			} else {
 	#ifdef _DEBUG
-				_ERROR("%s - Error attaching additional skeleton info to %08X target node %s does not exist.", __FUNCTION__, refr->formID, targetNodeName.data);
+				SKSE::log::error("{} - Error attaching additional skeleton info to {:08X} target node {} does not exist.", __FUNCTION__, refr->formID, targetNodeName.c_str());
 	#endif
 			}
 		}
 	}
 }
 
-NiNode * SkeletonExtenderInterface::LoadTemplate(NiNode * parent, const char * path)
+RE::NiNode * SkeletonExtenderInterface::LoadTemplate(RE::NiNode * parent, const char * path)
 {
-	NiNode * rootNode = NULL;
-	UInt8 niStreamMemory[sizeof(NiStream)];
-	memset(niStreamMemory, 0, sizeof(NiStream));
-	NiStream * niStream = (NiStream *)niStreamMemory;
-	CALL_MEMBER_FN(niStream, ctor)();
+	RE::NiNode * rootNode = nullptr;
+	NifStreamWrapper niStream;
 
-	BSResourceNiBinaryStream binaryStream(path);
-	if(!binaryStream.IsValid()) {
-		goto destroy_stream;
-	}
-
-	niStream->LoadStream(&binaryStream);
-	if(niStream->m_rootObjects.m_data)
+	RE::BSResourceNiBinaryStream binaryStream(path);
+	if(binaryStream.good() && niStream.LoadStream(&binaryStream))
 	{
-		if(niStream->m_rootObjects.m_data[0]) // Get the root node
-			rootNode = niStream->m_rootObjects.m_data[0]->GetAsNiNode();
-		if(rootNode)
-			parent->AttachChild(rootNode, false);
+		if(niStream->topObjects.size() > 0)
+		{
+			if(niStream->topObjects[0]) // Get the root node
+				rootNode = niStream->topObjects[0].get() ? niStream->topObjects[0].get()->AsNode() : nullptr;
+			if(rootNode)
+				parent->AttachChild(rootNode, false);
+		}
 	}
 
-destroy_stream:
-	CALL_MEMBER_FN(niStream, dtor)();
 	return rootNode;
 }
 
@@ -81,32 +79,31 @@ destroy_stream:
 #include <algorithm>
 #include <iterator>
 #include "NiTransformInterface.h"
-#include "skse64/GameRTTI.h"
 
 extern NiTransformInterface	g_transformInterface;
 
-void SkeletonExtenderInterface::AddTransforms(TESObjectREFR * refr, bool isFirstPerson, NiNode * skeleton, NiAVObject * objectRoot)
+void SkeletonExtenderInterface::AddTransforms(RE::TESObjectREFR * refr, bool isFirstPerson, RE::NiNode * skeleton, RE::NiAVObject * objectRoot)
 {
 	std::set<SKEEFixedString> current_nodes, previous_nodes, diffs, changes, update;
 
-	UInt8 gender = 0;
-	TESNPC * actorBase = DYNAMIC_CAST(refr->baseForm, TESForm, TESNPC);
+	std::uint8_t gender = 0;
+	RE::TESNPC * actorBase = refr->GetBaseObject() ? refr->GetBaseObject()->As<RE::TESNPC>() : nullptr;
 	if (actorBase)
-		gender = CALL_MEMBER_FN(actorBase, GetSex)();
+		gender = static_cast<std::uint8_t>(actorBase->GetSex());
 
-	NiStringsExtraData * globalData = ni_cast(FindExtraData(skeleton, "BNDT"), NiStringsExtraData);
+	RE::NiStringsExtraData * globalData = netimmerse_cast<RE::NiStringsExtraData*>(FindExtraData(skeleton, "BNDT"));
 	if (globalData)
 	{
-		for (int i = 0; i < globalData->m_size; i++)
+		for (int i = 0; i < globalData->size; i++)
 		{
-			SKEEFixedString node(globalData->m_data[i]);
+			SKEEFixedString node(globalData->value[i]);
 			previous_nodes.insert(node);
 		}
 	}
 
-	VisitObjects(skeleton, [&](NiAVObject*object)
+	VisitObjects(skeleton, [&, isFirstPerson](RE::NiAVObject* object)
 	{
-		NiStringExtraData * stringData = ni_cast(NifUtils::GetExtraData(object, "SDTA"), NiStringExtraData);
+		RE::NiStringExtraData * stringData = netimmerse_cast<RE::NiStringExtraData*>(object->GetExtraData("SDTA"));
 		if (stringData)
 		{
 			try
@@ -117,7 +114,7 @@ void SkeletonExtenderInterface::AddTransforms(TESObjectREFR * refr, bool isFirst
 				Json::Value root;
 				Json::Reader reader(features);
 
-				bool parseSuccess = reader.parse(stringData->m_pString, root);
+				bool parseSuccess = reader.parse(stringData->value, root);
 				if (parseSuccess)
 				{
 					for (auto & objects : root)
@@ -129,11 +126,11 @@ void SkeletonExtenderInterface::AddTransforms(TESObjectREFR * refr, bool isFirst
 			}
 			catch (...)
 			{
-				_ERROR("%s - Error - Failed to parse skeleton transform data", __FUNCTION__);
+				SKSE::log::error("{} - Error - Failed to parse skeleton transform data", __FUNCTION__);
 			}
 		}
 
-		NiFloatExtraData * floatData = ni_cast(NifUtils::GetExtraData(object, "HH_OFFSET"), NiFloatExtraData);
+		RE::NiFloatExtraData * floatData = netimmerse_cast<RE::NiFloatExtraData*>(object->GetExtraData("HH_OFFSET"));
 		if (floatData)
 		{
 			current_nodes.insert("NPC");
@@ -154,16 +151,16 @@ void SkeletonExtenderInterface::AddTransforms(TESObjectREFR * refr, bool isFirst
 
 	diffs.clear();
 
-	NiStringExtraData * stringData = ni_cast(FindExtraData(objectRoot, "SDTA"), NiStringExtraData);
+	RE::NiStringExtraData * stringData = netimmerse_cast<RE::NiStringExtraData*>(FindExtraData(objectRoot, "SDTA"));
 	if (stringData)
 	{
-		ReadTransforms(refr, stringData->m_pString, isFirstPerson, gender == 1, current_nodes, changes);
+		ReadTransforms(refr, stringData->value, isFirstPerson, gender == 1, current_nodes, changes);
 	}
-	NiFloatExtraData * floatData = ni_cast(FindExtraData(objectRoot, "HH_OFFSET"), NiFloatExtraData);
+	RE::NiFloatExtraData * floatData = netimmerse_cast<RE::NiFloatExtraData*>(FindExtraData(objectRoot, "HH_OFFSET"));
 	if (floatData)
 	{
 		char buffer[32 + std::numeric_limits<float>::digits];
-		sprintf_s(buffer, sizeof(buffer), "[{\"name\":\"NPC\",\"pos\":[0,0,%f]}]", floatData->m_data);
+		sprintf_s(buffer, sizeof(buffer), "[{\"name\":\"NPC\",\"pos\":[0,0,%f]}]", floatData->value);
 		ReadTransforms(refr, buffer, isFirstPerson, gender == 1, current_nodes, changes);
 	}
 	
@@ -181,35 +178,42 @@ void SkeletonExtenderInterface::AddTransforms(TESObjectREFR * refr, bool isFirst
 		g_transformInterface.Impl_UpdateNodeTransforms(refr, isFirstPerson, gender == 1, node);
 	}
 
-	std::vector<BSFixedString> newNodes;
+	std::vector<RE::BSFixedString> newNodes;
 	for (auto & node : current_nodes)
 	{
 		newNodes.push_back(node);
 	}
 
-	// Was already there, set the new current nodes
+	// Was already there, set the new current nodes. Mutate the existing BNDT
+	// extra data in place (legacy SetData semantics: clear all entries, or
+	// completely replace them) instead of swapping in a new object.
 	if (globalData)
 	{
-		if (newNodes.size() == 0)
-		{
-			globalData->SetData(nullptr, 0);
+		std::vector<RE::BSFixedString> oldStrings;
+		for (std::uint32_t i = 0; i < globalData->size; i++) {
+			oldStrings.emplace_back(globalData->value[i] ? globalData->value[i] : "");
 		}
-		else
-		{
-			globalData->SetData(&newNodes.at(0), newNodes.size());
+		for (auto& node : oldStrings) {
+			globalData->Remove(node);
 		}
-		
+		for (auto& node : newNodes) {
+			globalData->Insert(node);
+		}
 	}
 
 	// No previous nodes, and we have new nodes
 	if (!globalData && current_nodes.size() > 0)
 	{
-		NiStringsExtraData * strData = NiStringsExtraData::Create("BNDT", &newNodes.at(0), newNodes.size());
+		std::vector<RE::BSFixedString> strings;
+		for (auto& node : newNodes) {
+			strings.push_back(node);
+		}
+		RE::NiStringsExtraData * strData = RE::NiStringsExtraData::Create("BNDT", strings);
 		skeleton->AddExtraData(strData);
 	}
 }
 
-void SkeletonExtenderInterface::ReadTransforms(TESObjectREFR * refr, const char * jsonData, bool isFirstPerson, bool isFemale, std::set<SKEEFixedString> & nodes, std::set<SKEEFixedString> & changes)
+void SkeletonExtenderInterface::ReadTransforms(RE::TESObjectREFR * refr, const char * jsonData, bool isFirstPerson, bool isFemale, std::set<SKEEFixedString> & nodes, std::set<SKEEFixedString> & changes)
 {
 	try
 	{
@@ -239,7 +243,7 @@ void SkeletonExtenderInterface::ReadTransforms(TESObjectREFR * refr, const char 
 
 					OverrideVariant posV[3];
 					float oldPosition[3];
-					for (UInt32 i = 0; i < 3; i++)
+					for (std::uint32_t i = 0; i < 3; i++)
 					{
 						OverrideVariant posOld = g_transformInterface.Impl_GetOverrideNodeValue(refr, isFirstPerson, isFemale, node, "internal", OverrideVariant::kParam_NodeTransformPosition, i);
 						UnpackValue<float>(&oldPosition[i], &posOld);
@@ -248,7 +252,7 @@ void SkeletonExtenderInterface::ReadTransforms(TESObjectREFR * refr, const char 
 							changed = true;
 					}
 
-					for (UInt32 i = 0; i < 3; i++)
+					for (std::uint32_t i = 0; i < 3; i++)
 					{
 						PackValue<float>(&posV[i], OverrideVariant::kParam_NodeTransformPosition, i, &position[i]);
 						g_transformInterface.Impl_AddNodeTransform(refr, isFirstPerson, isFemale, node, "internal", posV[i]);
@@ -256,28 +260,29 @@ void SkeletonExtenderInterface::ReadTransforms(TESObjectREFR * refr, const char 
 				}
 
 				Json::Value rot = objects["rot"];
-				if (pos.isArray() && pos.size() == 3)
+				if (rot.isArray() && rot.size() == 3)
 				{
-					NiMatrix33 rotation;
+					RE::NiMatrix3 rotation;
 					float rotationEuler[3];
-					rotationEuler[0] = rot[0].asFloat() * MATH_PI / 180;
-					rotationEuler[1] = rot[1].asFloat() * MATH_PI / 180;
-					rotationEuler[2] = rot[2].asFloat() * MATH_PI / 180;
-					rotation.SetEulerAngles(rotationEuler[0], rotationEuler[1], rotationEuler[2]);
+					rotationEuler[0] = rot[0].asFloat() * RE::NI_PI / 180;
+					rotationEuler[1] = rot[1].asFloat() * RE::NI_PI / 180;
+					rotationEuler[2] = rot[2].asFloat() * RE::NI_PI / 180;
+					rotation.SetEulerAnglesXYZ(rotationEuler[0], rotationEuler[1], rotationEuler[2]);
 
 					float oldRotation[9];
-					for (UInt32 i = 0; i < 9; i++)
+					for (std::uint32_t i = 0; i < 9; i++)
 					{
 						OverrideVariant potOld = g_transformInterface.Impl_GetOverrideNodeValue(refr, isFirstPerson, isFemale, node, "internal", OverrideVariant::kParam_NodeTransformRotation, i);
 						UnpackValue<float>(&oldRotation[i], &potOld);
 
-						if (rotation.arr[i] != oldRotation[i])
+						if (rotation.entry[i/3][i%3] != oldRotation[i])
 							changed = true;
 					}
 
 					OverrideVariant rotV[9];
-					for (UInt32 i = 0; i < 9; i++) {
-						PackValue<float>(&rotV[i], OverrideVariant::kParam_NodeTransformRotation, i, &rotation.arr[i]);
+					for (std::uint32_t i = 0; i < 9; i++) {
+						float val = rotation.entry[i/3][i%3];
+						PackValue<float>(&rotV[i], OverrideVariant::kParam_NodeTransformRotation, i, &val);
 						g_transformInterface.Impl_AddNodeTransform(refr, isFirstPerson, isFemale, node, "internal", rotV[i]);
 					}
 				}
@@ -307,16 +312,16 @@ void SkeletonExtenderInterface::ReadTransforms(TESObjectREFR * refr, const char 
 	}
 	catch (...)
 	{
-		_ERROR("%s - Error - Failed to parse skeleton transform data", __FUNCTION__);
+		SKSE::log::error("{} - Error - Failed to parse skeleton transform data", __FUNCTION__);
 	}
 }
 
-void SkeletonExtenderInterface::OnAttach(TESObjectREFR * refr, TESObjectARMO * armor, TESObjectARMA * addon, NiAVObject * object, bool isFirstPerson, NiNode * skeleton, NiNode * root)
+void SkeletonExtenderInterface::OnAttach(RE::TESObjectREFR * refr, RE::TESObjectARMO * armor, RE::TESObjectARMA * addon, RE::NiAVObject * object, bool isFirstPerson, RE::NiNode * skeleton, RE::NiNode * root)
 {
-	Attach(refr, root, object);
+	this->Attach(refr, root, object);
 
 	if (g_enableEquippableTransforms)
 	{
-		AddTransforms(refr, isFirstPerson, skeleton, object);
+		this->AddTransforms(refr, isFirstPerson, skeleton, object);
 	}
 }

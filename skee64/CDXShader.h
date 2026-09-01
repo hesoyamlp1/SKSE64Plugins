@@ -6,6 +6,8 @@
 #include "CDXTypes.h"
 #include <sstream>
 
+
+
 class CDXD3DDevice;
 class CDXMaterial;
 class CDXMesh;
@@ -50,33 +52,33 @@ public:
 	bool PSSetMaterialBuffers(CDXD3DDevice * device, MaterialBuffer & material);
 
 protected:
-	Microsoft::WRL::ComPtr<ID3D11VertexShader> m_vertexShader;
-	Microsoft::WRL::ComPtr<ID3D11PixelShader> m_pixelShader;
+	REX::W32::ComPtr<REX::W32::ID3D11VertexShader> m_vertexShader;
+	REX::W32::ComPtr<REX::W32::ID3D11PixelShader> m_pixelShader;
 
-	Microsoft::WRL::ComPtr<ID3D11VertexShader> m_wvShader;
-	Microsoft::WRL::ComPtr<ID3D11PixelShader> m_wpShader;
-	Microsoft::WRL::ComPtr<ID3D11GeometryShader> m_wgShader;
-	Microsoft::WRL::ComPtr<ID3D11DepthStencilState> m_depthSS;
-	Microsoft::WRL::ComPtr<ID3D11BlendState> m_wireBlendState;
+	REX::W32::ComPtr<REX::W32::ID3D11VertexShader> m_wvShader;
+	REX::W32::ComPtr<REX::W32::ID3D11PixelShader> m_wpShader;
+	REX::W32::ComPtr<REX::W32::ID3D11GeometryShader> m_wgShader;
+	REX::W32::ComPtr<REX::W32::ID3D11DepthStencilState> m_depthSS;
+	REX::W32::ComPtr<REX::W32::ID3D11BlendState> m_wireBlendState;
 
 	UINT m_baseRef;
-	Microsoft::WRL::ComPtr<ID3D11DepthStencilState> m_baseSS;
+	REX::W32::ComPtr<REX::W32::ID3D11DepthStencilState> m_baseSS;
 #if 0
 	struct WireShaders
 	{
-		ID3D11VertexShader * vs;
-		ID3D11GeometryShader* gs;
-		ID3D11PixelShader* ps;
+		REX::W32::ID3D11VertexShader * vs;
+		REX::W32::ID3D11GeometryShader* gs;
+		REX::W32::ID3D11PixelShader* ps;
 	};
 	WireShaders m_ws;
 #endif
-	Microsoft::WRL::ComPtr<ID3D11InputLayout> m_layout;
-	Microsoft::WRL::ComPtr<ID3D11SamplerState> m_sampleState;
-	Microsoft::WRL::ComPtr<ID3D11RasterizerState> m_solidState;
-	Microsoft::WRL::ComPtr<ID3D11RasterizerState> m_wireState;
-	Microsoft::WRL::ComPtr<ID3D11Buffer> m_matrixBuffer;
-	Microsoft::WRL::ComPtr<ID3D11Buffer> m_transformBuffer;
-	Microsoft::WRL::ComPtr<ID3D11Buffer> m_materialBuffer;
+	REX::W32::ComPtr<REX::W32::ID3D11InputLayout> m_layout;
+	REX::W32::ComPtr<REX::W32::ID3D11SamplerState> m_sampleState;
+	REX::W32::ComPtr<REX::W32::ID3D11RasterizerState> m_solidState;
+	REX::W32::ComPtr<REX::W32::ID3D11RasterizerState> m_wireState;
+	REX::W32::ComPtr<REX::W32::ID3D11Buffer> m_matrixBuffer;
+	REX::W32::ComPtr<REX::W32::ID3D11Buffer> m_transformBuffer;
+	REX::W32::ComPtr<REX::W32::ID3D11Buffer> m_materialBuffer;
 };
 
 #endif
