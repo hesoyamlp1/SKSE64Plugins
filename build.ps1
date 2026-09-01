@@ -231,7 +231,7 @@ function Find-Vcvars {
                         'HKLM:\SOFTWARE\Microsoft\VisualStudio\SxS\VS7')) {
         $k = Get-Item $base -ErrorAction SilentlyContinue
         if ($k) {
-            foreach ($name in $k.GetPropertyNames()) {
+            foreach ($name in $k.GetValueNames()) {
                 $c = Join-Path ($k.GetValue($name)) 'VC\Auxiliary\Build\vcvars64.bat'
                 if (Test-Path -LiteralPath $c) { return $c }
             }
