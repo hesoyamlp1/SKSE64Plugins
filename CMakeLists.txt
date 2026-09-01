@@ -170,6 +170,7 @@ add_commonlibsse_plugin(skee_furniture_fix
 target_include_directories(skee_furniture_fix PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/skee64"
 )
+target_precompile_headers(skee_furniture_fix PRIVATE skee64/pch.h)
 
 # --- Precompiled shaders ---------------------------------------------------------
 # Compile the HLSL/.fx sources with fxc (Windows SDK) into .cso. The runtime
