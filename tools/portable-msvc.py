@@ -45,7 +45,13 @@ MANIFEST_URLS = {
 
 ssl_context = None
 
+def curl_exe():
+  return shutil.which("curl.exe") if os.name == "nt" else None
+
 def download(url):
+  curl = curl_exe()
+  if curl:
+    return subprocess.check_output([curl, "-fL", "--retry", "3", "--retry-delay", "2", url])
   with urllib.request.urlopen(url, context=ssl_context) as res:
     return res.read()
 
@@ -60,6 +66,25 @@ def download_progress(url, check, filename):
       return data
 
   global total_download
+  curl = curl_exe()
+  if curl:
+    part = fpath.with_suffix(fpath.suffix + ".part")
+    try:
+      subprocess.run(
+        [curl, "-fL", "--retry", "3", "--retry-delay", "2", "-o", str(part), url],
+        check=True,
+      )
+      data = part.read_bytes()
+      digest = hashlib.sha256(data).hexdigest()
+      if check.lower() != digest:
+        sys.exit(f"Hash mismatch for {filename}")
+      part.replace(fpath)
+      total_download += len(data)
+      print(f"{filename} ... OK")
+      return data
+    finally:
+      part.unlink(missing_ok=True)
+
   with fpath.open("wb") as f:
     data = io.BytesIO()
     with urllib.request.urlopen(url, context=ssl_context) as res:
