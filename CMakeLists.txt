@@ -157,6 +157,20 @@ target_link_libraries(skee64 PRIVATE
 set_target_properties(skee64 PROPERTIES OUTPUT_NAME "skee64")
 target_link_options(skee64 PRIVATE /FORCE:UNRESOLVED)
 
+# Keep the released RaceMenu DLL in charge of all normal SKEE behaviour.  This
+# small companion uses its public NiTransform interface to suspend only the
+# equippable "NPC/internal" transform while an actor occupies furniture.
+add_commonlibsse_plugin(skee_furniture_fix
+    NAME "SKEE Furniture Fix"
+    AUTHOR "hesoyamlp1"
+    VERSION 1.0.0.0
+    USE_ADDRESS_LIBRARY
+    SOURCES issue55fix/main.cpp
+)
+target_include_directories(skee_furniture_fix PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/skee64"
+)
+
 # --- Precompiled shaders ---------------------------------------------------------
 # Compile the HLSL/.fx sources with fxc (Windows SDK) into .cso. The runtime
 # loads them from SKSE/Plugins/<Module>/Shaders/Compiled/ and falls back to
