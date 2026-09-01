@@ -1,0 +1,14 @@
+CMakeLists.txt
+  h_4b190f792175d0 173
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b530aec5c79b8b3005623995f86a1dd0e2a3bcba",
+  "prompts": {},
+  "humans": {
+    "h_4b190f792175d0": {
+      "author": "LinSuki <admin@toddout.work>"
+    }
+  }
+}
