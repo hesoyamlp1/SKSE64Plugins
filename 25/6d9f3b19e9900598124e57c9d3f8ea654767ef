@@ -1,0 +1,20 @@
+skee64/ActorUpdateManager.cpp
+  h_4b190f792175d0 29-30,92-126,375
+skee64/ActorUpdateManager.h
+  h_4b190f792175d0 12,28,63,86
+skee64/NiTransformInterface.cpp
+  h_4b190f792175d0 16,24,29-41,474,479-482,683,691-693,708-711,1213
+skee64/main.cpp
+  h_4b190f792175d0 172,677-680,719
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "256d9f3b19e9900598124e57c9d3f8ea654767ef",
+  "prompts": {},
+  "humans": {
+    "h_4b190f792175d0": {
+      "author": "LinSuki <admin@toddout.work>"
+    }
+  }
+}
