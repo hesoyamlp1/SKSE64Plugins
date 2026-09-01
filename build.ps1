@@ -29,7 +29,7 @@
 # skipped:
 #   1. Initializes the CommonLibSSE-NG git submodule if missing.
 #   2. Downloads CMake + Ninja for Windows into ./toolchain (gitignored).
-#   3. Fetches vcpkg at the exact commit pinned in vcpkg.json
+#   3. Fetches the exact vcpkg commit pinned in vcpkg.json
 #      (builtin-baseline) into ./toolchain/vcpkg and bootstraps it.
 #   4. Resolves an MSVC compiler environment, in order:
 #        a. $env:SKEE_VCVARS (explicit path to a vcvars64.bat / setup bat)
@@ -420,8 +420,8 @@ Info "CMake: $(if ($cmakeVerLine) { $cmakeVerLine } else { 'unknown' })"
 Ensure-Ninja
 
 # --- 3d. vcpkg source at the pinned commit ----------------------------------------
-# Full clone (NOT --depth 1): manifest mode checks out port files from
-# historical commits inside the vcpkg repo, so the full history is required.
+# The manifest baseline and the checked-out vcpkg commit are identical, so a
+# single-commit fetch contains every port/version file this build consumes.
 $vcpkgHead = ''
 if (Test-Path -LiteralPath (Join-Path $VcpkgDir '.git')) {
     $vcpkgHead = (& git -C $VcpkgDir rev-parse HEAD 2>$null | Select-Object -First 1)
@@ -430,11 +430,16 @@ if ($vcpkgHead -ne $VcpkgCommit) {
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
         Die "toolchain/vcpkg is missing and git is not available."
     }
-    Info "Cloning vcpkg @ $($VcpkgCommit.Substring(0, 12)) (full history, a few hundred MB - required by manifest mode)"
+    Info "Fetching vcpkg @ $($VcpkgCommit.Substring(0, 12)) (single pinned commit)"
     Remove-Item -LiteralPath $VcpkgDir -Recurse -Force -ErrorAction SilentlyContinue
-    & git -c http.proxy= -c https.proxy= clone --progress https://github.com/microsoft/vcpkg.git $VcpkgDir
-    if ($LASTEXITCODE -ne 0) { Die "Failed to clone vcpkg from GitHub (network required)" }
-    & git -C $VcpkgDir checkout -q $VcpkgCommit
+    New-Item -ItemType Directory -Force -Path $VcpkgDir | Out-Null
+    & git -C $VcpkgDir init -q
+    if ($LASTEXITCODE -ne 0) { Die "Failed to initialize the vcpkg checkout" }
+    & git -C $VcpkgDir remote add origin https://github.com/microsoft/vcpkg.git
+    if ($LASTEXITCODE -ne 0) { Die "Failed to configure the vcpkg origin" }
+    & git -c http.proxy= -c https.proxy= -C $VcpkgDir fetch --depth 1 origin $VcpkgCommit
+    if ($LASTEXITCODE -ne 0) { Die "Failed to fetch vcpkg commit $VcpkgCommit from GitHub" }
+    & git -C $VcpkgDir checkout -q --detach FETCH_HEAD
     if ($LASTEXITCODE -ne 0) { Die "Failed to check out vcpkg commit $VcpkgCommit" }
 }
 Info "vcpkg: $VcpkgDir @ $($VcpkgCommit.Substring(0, 12))"
