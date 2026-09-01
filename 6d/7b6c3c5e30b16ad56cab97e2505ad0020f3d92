@@ -1,0 +1,14 @@
+build.ps1
+  h_4b190f792175d0 32,423-424,433,435-442
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "6d7b6c3c5e30b16ad56cab97e2505ad0020f3d92",
+  "prompts": {},
+  "humans": {
+    "h_4b190f792175d0": {
+      "author": "LinSuki <admin@toddout.work>"
+    }
+  }
+}
